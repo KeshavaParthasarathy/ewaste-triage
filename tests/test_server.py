@@ -115,3 +115,20 @@ def test_ingest_writes_nothing_outside_the_root(client, tmp_path):
                 content_type="multipart/form-data")
     created = set(tmp_path.rglob("*")) - before
     assert created == set(), f"rejected request still created: {sorted(created)}"
+
+
+def test_web_and_cli_agree_on_the_same_image(client, ckpt, tmp_path, monkeypatch):
+    """The /classify endpoint and the Classifier used by the CLI must agree exactly."""
+    from server.classifier import Classifier
+
+    img_path = tmp_path / "sample.jpg"
+    Image.new("RGB", (300, 300), (100, 140, 90)).save(img_path, format="JPEG")
+
+    with open(img_path, "rb") as fh:
+        web = client.post("/classify", data={"image": (fh, "sample.jpg")},
+                          content_type="multipart/form-data").json
+
+    cli = Classifier(ckpt).classify(Image.open(img_path))
+
+    assert web["class_name"] == cli["class_name"]
+    assert web["confidence"] == pytest.approx(cli["confidence"], abs=1e-6)
