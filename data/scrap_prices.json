@@ -1,0 +1,13 @@
+{
+  "quoted_date": "PLACEHOLDER - replace with the date you pulled these",
+  "source": "iscrapapp.com/metals/ and boardsort.com/payout.php",
+  "usd_per_lb": {
+    "low": 0.60,
+    "mid": 1.60,
+    "high": 6.00,
+    "ferrous": 0.06,
+    "nonferrous": 2.20
+  },
+  "price_uncertainty": 0.30,
+  "mass_uncertainty_category_average": 0.50
+}
