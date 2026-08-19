@@ -1,0 +1,15 @@
+# FILL THESE FROM LITERATURE BEFORE USE — values below are deliberately blank.
+# Sources to pull from:
+#   Oguchi et al. 2011, Waste Management 31(9-10):2150-60  (per-device mass + metal content, 21 EEE types)
+#   Cucchiella et al. 2015, Renew Sustain Energy Rev 51:263-272  (material composition + economic value, 14 WEEE categories)
+# Fractions are mass fraction of total device mass and should sum to <= 1.0.
+# board_grade must be one of: low, mid, high  (matches iScrapApp / Boardsort payout tiers)
+unu_key,description,frac_pcb,frac_ferrous,frac_nonferrous,frac_plastic,board_grade,source_citation
+0301,Small IT (routers/mice/keyboards/external drives),,,,,,
+0302,Desktop PCs,,,,,,
+0303,Laptops,,,,,,
+0306,Mobile Phones,,,,,,
+0401,Small Consumer Electronics,,,,,,
+0403,Music Instruments/Radio/HiFi,,,,,,
+0405,Speakers,,,,,,
+0201,Other Small Household,,,,,,

@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Train classifier (smoke test)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/train_classifier.py",
+      "args": ["--smoke-test"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Train classifier (real data)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/train_classifier.py",
+      "args": ["--data-dir", "data/photos", "--holdout-dir", "data/photos/holdout_own", "--epochs", "15"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Predict on one photo",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/predict.py",
+      "args": ["${input:photoPath}"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Run triage server",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/server/app.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "inputs": [
+    { "id": "photoPath", "type": "promptString", "description": "Path to a photo", "default": "data/photos/example.jpg" }
+  ]
+}

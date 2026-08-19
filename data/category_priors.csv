@@ -1,0 +1,41 @@
+product_category,n_records,n_with_year,median_year,frac_pre_rohs_2006,frac_end_of_life,top_brands
+Vacuum,25095,9065,2017.0,0.041,0.227,Unknown; Dyson; Miele
+Lamp,20725,5758,2012.0,0.1,0.121,Unknown; Ikea; IKEA
+Power tool,20582,7222,2015.0,0.062,0.267,Unknown; Bosch; Kärcher
+Hi-Fi separates,18181,6406,2008.0,0.166,0.288,Unknown; Sony; Philips
+Coffee maker,18110,7290,2017.0,0.032,0.302,Philips; Unknown; Nespresso
+Small home electrical,17016,4706,2017.0,0.047,0.267,Unknown; Philips; Dimplex
+Food processor,15096,4954,2015.0,0.08,0.296,Unknown; Kenwood; Braun
+Small kitchen item,14515,5257,2017.0,0.055,0.301,Unknown; Tefal; Philips
+Portable radio,13720,4554,2011.0,0.122,0.262,Unknown; Sony; Philips
+Laptop,12304,3995,2015.0,0.009,0.154,Unknown; HP; Lenovo
+Sewing machine,11448,3475,2000.0,0.182,0.133,Unknown; Singer; Pfaff
+Watch/clock,10152,2555,2010.0,0.11,0.209,Unknown; Seiko; Philips
+Large home electrical,7817,2791,2015.0,0.054,0.242,Unknown; Bosch; Samsung
+Toaster,7738,2557,2017.0,0.044,0.352,Unknown; Dualit; Russell Hobbs
+Decorative or safety lights,6904,2167,2017.0,0.058,0.209,Unknown; Philips; Ukendt
+Iron,6766,2521,2016.0,0.04,0.322,Unknown; Philips; Tefal
+Kettle,6617,2154,2018.0,0.026,0.425,Unknown; Russell Hobbs; Philips
+Toy,6171,2091,2017.0,0.083,0.221,Unknown; Fisher-Price; Lego
+Hair & beauty item,5783,1888,2017.0,0.04,0.306,Unknown; Philips; Braun
+Printer/scanner,5629,1949,2016.0,0.025,0.356,HP; Unknown; Canon
+TV and gaming-related accessories,5601,1713,2012.0,0.091,0.323,Unknown; Philips; Sony
+Battery/charger/adapter,5458,1613,2016.0,0.037,0.274,Unknown; Apple; Bosch
+Mobile,5187,1500,2017.0,0.009,0.155,Unknown; Apple; Samsung
+Hi-Fi integrated,4207,1410,2007.0,0.159,0.292,Unknown; Sony; Philips
+Flat screen,3754,1423,2015.0,0.028,0.388,Unknown; Samsung; Philips
+Tablet,3748,1187,2016.0,0.015,0.244,Unknown; Samsung; Apple
+Headphones,3526,1181,2019.0,0.018,0.245,Unknown; Sony; Sennheiser
+Hair dryer,3268,1004,2015.0,0.052,0.25,Unknown; Philips; Babyliss
+Fan,2739,914,2017.0,0.052,0.303,Unknown; Dyson; Honeywell
+Handheld entertainment device,2683,940,2010.0,0.147,0.255,Unknown; Sony; Apple
+Desktop computer,2371,602,2014.0,0.032,0.182,Unknown; HP; Acer
+PC accessory,1923,577,2016.0,0.025,0.245,Unknown; Logitech; Apple
+Paper shredder,1714,596,2017.0,0.038,0.278,Unknown; Fellowes; Rexel
+Aircon/dehumidifier,1369,511,2018.0,0.016,0.313,Unknown; Meaco; DeLonghi
+Digital compact camera,1346,414,2014.0,0.051,0.35,Unknown; Canon; Sony
+Projector,1173,394,1999.5,0.205,0.226,Unknown; Epson; Braun
+Musical instrument,1111,387,2009.0,0.154,0.158,Unknown; Yamaha; Casio
+Games console,1036,396,2015.0,0.085,0.26,Nintendo; Unknown; Sony
+DSLR/video camera,832,288,2007.0,0.159,0.369,Unknown; Sony; Panasonic
+Misc,755,250,2014.0,0.078,0.163,Unknown; Philips; Bosch

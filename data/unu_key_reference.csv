@@ -1,0 +1,50 @@
+unu_key,description,weee_category,avg_unit_weight_kg_2012,source_note
+0002,Photovoltaic Panels (incl. converters),Large equipment,20.0,UNU Annex 3 EU-28
+0101,Professional Heating & Ventilation,Large equipment,48.9,UNU Annex 3 EU-28
+0102,Dishwashers,Large equipment,42.7,UNU Annex 3 EU-28
+0103,Kitchen (large furnaces/ovens/cooking),Large equipment,45.9,UNU Annex 3 EU-28
+0104,Washing Machines (incl. combined dryers),Large equipment,71.5,UNU Annex 3 EU-28
+0105,Dryers (wash dryers/centrifuges),Large equipment,43.5,UNU Annex 3 EU-28
+0106,Household Heating & Ventilation (hoods/ventilators),Large equipment,5.2,UNU Annex 3 EU-28
+0108,Fridges (incl. combi-fridges),Cooling and Freezing,54.1,UNU Annex 3 EU-28
+0109,Freezers,Cooling and Freezing,43.3,UNU Annex 3 EU-28
+0111,Air Conditioners,Cooling and Freezing,25.2,UNU Annex 3 EU-28
+0112,Other Cooling (dehumidifiers/heat pump dryers),Cooling and Freezing,38.8,UNU Annex 3 EU-28
+0113,Professional Cooling,Cooling and Freezing,90.5,UNU Annex 3 EU-28
+0114,Microwaves,Small equipment,22.2,UNU Annex 3 EU-28
+0201,Other Small Household (ventilators/irons/clocks/adapters),Small equipment,0.8,UNU Annex 3 EU-28
+0202,Food (toaster/grills/food processing/frying pans),Small equipment,2.6,UNU Annex 3 EU-28
+0203,Hot Water (coffee/tea/water cookers),Small equipment,2.8,UNU Annex 3 EU-28
+0204,Vacuum Cleaners (excl. professional),Small equipment,5.8,UNU Annex 3 EU-28
+0205,Personal Care (tooth brushes/hair dryers/razors),Small equipment,0.5,UNU Annex 3 EU-28
+0301,Small IT (routers/mice/keyboards/external drives),Small IT,0.3,UNU Annex 3 EU-28
+0302,Desktop PCs (excl. monitors/accessories),Small IT,8.8,UNU Annex 3 EU-28
+0303,Laptops (incl. tablets),Screens,3.0,UNU Annex 3 EU-28
+0304,Printers (scanners/multifunctionals/faxes),Small IT,10.0,UNU Annex 3 EU-28
+0305,Telecom (cordless phones/answering machines),Small IT,0.4,UNU Annex 3 EU-28
+0306,Mobile Phones (incl. smartphones/pagers),Small IT,0.1,UNU Annex 3 EU-28
+0307,Professional IT (servers/routers/data storage/copiers),Large equipment,40.0,UNU Annex 3 EU-28
+0308,Cathode Ray Tube Monitors,Screens,13.0,UNU Annex 3 EU-28
+0309,Flat Display Panel Monitors (LCD/LED),Screens,5.4,UNU Annex 3 EU-28
+0401,Small Consumer Electronics (headphones/remote controls),Small equipment,0.4,UNU Annex 3 EU-28
+0402,Portable Audio & Video (MP3/e-readers/car nav),Small equipment,0.2,UNU Annex 3 EU-28
+0403,Music Instruments/Radio/HiFi (incl. audio sets),Small equipment,3.4,UNU Annex 3 EU-28
+0404,Video (recorders/DVD/Blu-ray/set-top boxes),Small equipment,2.7,UNU Annex 3 EU-28
+0405,Speakers,Small equipment,2.1,UNU Annex 3 EU-28
+0406,Cameras (camcorders/photo/digital still),Small equipment,0.3,UNU Annex 3 EU-28
+0407,Cathode Ray Tube TVs,Screens,28.4,UNU Annex 3 EU-28 (2005 value; blank for 2012)
+0408,Flat Display Panel TVs (LCD/LED/Plasma),Screens,14.3,UNU Annex 3 EU-28
+0501,Lamps (pocket/Christmas),Lamps,0.1,UNU Annex 3 EU-28
+0502,Compact Fluorescent Lamps,Lamps,0.1,UNU Annex 3 EU-28
+0503,Straight Tube Fluorescent Lamps,Lamps,0.1,UNU Annex 3 EU-28
+0504,Special Lamps (professional mercury/sodium),Lamps,0.1,UNU Annex 3 EU-28
+0505,LED Lamps (incl. retrofit & household luminaires),Lamps,0.08,UNU Annex 3 EU-28
+0506,Household Luminaires,Small equipment,0.5,UNU Annex 3 EU-28
+0507,Professional Luminaires,Small equipment,2.6,UNU Annex 3 EU-28
+0601,Household Tools (drills/saws/pressure cleaners/mowers),Small equipment,14.4,UNU Annex 3 EU-28
+0602,Professional Tools (welding/soldering/milling),Large equipment,3.3,UNU Annex 3 EU-28
+0701,Toys (car racing sets/trains/music toys),Small equipment,0.5,UNU Annex 3 EU-28
+0702,Game Consoles,Small IT,1.9,UNU Annex 3 EU-28
+0703,Leisure (large exercise/sports equipment),Large equipment,52.0,UNU Annex 3 EU-28
+0801,Household Medical (thermometers/BP meters),Small equipment,0.2,UNU Annex 3 EU-28
+0802,Professional Medical,Large equipment,67.1,UNU Annex 3 EU-28
