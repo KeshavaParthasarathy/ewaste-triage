@@ -36,7 +36,7 @@ between the two is measured during teardown and reported as a result.
       │  photo via <input type="file" accept="image/*" capture="environment">
       │  downscaled to 1024px client-side in canvas before upload
       ▼
-  Safari → http://172.20.10.X:8777
+  Safari → http://[<mac-global-ipv6>]:8777   (see note below)
       │
       ▼
   MacBook — Flask app (server/app.py)
@@ -63,6 +63,15 @@ between the two is measured during teardown and reported as a result.
 
 **Measured:** 37 ms round trip on this hardware with a 1024px upload
 (8.3 ms decode + 27 ms inference).
+
+**Addressing — verified 2026-08-19, and not what was assumed.** This carrier is
+IPv6-only (464XLAT). The hotspot provides *no* IPv4 subnet: the Mac receives a
+`192.0.0.2/32` CLAT stub and a global IPv6 address. There is no `172.20.10.x`
+network. Consequences: the server binds `::` rather than `0.0.0.0`; the address is
+read from `ifconfig en0`, not `ipconfig getifaddr en0`; the ~50-character URL is
+delivered as a QR code rather than typed; and because the address is carrier-assigned
+it may change on reconnect, so the QR is regenerated at every startup. See
+`docs/experiment-log.md`.
 
 ## 4. Components
 

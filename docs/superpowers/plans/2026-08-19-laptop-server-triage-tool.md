@@ -30,7 +30,7 @@
 
 ---
 
-## Task 0: Hotspot viability test (DO THIS FIRST — 30 minutes)
+## Task 0: Hotspot viability test — COMPLETE, PASSED 2026-08-19
 
 The entire architecture rests on one unverified assumption: that Safari on the phone can reach an HTTP server on the MacBook over the phone's own Personal Hotspot. Some carrier builds enforce AP client isolation. If this fails, stop and switch to the PWA path in the spec — having lost 30 minutes rather than four weeks.
 
@@ -69,7 +69,7 @@ def up():
     data = request.files["f"].read()
     return f"<h2>OK — received {len(data):,} bytes</h2><a href='/'>again</a>"
 
-app.run(host="0.0.0.0", port=8777)
+app.run(host="::", port=8777)   # IPv6: this carrier has no IPv4 hotspot subnet
 ```
 
 - [ ] **Step 3: Turn on Personal Hotspot and join the Mac to it**
@@ -82,10 +82,13 @@ On the Mac: join the phone's hotspot network from the WiFi menu.
 ```bash
 cd ~/ewaste-triage
 .venv/bin/python /tmp/hotspot_test.py &
-ipconfig getifaddr en0
+ifconfig en0 | grep 'inet6 2' | grep secured | grep -v temporary
 ```
 
-Expected: an address like `172.20.10.2`. Approve the macOS "accept incoming connections" firewall prompt when it appears — if you deny it once it never reappears and the phone will simply time out with no error anywhere.
+Expected: a global IPv6 address. `ipconfig getifaddr en0` returns nothing on an
+IPv6-only carrier — do not use it. If the macOS firewall is enabled, approve the
+"accept incoming connections" prompt; denying it once means it never reappears and
+the phone times out with no error anywhere.
 
 - [ ] **Step 5: Test from the phone**
 
@@ -962,8 +965,9 @@ def main():
     ap.add_argument("--ckpt", default=None)
     a = ap.parse_args()
     app = create_app(ckpt_path=a.ckpt)
-    print(f"Serving on http://0.0.0.0:{a.port}  — find your hotspot IP with: ipconfig getifaddr en0")
-    app.run(host="0.0.0.0", port=a.port, threaded=False)
+    # Bind IPv6: an IPv6-only carrier gives no usable IPv4 hotspot address.
+    print_access_urls(a.port)
+    app.run(host="::", port=a.port, threaded=False)
 
 
 if __name__ == "__main__":
@@ -1327,7 +1331,8 @@ Run this end-to-end at home at least twice, at least a week before the fair.
 ## Setup, in this order
 - [ ] Phone: Settings → Personal Hotspot → Allow Others to Join
 - [ ] Mac: join the phone's hotspot from the WiFi menu
-- [ ] `ipconfig getifaddr en0` → note the 172.20.10.x address
+- [ ] `.venv/bin/python -m server.netinfo` → QR code opens; scan it with the phone
+- [ ] Confirm the IPv6 address changed or not since last run (it is carrier-assigned)
 - [ ] `caffeinate -i .venv/bin/python -m server.app`
 - [ ] Approve the macOS incoming-connections prompt if it appears
 - [ ] Phone Safari → `http://<that-ip>:8777` → take one photo → confirm a result
@@ -1356,6 +1361,179 @@ git commit -m "docs: fair-day rehearsal checklist"
 
 ---
 
+## Task 12: Address discovery and startup QR code
+
+Added after Phase 0 revealed the carrier is IPv6-only. The access URL is ~50 characters
+and carrier-assigned, so it cannot be typed on a phone and cannot be printed once and
+trusted — it may change whenever the hotspot reconnects.
+
+**Files:**
+- Create: `server/netinfo.py`
+- Modify: `server/app.py` (call `print_access_urls` in `main()`)
+- Test: `tests/test_netinfo.py`
+
+- [ ] **Step 1: Install the QR dependency**
+
+```bash
+cd ~/ewaste-triage
+.venv/bin/pip install "qrcode[pil]"
+```
+
+- [ ] **Step 2: Write the failing test**
+
+```python
+# tests/test_netinfo.py
+from server.netinfo import parse_global_ipv6
+
+
+IFCONFIG_IPV6_ONLY = """en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+	inet6 fe80::f5:1ce2:d944:66ad%en0 prefixlen 64 secured scopeid 0xf
+	inet6 2607:fb90:5029:4ea7:10be:b80a:29e9:394 prefixlen 64 autoconf secured
+	inet6 2607:fb90:5029:4ea7:c0aa:6a18:3093:507 prefixlen 64 autoconf temporary
+	inet 192.0.0.2 netmask 0xffffffff broadcast 192.0.0.2
+	inet6 2607:fb90:5029:4ea7:1424:b1ed:7452:8e10 prefixlen 64 clat46
+"""
+
+
+def test_picks_the_stable_secured_address():
+    assert parse_global_ipv6(IFCONFIG_IPV6_ONLY) == "2607:fb90:5029:4ea7:10be:b80a:29e9:394"
+
+
+def test_skips_temporary_privacy_addresses():
+    assert "temporary" not in parse_global_ipv6(IFCONFIG_IPV6_ONLY)
+    assert parse_global_ipv6(IFCONFIG_IPV6_ONLY) != "2607:fb90:5029:4ea7:c0aa:6a18:3093:507"
+
+
+def test_skips_link_local_and_clat():
+    got = parse_global_ipv6(IFCONFIG_IPV6_ONLY)
+    assert not got.startswith("fe80")
+    assert got != "2607:fb90:5029:4ea7:1424:b1ed:7452:8e10"
+
+
+def test_returns_none_when_there_is_no_global_address():
+    assert parse_global_ipv6("en0: flags=8863\n\tinet6 fe80::1%en0 prefixlen 64 secured\n") is None
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+```bash
+cd ~/ewaste-triage
+.venv/bin/python -m pytest tests/test_netinfo.py -v
+```
+
+Expected: FAIL — `ModuleNotFoundError: No module named 'server.netinfo'`
+
+- [ ] **Step 4: Write the module**
+
+```python
+# server/netinfo.py
+"""
+Find the address the phone should use, and render it as a scannable QR code.
+
+Phase 0 (2026-08-19) established that this carrier is IPv6-only (464XLAT): the hotspot
+gives the Mac a 192.0.0.2/32 CLAT stub and a global IPv6 address, and there is no
+172.20.10.x network. `ipconfig getifaddr en0` returns nothing useful. The resulting URL
+is ~50 characters, so it is delivered as a QR code rather than typed.
+
+The address is carrier-assigned and can change on reconnect, so this runs at every
+startup instead of being recorded once.
+
+    .venv/bin/python -m server.netinfo
+"""
+import pathlib
+import re
+import subprocess
+
+QR_PATH = pathlib.Path("/tmp/ewaste_triage_qr.png")
+
+
+def parse_global_ipv6(ifconfig_output):
+    """Return the stable global IPv6, skipping link-local, temporary, and CLAT addresses."""
+    for line in ifconfig_output.splitlines():
+        line = line.strip()
+        if not line.startswith("inet6 "):
+            continue
+        if "temporary" in line or "clat46" in line:
+            continue
+        addr = line.split()[1].split("%")[0]
+        if addr.startswith("fe80") or addr.startswith("::"):
+            continue
+        return addr
+    return None
+
+
+def current_ipv6(interface="en0"):
+    out = subprocess.run(["ifconfig", interface], capture_output=True, text=True).stdout
+    return parse_global_ipv6(out)
+
+
+def make_qr(url, path=QR_PATH):
+    import qrcode
+    qrcode.make(url).resize((600, 600)).save(path)
+    return path
+
+
+def print_access_urls(port, interface="en0", open_qr=True):
+    addr = current_ipv6(interface)
+    if not addr:
+        print(f"No global IPv6 on {interface}. Is the Mac joined to the phone's hotspot?")
+        print(f"Falling back to localhost only: http://127.0.0.1:{port}")
+        return None
+
+    url = f"http://[{addr}]:{port}"
+    path = make_qr(url)
+    print(f"\n  Phone URL: {url}")
+    print(f"  QR code:   {path}")
+    print("  This address is carrier-assigned and changes on reconnect — rescan each session.\n")
+    if open_qr:
+        subprocess.run(["open", str(path)], check=False)
+    return url
+
+
+if __name__ == "__main__":
+    print_access_urls(8777)
+```
+
+- [ ] **Step 5: Run the tests**
+
+```bash
+cd ~/ewaste-triage
+.venv/bin/python -m pytest tests/test_netinfo.py -v
+```
+
+Expected: 4 passed
+
+- [ ] **Step 6: Wire it into the server**
+
+In `server/app.py`, add to the imports:
+
+```python
+from server.netinfo import print_access_urls
+```
+
+`main()` already calls `print_access_urls(a.port)` per the Task 6 code.
+
+- [ ] **Step 7: Verify end to end**
+
+```bash
+cd ~/ewaste-triage
+.venv/bin/python -m server.netinfo
+```
+
+Expected (while joined to the hotspot): a `http://[2607:...]:8777` URL, a QR path, and
+Preview opening the QR. While on ordinary WiFi it prints whatever global IPv6 exists, or
+the localhost fallback if there is none.
+
+- [ ] **Step 8: Commit**
+
+```bash
+cd ~/ewaste-triage
+git add server/netinfo.py server/app.py tests/test_netinfo.py
+git commit -m "feat: IPv6 address discovery and startup QR code"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
@@ -1372,6 +1550,7 @@ git commit -m "docs: fair-day rehearsal checklist"
 | §7 Error handling table | Task 6 (all rows), Task 9 (demo fallback) |
 | §9 Testing — CLI/web equivalence | Task 8 |
 | §9 Rehearsal test | Tasks 0, 11 |
+| §3 IPv6 addressing + QR (added post-Phase 0) | Task 12 |
 
 **Not covered by this plan, by design:** §6 model training (already implemented in
 `scripts/train_classifier.py`), §10 open question 1 (class list — needs user input),
