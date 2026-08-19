@@ -10,10 +10,12 @@ Class folder names must start with the UNU-KEY so the value chain can join, e.g.
 Low confidence is reported, not hidden. A triage tool that says "I am not sure, open
 this one by hand" is more useful — and more honest — than one that always guesses.
 """
-import argparse, json, pathlib, subprocess, sys
+import argparse, pathlib, sys
 import torch
 from PIL import Image
 from torchvision import models, transforms
+
+from scripts import valuation
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
@@ -72,10 +74,16 @@ def main():
         return
 
     print(f"\n  -> UNU-KEY {key}\n")
-    cmd = [sys.executable, str(ROOT / "scripts" / "estimate_value.py"), key]
-    if a.mass_g is not None:
-        cmd += ["--mass-g", str(a.mass_g)]
-    subprocess.run(cmd)
+    try:
+        r = valuation.estimate(key, mass_g=a.mass_g)
+    except (valuation.UnknownKey, valuation.CompositionUnavailable) as e:
+        print(f"  {e}")
+        return
+
+    print(f"  {r['description']}")
+    print(f"  mass {r['mass_kg']:.3f} kg ({r['mass_source']})")
+    print(f"  material value ${r['value_usd']:.2f}  "
+          f"(${r['value_low']:.2f} - ${r['value_high']:.2f})")
 
 
 if __name__ == "__main__":
