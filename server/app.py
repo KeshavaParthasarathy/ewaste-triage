@@ -20,7 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
-def create_app(ckpt_path=None, ingest_root=None):
+def create_app(ckpt_path=None, ingest_root=None, demo_dir=None):
     app = Flask(__name__, static_folder=str(ROOT / "server" / "static"))
     ckpt_path = pathlib.Path(ckpt_path or ROOT / "models" / "best.pt")
     ingest_root = pathlib.Path(ingest_root or ROOT / "data" / "photos" / "raw")
@@ -97,6 +97,14 @@ def create_app(ckpt_path=None, ingest_root=None):
         return jsonify({"saved": str(path.relative_to(root)),
                         "device_photo_count": n + 1})
 
+    @app.get("/demo")
+    def demo():
+        """Replay pre-shot photos through the real /classify path. Fair-day insurance."""
+        d = pathlib.Path(demo_dir or ROOT / "data" / "demo_photos")
+        shots = sorted(p.name for p in d.glob("*.jpg")) if d.exists() else []
+        return jsonify({"demo_photos": shots, "count": len(shots),
+                        "hint": "POST one of these back to /classify to rehearse without the phone."})
+
     return app
 
 
@@ -104,7 +112,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8777)
     ap.add_argument("--ckpt", default=None)
+    ap.add_argument("--demo", action="store_true",
+                    help="list the pre-shot fallback photos and exit")
     a = ap.parse_args()
+    if a.demo:
+        d = ROOT / "data" / "demo_photos"
+        shots = sorted(d.glob("*.jpg")) if d.exists() else []
+        print(f"{len(shots)} demo photos in {d}")
+        for s in shots:
+            print(f"  {s.name}")
+        if not shots:
+            print("  none — shoot 10-15 before the fair, see data/demo_photos/README.md")
+        return
     app = create_app(ckpt_path=a.ckpt)
     # Bind IPv6: an IPv6-only carrier gives no usable IPv4 hotspot address.
     # (Address discovery / QR printing lands here in a later task.)

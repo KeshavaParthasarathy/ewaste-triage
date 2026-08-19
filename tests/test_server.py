@@ -132,3 +132,23 @@ def test_web_and_cli_agree_on_the_same_image(client, ckpt, tmp_path, monkeypatch
 
     assert web["class_name"] == cli["class_name"]
     assert web["confidence"] == pytest.approx(cli["confidence"], abs=1e-6)
+
+
+def test_demo_lists_the_pre_shot_photos(ckpt, tmp_path):
+    shots = tmp_path / "demo"
+    shots.mkdir()
+    for name in ("02.jpg", "01.jpg"):
+        Image.new("RGB", (10, 10)).save(shots / name, format="JPEG")
+
+    app = create_app(ckpt_path=ckpt, ingest_root=tmp_path / "photos", demo_dir=shots)
+    r = app.test_client().get("/demo")
+    assert r.status_code == 200
+    assert r.json["demo_photos"] == ["01.jpg", "02.jpg"]
+    assert r.json["count"] == 2
+
+
+def test_demo_works_without_an_explicit_dir(client):
+    """demo_dir defaults to data/demo_photos, which may hold nothing yet."""
+    r = client.get("/demo")
+    assert r.status_code == 200
+    assert r.json["count"] == len(r.json["demo_photos"])
