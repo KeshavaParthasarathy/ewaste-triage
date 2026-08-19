@@ -86,3 +86,32 @@ def test_ingest_rejects_a_path_traversing_class_name(client):
                           "device_id": "dev01"},
                     content_type="multipart/form-data")
     assert r.status_code == 400
+
+
+@pytest.mark.parametrize("bad", ["..", ".", "...", ".hidden"])
+def test_ingest_rejects_dot_only_names(client, bad):
+    """A bare '..' matched the original regex and escaped one directory level."""
+    r = client.post("/ingest",
+                    data={"image": (_jpeg_bytes(), "x.jpg"),
+                          "class_name": bad, "device_id": "dev01"},
+                    content_type="multipart/form-data")
+    assert r.status_code == 400
+
+
+def test_ingest_rejects_dot_only_device_id(client):
+    r = client.post("/ingest",
+                    data={"image": (_jpeg_bytes(), "x.jpg"),
+                          "class_name": "0306_mobile_phones", "device_id": ".."},
+                    content_type="multipart/form-data")
+    assert r.status_code == 400
+
+
+def test_ingest_writes_nothing_outside_the_root(client, tmp_path):
+    """Regression: a rejected name must not create anything above the ingest root."""
+    before = set(tmp_path.rglob("*"))
+    client.post("/ingest",
+                data={"image": (_jpeg_bytes(), "x.jpg"),
+                      "class_name": "..", "device_id": "dev01"},
+                content_type="multipart/form-data")
+    created = set(tmp_path.rglob("*")) - before
+    assert created == set(), f"rejected request still created: {sorted(created)}"

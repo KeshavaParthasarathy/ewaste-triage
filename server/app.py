@@ -16,7 +16,8 @@ from scripts import valuation
 from server.classifier import Classifier
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+# Must start alphanumeric: a bare ".." matches "^[A-Za-z0-9_.-]+$" and escapes one level.
+SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def create_app(ckpt_path=None, ingest_root=None):
@@ -82,13 +83,18 @@ def create_app(ckpt_path=None, ingest_root=None):
         if err:
             return err
 
-        out_dir = app.config["INGEST_ROOT"] / class_name
+        root = app.config["INGEST_ROOT"].resolve()
+        out_dir = (root / class_name).resolve()
+        # Defence in depth: the regex should already prevent this, but this writes to
+        # disk, so confirm the resolved path really is inside the ingest root.
+        if not out_dir.is_relative_to(root):
+            return jsonify({"error": "resolved path escapes the ingest root"}), 400
         out_dir.mkdir(parents=True, exist_ok=True)
         n = len(list(out_dir.glob(f"{device_id}_*.jpg")))
         # Always re-encode to JPEG: torchvision's ImageFolder silently drops .heic files.
         path = out_dir / f"{device_id}_{n:03d}.jpg"
         img.convert("RGB").save(path, format="JPEG", quality=92)
-        return jsonify({"saved": str(path.relative_to(app.config["INGEST_ROOT"])),
+        return jsonify({"saved": str(path.relative_to(root)),
                         "device_photo_count": n + 1})
 
     return app

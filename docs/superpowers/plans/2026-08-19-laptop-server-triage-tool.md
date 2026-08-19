@@ -881,7 +881,9 @@ from scripts import valuation
 from server.classifier import Classifier
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")   # must not start with a dot
+# NOTE: a name regex alone is not enough. The /ingest handler must ALSO verify the
+# resolved output path stays inside INGEST_ROOT. See Task 6 review notes.
 
 
 def create_app(ckpt_path=None, ingest_root=None):
@@ -966,7 +968,7 @@ def main():
     a = ap.parse_args()
     app = create_app(ckpt_path=a.ckpt)
     # Bind IPv6: an IPv6-only carrier gives no usable IPv4 hotspot address.
-    print_access_urls(a.port)
+    # (Address discovery / QR printing is added in Task 12 — do not call it here yet.)
     app.run(host="::", port=a.port, threaded=False)
 
 
@@ -1511,7 +1513,12 @@ In `server/app.py`, add to the imports:
 from server.netinfo import print_access_urls
 ```
 
-`main()` already calls `print_access_urls(a.port)` per the Task 6 code.
+Task 6 deliberately left this uncalled. ADD the call now, as the first line of `main()`
+after `a = ap.parse_args()`:
+
+```python
+    print_access_urls(a.port)
+```
 
 - [ ] **Step 7: Verify end to end**
 
