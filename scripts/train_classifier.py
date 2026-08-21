@@ -129,6 +129,17 @@ def evaluate(model, loader, device, classes, title):
     return acc
 
 
+def warn_about_heic(data_dir):
+    """torchvision's ImageFolder silently drops .heic. Fail loudly instead."""
+    heic = list(pathlib.Path(data_dir).rglob("*.heic")) + list(pathlib.Path(data_dir).rglob("*.HEIC"))
+    if heic:
+        print(f"\n!! {len(heic)} .heic file(s) found under {data_dir}.")
+        print("!! torchvision 0.28 IGNORES these silently — they will NOT be in your dataset.")
+        print("!! Fix: set the iPhone camera to 'Most Compatible', or convert:")
+        print(f"!!   sips -s format jpeg {data_dir}/**/*.heic --out <same folder>")
+        print("!! Example dropped file:", heic[0], "\n")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=str(ROOT / "data" / "photos"))
@@ -150,6 +161,8 @@ def main():
     if not (data_dir / "train").exists():
         sys.exit(f"No {data_dir/'train'}. See the docstring for the expected folder layout, "
                  f"or run with --smoke-test first.")
+
+    warn_about_heic(data_dir)
 
     device = pick_device()
     train_ds = datasets.ImageFolder(data_dir / "train", build_transforms(True))
