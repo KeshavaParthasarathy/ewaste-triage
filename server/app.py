@@ -14,6 +14,7 @@ from PIL import Image, UnidentifiedImageError
 
 from scripts import valuation
 from server.classifier import Classifier
+from server.netinfo import print_access_urls
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Must start alphanumeric: a bare ".." matches "^[A-Za-z0-9_.-]+$" and escapes one level.
@@ -124,9 +125,9 @@ def main():
         if not shots:
             print("  none — shoot 10-15 before the fair, see data/demo_photos/README.md")
         return
+    print_access_urls(a.port)
     app = create_app(ckpt_path=a.ckpt)
     # Bind IPv6: an IPv6-only carrier gives no usable IPv4 hotspot address.
-    # (Address discovery / QR printing lands here in a later task.)
     app.run(host="::", port=a.port, threaded=False)
 
 
