@@ -20,10 +20,11 @@ IPv6 literal, which is why it is scanned rather than typed.
 ## Setup, in this order
 - [ ] Phone: Settings → Personal Hotspot → Allow Others to Join
 - [ ] Mac: join the phone's hotspot from the WiFi menu
-- [ ] `.venv/bin/python -m server.netinfo` → prints the IPv6 URL and opens a QR code;
-      scan it with the phone
-      (fallback if that module is not built yet: `ifconfig en0 | grep inet6` and use the
-      global address — the `fe80::` link-local one will not work)
+- [ ] `.venv/bin/python -m server.netinfo` → prints the IPv6 URL, writes
+      `/tmp/ewaste_triage_qr.png` and opens it in Preview; scan it with the phone
+      (`server.app` runs the same thing at startup, so this step is just an early check)
+      (fallback if it says "No global IPv6" or the QR will not open: `ifconfig en0 | grep
+      inet6` and use the global address — the `fe80::` link-local one will not work)
 - [ ] Note whether the IPv6 address changed since last run — it is carrier-assigned and
       may change on every hotspot reconnect, so never reuse yesterday's QR
 - [ ] `caffeinate -i .venv/bin/python -m server.app`
