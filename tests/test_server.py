@@ -171,6 +171,44 @@ def test_classify_returns_a_class(client):
     assert "confidence" in r.json
 
 
+def test_legacy_classify_accepts_an_injected_classifier_without_history(tmp_path):
+    class InjectedClassifier:
+        arch = "injected"
+        classes = ["custom_class"]
+
+        def classify(self, image):
+            return {
+                "class_name": "custom_class",
+                "unu_key": None,
+                "confidence": 0.75,
+                "low_confidence": False,
+                "topk": [{"class_name": "custom_class", "confidence": 0.75}],
+            }
+
+    app = create_app(
+        ckpt_path=tmp_path / "missing.pt",
+        classifier=InjectedClassifier(),
+        history_store=None,
+    )
+    app.config["TESTING"] = True
+
+    response = app.test_client().post(
+        "/classify",
+        data={"image": (_jpeg_bytes(), "x.jpg")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert response.json == {
+        "advice": "Class name has no 4-digit UNU-KEY prefix; cannot estimate value.",
+        "class_name": "custom_class",
+        "confidence": 0.75,
+        "low_confidence": False,
+        "topk": [{"class_name": "custom_class", "confidence": 0.75}],
+        "unu_key": None,
+    }
+
+
 def test_classify_rejects_a_non_image(client):
     r = client.post("/classify", data={"image": (io.BytesIO(b"not an image"), "x.jpg")},
                     content_type="multipart/form-data")

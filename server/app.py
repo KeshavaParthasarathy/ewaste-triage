@@ -26,14 +26,20 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SAFE_DEVICE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]*$")
 
 
-def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=False):
+def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=False,
+               classifier=None, history_store=None):
     app = Flask(__name__, static_folder=str(ROOT / "server" / "static"))
     ckpt_path = pathlib.Path(ckpt_path or ROOT / "models" / "best.pt")
     ingest_root = pathlib.Path(ingest_root or ROOT / "data" / "photos" / "raw")
 
     # Collection must work before the first model has been trained. Normal demo mode
     # still fails loudly at boot if its checkpoint is missing.
-    app.config["CLASSIFIER"] = None if collection_only else Classifier(ckpt_path)
+    app.config["CLASSIFIER"] = (
+        None if collection_only
+        else classifier if classifier is not None
+        else Classifier(ckpt_path)
+    )
+    app.config["HISTORY_STORE"] = history_store
     app.config["COLLECTION_ONLY"] = collection_only
     app.config["INGEST_ROOT"] = ingest_root
 
@@ -41,9 +47,32 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
         if "image" not in request.files:
             return None, (jsonify({"error": "no file field named 'image'"}), 400)
         try:
-            return Image.open(request.files["image"].stream), None
+            image = Image.open(request.files["image"].stream)
+            image.load()
+            return image, None
         except (UnidentifiedImageError, OSError):
             return None, (jsonify({"error": "uploaded file is not a decodable image"}), 400)
+
+    def _classification_result(image):
+        normalized = normalize_image(image)
+        result = app.config["CLASSIFIER"].classify(normalized)
+        mass_g = request.form.get("mass_g", type=float)
+
+        if result["low_confidence"]:
+            result["advice"] = "Low confidence — route this device to manual teardown."
+            return result, normalized
+
+        if result["unu_key"] is None:
+            result["advice"] = "Class name has no 4-digit UNU-KEY prefix; cannot estimate value."
+            return result, normalized
+
+        try:
+            result["valuation"] = valuation.estimate(result["unu_key"], mass_g=mass_g)
+        except valuation.CompositionUnavailable:
+            result["advice"] = "Composition table not filled in — class only, no value estimate."
+        except valuation.UnknownKey as exc:
+            result["advice"] = str(exc)
+        return result, normalized
 
     @app.get("/")
     def home():
@@ -78,26 +107,69 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
             return err
 
         try:
-            result = app.config["CLASSIFIER"].classify(img)
+            result, _ = _classification_result(img)
         except ImageTooLarge as exc:
             return jsonify({"error": str(exc)}), 413
-        mass_g = request.form.get("mass_g", type=float)
-
-        if result["low_confidence"]:
-            result["advice"] = "Low confidence — route this device to manual teardown."
-            return jsonify(result)
-
-        if result["unu_key"] is None:
-            result["advice"] = "Class name has no 4-digit UNU-KEY prefix; cannot estimate value."
-            return jsonify(result)
-
-        try:
-            result["valuation"] = valuation.estimate(result["unu_key"], mass_g=mass_g)
-        except valuation.CompositionUnavailable:
-            result["advice"] = "Composition table not filled in — class only, no value estimate."
-        except valuation.UnknownKey as e:
-            result["advice"] = str(e)
         return jsonify(result)
+
+    @app.post("/api/v1/classify")
+    def desktop_classify():
+        if app.config["CLASSIFIER"] is None:
+            return jsonify({"error": "classification unavailable in collection mode"}), 503
+        image, err = _read_image()
+        if err:
+            return err
+        try:
+            result, normalized = _classification_result(image)
+        except ImageTooLarge as exc:
+            return jsonify({"error": str(exc)}), 413
+
+        scan_id = None
+        store = app.config["HISTORY_STORE"]
+        if store is not None:
+            retain_original = request.form.get("retain_original", "").lower() in {
+                "1", "true", "yes", "on"
+            }
+            try:
+                scan_id = store.add_scan(
+                    result,
+                    normalized,
+                    retain_original=retain_original,
+                    original=normalized if retain_original else None,
+                )
+            except Exception:
+                app.logger.exception("classification succeeded but history persistence failed")
+                result["history_error"] = (
+                    "Classification complete, but this scan was not saved to history."
+                )
+        result["scan_id"] = scan_id
+        return jsonify(result)
+
+    @app.get("/api/v1/history")
+    def list_history():
+        store = app.config["HISTORY_STORE"]
+        return jsonify(store.list_scans() if store is not None else [])
+
+    @app.get("/api/v1/history/<scan_id>")
+    def get_history(scan_id):
+        store = app.config["HISTORY_STORE"]
+        record = store.get_scan(scan_id) if store is not None else None
+        if record is None:
+            return jsonify({"error": "scan not found"}), 404
+        return jsonify(record)
+
+    @app.delete("/api/v1/history/<scan_id>")
+    def delete_history(scan_id):
+        store = app.config["HISTORY_STORE"]
+        deleted = store.delete_scan(scan_id) if store is not None else False
+        if not deleted:
+            return jsonify({"error": "scan not found"}), 404
+        return jsonify({"deleted": True})
+
+    @app.delete("/api/v1/history")
+    def clear_history():
+        store = app.config["HISTORY_STORE"]
+        return jsonify({"deleted_count": store.clear() if store is not None else 0})
 
     @app.post("/ingest")
     def ingest():
