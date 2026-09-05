@@ -150,6 +150,187 @@ Promise.all([first, second]).then(async ([firstAccepted, secondAccepted]) => {
     assert ["/api/v1/explain/scan-7", "POST"] in result["requests"]
 
 
+def test_controller_ignores_an_explanation_from_an_older_active_scan():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const influenceRenders = [];
+const explanations = {};
+let classificationCount = 0;
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderHistory() {},
+  markHistoryDeleting() {},
+  renderInfluence(payload) { influenceRenders.push(payload.scan_id || payload.error); }
+};
+function deferredResponse() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return {promise, resolve};
+}
+const fetchImpl = async (url) => {
+  if (url === '/api/v1/classify') {
+    classificationCount += 1;
+    const scan = classificationCount === 1 ? 'scan-A' : 'scan-B';
+    return {ok: true, json: async () => ({scan_id: scan, class_name: '0306_mobile_phone', confidence: .9, low_confidence: false, topk: []})};
+  }
+  if (url.startsWith('/api/v1/explain/')) {
+    const scan = url.split('/').pop();
+    explanations[scan] = deferredResponse();
+    return explanations[scan].promise;
+  }
+  if (url === '/api/v1/history') return {ok: true, json: async () => []};
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({
+  view, fetchImpl,
+  formDataFactory: () => ({append() {}}),
+  nextFrame: async () => {},
+  objectUrl: file => 'blob:' + file.name
+});
+(async () => {
+  await controller.analyze({name: 'a.jpg', type: 'image/jpeg'});
+  await controller.analyze({name: 'b.jpg', type: 'image/jpeg'});
+  explanations['scan-B'].resolve({ok: true, json: async () => ({scan_id: 'scan-B', values: [[1]]})});
+  await new Promise(resolve => setImmediate(resolve));
+  explanations['scan-A'].resolve({ok: false, status: 503, json: async () => ({error: 'explanation unavailable'})});
+  await new Promise(resolve => setImmediate(resolve));
+  process.stdout.write(JSON.stringify({influenceRenders}));
+})();
+""")
+
+    assert result["influenceRenders"] == ["scan-B"]
+
+
+def test_history_review_clears_the_current_scan_preview_before_showing_another_record():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+let preview = null;
+let influenceMessage = null;
+const cleared = [];
+const shownResults = [];
+const view = {
+  transition(state, payload = {}) {
+    if (state === 'result' || state === 'review') {
+      shownResults.push({scan_id: payload.scan_id, class_name: payload.class_name, preview});
+    }
+  },
+  setBusy() {},
+  showPreview(url) { preview = url; },
+  clearPreview(message) { preview = null; cleared.push(message); },
+  renderInfluence(payload) { influenceMessage = payload.error || null; },
+  renderHistory() {}, markHistoryDeleting() {}, showSection() {}
+};
+const fetchImpl = async (url) => {
+  if (url === '/api/v1/classify') return {
+    ok: true,
+    json: async () => ({scan_id: 'scan-B', class_name: '0306_mobile_phone', confidence: .9, low_confidence: false, topk: []})
+  };
+  if (url === '/api/v1/history') return {ok: true, json: async () => []};
+  if (url.startsWith('/api/v1/explain/')) return new Promise(() => {});
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({
+  view, fetchImpl,
+  formDataFactory: () => ({append() {}}),
+  nextFrame: async () => {},
+  objectUrl: file => 'blob:' + file.name
+});
+(async () => {
+  await controller.analyze({name: 'scan-b.jpg', type: 'image/jpeg'});
+  controller.openHistory({
+    scan_id: 'scan-A',
+    prediction: {class_name: '0301_keyboard', confidence: .77, low_confidence: false, topk: []}
+  });
+  process.stdout.write(JSON.stringify({preview, cleared, shownResults, influenceMessage}));
+})();
+""")
+
+    assert result["preview"] is None
+    assert result["cleared"] == [
+        "The source image is unavailable for this history record."
+    ]
+    assert result["influenceMessage"] == (
+        "The source image is unavailable for this history record. "
+        "Model influence is available only immediately after a new classification."
+    )
+    assert result["shownResults"][-1] == {
+        "scan_id": "scan-A",
+        "class_name": "0301_keyboard",
+        "preview": None,
+    }
+
+
+def test_alternative_selection_preserves_model_evidence_and_confirms_assessment_category():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+let chooseAlternative;
+const corrections = [];
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {},
+  renderHistory() {}, markHistoryDeleting() {},
+  setAlternativeHandler(handler) { chooseAlternative = handler; },
+  renderCorrection(payload) { corrections.push(payload); }
+};
+const fetchImpl = async (url) => {
+  if (url === '/api/v1/classify') return {
+    ok: true,
+    json: async () => ({
+      scan_id: null,
+      class_name: '0306_mobile_phone',
+      confidence: .82,
+      low_confidence: false,
+      topk: [
+        {class_name: '0306_mobile_phone', confidence: .82},
+        {class_name: '0303_laptop', confidence: .12}
+      ]
+    })
+  };
+  if (url === '/api/v1/history') return {ok: true, json: async () => []};
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({
+  view, fetchImpl,
+  formDataFactory: () => ({append() {}}),
+  nextFrame: async () => {},
+  objectUrl: () => 'blob:scan'
+});
+(async () => {
+  await controller.analyze({name: 'scan.jpg', type: 'image/jpeg'});
+  if (typeof chooseAlternative !== 'function' || typeof controller.getAssessmentContext !== 'function') {
+    process.stdout.write(JSON.stringify({connected: false}));
+    return;
+  }
+  chooseAlternative({class_name: '0303_laptop', confidence: .12});
+  process.stdout.write(JSON.stringify({
+    connected: true,
+    correction: corrections[0],
+    assessment: controller.getAssessmentContext()
+  }));
+})();
+""")
+
+    assert result["connected"] is True
+    assert result["correction"] == {
+        "scan_id": None,
+        "model_class_name": "0306_mobile_phone",
+        "model_confidence": 0.82,
+        "confirmed_class_name": "0303_laptop",
+        "confirmed_confidence": 0.12,
+        "confirmation_source": "user",
+    }
+    assert result["assessment"] == {
+        "scan_id": None,
+        "confirmed_class_name": "0303_laptop",
+        "model_evidence": {
+            "class_name": "0306_mobile_phone",
+            "confidence": 0.82,
+        },
+        "confirmation": {
+            "source": "user",
+            "selected_model_score": 0.12,
+        },
+    }
+
+
 def test_controller_routes_low_confidence_and_failures_to_honest_states():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);

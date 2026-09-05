@@ -112,13 +112,13 @@
                     <span class="status-badge" id="result-badge">Classified</span>
                     <span class="scan-saved" id="scan-saved">Saved locally</span>
                   </div>
-                  <p class="eyebrow">Likely category</p>
+                  <p class="eyebrow" id="category-label">Likely category</p>
                   <h2 id="result-category">—</h2>
                   <p class="review-copy" id="review-copy">Review the leading categories and choose the best match before continuing.</p>
                 </div>
 
                 <div class="confidence-block result-stage stage-two">
-                  <div class="confidence-line"><span>Model confidence</span><strong id="confidence-number">—</strong></div>
+                  <div class="confidence-line"><span id="confidence-label">Model confidence</span><strong id="confidence-number">—</strong></div>
                   <div class="confidence-track" aria-hidden="true"><span id="confidence-bar"></span></div>
                 </div>
 
@@ -198,7 +198,7 @@
     <span class="dialog-icon" aria-hidden="true">✓</span>
     <p class="eyebrow">Assessment</p>
     <h2 id="assessment-dialog-title">Classification is ready.</h2>
-    <p>Detailed condition, lifecycle, and component assessment is the next product step. This scan remains available in local history.</p>
+    <p id="assessment-summary">Detailed condition, lifecycle, and component assessment is the next product step. This scan remains available in local history.</p>
     <button class="primary-button" type="button" data-close-dialog>Return to result</button>
   </dialog>
 </body>

@@ -61,21 +61,43 @@
     const nextFrame = options.nextFrame;
     const objectUrl = options.objectUrl;
     let running = false;
+    let generation = 0;
+    let activeScanId = null;
+    let activeResult = null;
+
+    function withModelEvidence(result) {
+      const modelClassName = result.model_class_name || result.class_name;
+      const modelConfidence = result.model_confidence === undefined ?
+        result.confidence : result.model_confidence;
+      return {
+        ...result,
+        model_class_name: modelClassName,
+        model_confidence: modelConfidence,
+        confirmed_class_name: result.confirmed_class_name || modelClassName,
+        confirmed_confidence: result.confirmed_confidence === undefined ?
+          modelConfidence : result.confirmed_confidence,
+        confirmation_source: result.confirmation_source || "model"
+      };
+    }
 
     async function api(url, init) {
       return responseJson(await fetchImpl(url, init));
     }
 
-    async function loadExplanation(scanId) {
+    async function loadExplanation(scanId, expectedGeneration = generation) {
       try {
         const result = await api(`/api/v1/explain/${encodeURIComponent(scanId)}`, {
           method: "POST"
         });
+        if (expectedGeneration !== generation || scanId !== activeScanId) return false;
         view.renderInfluence(result);
+        return true;
       } catch (error) {
+        if (expectedGeneration !== generation || scanId !== activeScanId) return false;
         view.renderInfluence({
           error: "Model influence is unavailable for this scan. The classification result is unchanged."
         });
+        return false;
       }
     }
 
@@ -100,6 +122,8 @@
       }
 
       running = true;
+      const analysisGeneration = ++generation;
+      activeScanId = null;
       view.setBusy(true);
       try {
         view.transition("decoding", {file});
@@ -113,8 +137,10 @@
 
         view.transition("classifying", {file});
         const result = await api("/api/v1/classify", {method: "POST", body});
-        view.transition(result.low_confidence ? "review" : "result", result);
-        if (result.scan_id) void loadExplanation(result.scan_id);
+        activeScanId = result.scan_id || null;
+        activeResult = withModelEvidence(result);
+        view.transition(result.low_confidence ? "review" : "result", activeResult);
+        if (result.scan_id) void loadExplanation(result.scan_id, analysisGeneration);
         void loadHistory();
         return true;
       } catch (error) {
@@ -144,26 +170,79 @@
     }
 
     function reset() {
+      generation += 1;
+      activeScanId = null;
+      activeResult = null;
       view.transition("empty");
       if (typeof view.reset === "function") view.reset();
     }
 
     function openHistory(record) {
+      generation += 1;
+      activeScanId = null;
       const prediction = record.prediction || {};
-      view.showSection("scan");
-      view.transition(prediction.low_confidence ? "review" : "result", {
+      activeResult = withModelEvidence({
         ...prediction,
         scan_id: record.scan_id,
         from_history: true
       });
+      view.showSection("scan");
+      view.clearPreview("The source image is unavailable for this history record.");
+      view.transition(prediction.low_confidence ? "review" : "result", activeResult);
       view.renderInfluence({
-        error: "Model influence is available only immediately after a new classification."
+        error: (
+          "The source image is unavailable for this history record. " +
+          "Model influence is available only immediately after a new classification."
+        )
       });
     }
 
+    function selectAlternative(candidate) {
+      if (!activeResult) return false;
+      const selected = (activeResult.topk || []).find(
+        item => item.class_name === candidate.class_name
+      );
+      if (!selected || selected.class_name === activeResult.model_class_name) return false;
+      activeResult = {
+        ...activeResult,
+        confirmed_class_name: selected.class_name,
+        confirmed_confidence: selected.confidence,
+        confirmation_source: "user"
+      };
+      view.renderCorrection({
+        scan_id: activeResult.scan_id || null,
+        model_class_name: activeResult.model_class_name,
+        model_confidence: activeResult.model_confidence,
+        confirmed_class_name: activeResult.confirmed_class_name,
+        confirmed_confidence: activeResult.confirmed_confidence,
+        confirmation_source: activeResult.confirmation_source
+      });
+      return true;
+    }
+
+    function getAssessmentContext() {
+      if (!activeResult) return null;
+      return {
+        scan_id: activeResult.scan_id || null,
+        confirmed_class_name: activeResult.confirmed_class_name,
+        model_evidence: {
+          class_name: activeResult.model_class_name,
+          confidence: activeResult.model_confidence
+        },
+        confirmation: {
+          source: activeResult.confirmation_source,
+          selected_model_score: activeResult.confirmed_confidence
+        }
+      };
+    }
+
+    if (typeof view.setAlternativeHandler === "function") {
+      view.setAlternativeHandler(selectAlternative);
+    }
+
     return {
-      analyze, clearHistory, deleteHistory, loadExplanation, loadHistory,
-      openHistory, reset
+      analyze, clearHistory, deleteHistory, getAssessmentContext, loadExplanation,
+      loadHistory, openHistory, reset, selectAlternative
     };
   }
 
@@ -183,9 +262,11 @@
     const progressPlaceholder = document.getElementById("preview-placeholder");
     const resultPlaceholder = document.getElementById("result-placeholder");
     const resultCategory = document.getElementById("result-category");
+    const categoryLabel = document.getElementById("category-label");
     const resultBadge = document.getElementById("result-badge");
     const scanSaved = document.getElementById("scan-saved");
     const confidenceNumber = document.getElementById("confidence-number");
+    const confidenceLabel = document.getElementById("confidence-label");
     const confidenceBar = document.getElementById("confidence-bar");
     const alternativesList = document.getElementById("alternatives-list");
     const selectionNote = document.getElementById("selection-note");
@@ -200,6 +281,7 @@
     const historyEmpty = document.getElementById("history-empty");
     let previewUrl = "";
     let activeResult = null;
+    let alternativeHandler = null;
 
     function announce(message) {
       live.textContent = "";
@@ -224,6 +306,19 @@
       resultPlaceholder.hidden = true;
     }
 
+    function clearPreview(message) {
+      if (previewUrl) global.URL.revokeObjectURL(previewUrl);
+      previewUrl = "";
+      for (const image of [progressImage, resultImage]) {
+        image.removeAttribute("src");
+        image.hidden = true;
+      }
+      progressPlaceholder.hidden = false;
+      resultPlaceholder.hidden = false;
+      resultPlaceholder.textContent = "Photo unavailable";
+      influenceCopy.textContent = message;
+    }
+
     function renderAlternatives(result) {
       alternativesList.replaceChildren();
       const candidates = (Array.isArray(result.topk) ? result.topk : [])
@@ -236,18 +331,14 @@
       for (const item of candidates) {
         const button = element(document, "button", "alternative");
         button.type = "button";
+        button.dataset.category = item.class_name;
         button.setAttribute("aria-pressed", "false");
         button.append(
           element(document, "strong", "", formatCategory(item.class_name)),
           element(document, "span", "", percent(item.confidence))
         );
         button.addEventListener("click", () => {
-          for (const option of alternativesList.querySelectorAll(".alternative")) {
-            option.setAttribute("aria-pressed", String(option === button));
-          }
-          resultCategory.textContent = formatCategory(item.class_name);
-          selectionNote.hidden = false;
-          announce(`${formatCategory(item.class_name)} selected for review.`);
+          if (alternativeHandler) alternativeHandler(item);
         });
         alternativesList.append(button);
       }
@@ -269,12 +360,17 @@
 
     function renderResult(result) {
       activeResult = result;
-      resultCategory.textContent = formatCategory(result.class_name);
-      resultBadge.textContent = result.low_confidence ? "Needs review" : "Classified";
+      resultCategory.textContent = formatCategory(result.confirmed_class_name || result.class_name);
+      categoryLabel.textContent = result.confirmation_source === "user" ?
+        "Confirmed category" : "Likely category";
+      resultBadge.textContent = result.confirmation_source === "user" ?
+        "User correction" : result.low_confidence ? "Needs review" : "Classified";
       scanSaved.textContent = result.from_history ? "From history" :
         result.scan_id ? "Saved locally" : "Not saved";
-      confidenceNumber.textContent = percent(result.confidence);
-      confidenceBar.style.setProperty("--confidence", String(Math.max(0, Math.min(1, Number(result.confidence) || 0))));
+      confidenceLabel.textContent = result.confirmation_source === "user" ?
+        "Original model confidence" : "Model confidence";
+      confidenceNumber.textContent = percent(result.model_confidence ?? result.confidence);
+      confidenceBar.style.setProperty("--confidence", String(Math.max(0, Math.min(1, Number(result.model_confidence ?? result.confidence) || 0))));
       historyWarning.hidden = !result.history_error;
       historyWarning.textContent = result.history_error || "";
       selectionNote.hidden = true;
@@ -282,11 +378,33 @@
       influenceToggle.checked = false;
       imageStage.dataset.influence = "false";
       influenceCopy.textContent = result.from_history ?
-        "Model influence is available only immediately after a new classification." :
+        "The source image is unavailable for this history record. Model influence is available only immediately after a new classification." :
         result.scan_id ? "The optional model influence view is loading." :
           "This result was not saved, so model influence is unavailable.";
       renderAlternatives(result);
       renderValuation(result);
+      if (result.confirmation_source === "user") renderCorrection(result);
+    }
+
+    function renderCorrection(correction) {
+      resultCategory.textContent = formatCategory(correction.confirmed_class_name);
+      categoryLabel.textContent = "Confirmed category";
+      resultBadge.textContent = "User correction";
+      confidenceLabel.textContent = "Original model confidence";
+      confidenceNumber.textContent = percent(correction.model_confidence);
+      confidenceBar.style.setProperty("--confidence", String(Math.max(0, Math.min(1, Number(correction.model_confidence) || 0))));
+      for (const option of alternativesList.querySelectorAll(".alternative")) {
+        option.setAttribute("aria-pressed", String(
+          option.dataset.category === correction.confirmed_class_name
+        ));
+      }
+      selectionNote.hidden = false;
+      selectionNote.textContent =
+        `Confirmed as ${formatCategory(correction.confirmed_class_name)}. ` +
+        `The model originally predicted ${formatCategory(correction.model_class_name)} ` +
+        `at ${percent(correction.model_confidence)}; this alternative scored ` +
+        `${percent(correction.confirmed_confidence)}.`;
+      announce(`${formatCategory(correction.confirmed_class_name)} confirmed as a user correction.`);
     }
 
     function transition(state, payload = {}) {
@@ -403,12 +521,15 @@
     return {
       getMass: () => "",
       markHistoryDeleting,
+      clearPreview,
+      renderCorrection,
       renderHistory,
       renderInfluence,
       reset,
       setBusy,
       showPreview,
       showSection,
+      setAlternativeHandler(handler) { alternativeHandler = handler; },
       transition,
       get activeResult() { return activeResult; }
     };
@@ -484,7 +605,17 @@
     document.getElementById("analyze-another").addEventListener("click", () => controller.reset());
     document.getElementById("try-again").addEventListener("click", () => controller.reset());
     document.getElementById("open-assessment").addEventListener("click", () => {
-      document.getElementById("assessment-dialog").showModal();
+      const dialog = document.getElementById("assessment-dialog");
+      const context = controller.getAssessmentContext();
+      if (context) {
+        dialog.dataset.confirmedCategory = context.confirmed_class_name;
+        document.getElementById("assessment-summary").textContent =
+          `${formatCategory(context.confirmed_class_name)} is the confirmed category. ` +
+          `The model evidence remains ${formatCategory(context.model_evidence.class_name)} ` +
+          `at ${percent(context.model_evidence.confidence)}. Detailed condition, lifecycle, ` +
+          `and component assessment is the next product step.`;
+      }
+      dialog.showModal();
     });
     document.getElementById("clear-history").addEventListener("click", () => {
       if (global.confirm("Delete every locally saved scan? This cannot be undone.")) {
