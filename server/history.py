@@ -41,7 +41,14 @@ class HistoryStore:
                 """
                 CREATE TABLE IF NOT EXISTS pending_media_deletions (
                     scan_id TEXT NOT NULL,
-                    media_name TEXT PRIMARY KEY
+                    media_name TEXT PRIMARY KEY CHECK (
+                        typeof(media_name) = 'text'
+                        AND length(substr(media_name, 1, 32)) = 32
+                        AND substr(media_name, 1, 32) NOT GLOB '*[^0-9a-f]*'
+                        AND substr(media_name, 33) IN (
+                            '-thumbnail.jpg', '-original.jpg'
+                        )
+                    )
                 )
                 """
             )
@@ -167,6 +174,10 @@ class HistoryStore:
                 )
 
     def _unlink_media_name(self, media_name: str) -> None:
+        if not isinstance(media_name, str) or not _MANAGED_MEDIA_NAME.fullmatch(
+            media_name
+        ):
+            return
         directory_fd = os.open(
             self.media_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
         )

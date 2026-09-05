@@ -222,6 +222,59 @@ def test_delete_scan_unlinks_symlink_alias_without_deleting_another_scan(tmp_pat
     assert store.get_scan(second_id) is not None
 
 
+@pytest.mark.parametrize("tampered_kind", ["traversal", "absolute"])
+def test_clear_discards_invalid_legacy_journal_path_and_deletes_valid_media(
+    tmp_path, tampered_kind
+):
+    database = tmp_path / "history.sqlite"
+    media = tmp_path / "media"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            CREATE TABLE pending_media_deletions (
+                scan_id TEXT NOT NULL,
+                media_name TEXT PRIMARY KEY
+            )
+            """
+        )
+    store = HistoryStore(database, media)
+    scan_id = store.add_scan(
+        PREDICTION,
+        Image.new("RGB", (50, 50), "blue"),
+        retain_original=False,
+        original=None,
+    )
+    thumbnail = pathlib.Path(store.get_scan(scan_id)["thumbnail_path"])
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(b"must survive")
+    tampered = "../outside.jpg" if tampered_kind == "traversal" else str(outside)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO pending_media_deletions (scan_id, media_name) VALUES (?, ?)",
+            ("tampered", tampered),
+        )
+
+    assert store.clear() == 1
+    assert outside.read_bytes() == b"must survive"
+    assert not thumbnail.exists()
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT media_name FROM pending_media_deletions"
+        ).fetchall() == []
+
+
+def test_new_history_schema_rejects_invalid_journal_media_name(tmp_path):
+    database = tmp_path / "history.sqlite"
+    HistoryStore(database, tmp_path / "media")
+
+    with sqlite3.connect(database) as connection:
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO pending_media_deletions (scan_id, media_name) VALUES (?, ?)",
+                ("tampered", "../outside.jpg"),
+            )
+
+
 def test_failed_database_insert_removes_new_media_files(tmp_path):
     database = tmp_path / "history.sqlite"
     media = tmp_path / "media"
