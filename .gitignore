@@ -5,3 +5,4 @@ data/_smoketest/
 data/openrepair_v0.3_202507.csv
 __pycache__/
 *.pyc
+.superpowers/
