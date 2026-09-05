@@ -1,4 +1,7 @@
 import io
+import sqlite3
+import struct
+import zlib
 
 import pytest
 from PIL import Image
@@ -37,6 +40,17 @@ def _jpeg_bytes(color=(100, 140, 90)):
     Image.new("RGB", (300, 300), color).save(buf, format="JPEG")
     buf.seek(0)
     return buf
+
+
+def _png_header_without_pixels(width, height):
+    def chunk(kind, data):
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return io.BytesIO(
+        b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IEND", b"")
+    )
 
 
 @pytest.fixture
@@ -102,6 +116,58 @@ def test_failed_image_validation_creates_no_history_row(
 
     assert response.status_code == 400
     assert history_store.list_scans() == []
+
+
+@pytest.mark.parametrize("width", [40_000_001, 200_000_000])
+def test_pixel_limit_is_checked_before_decoding_the_full_image(
+    desktop_client, desktop_services, width
+):
+    classifier, history_store = desktop_services
+
+    response = desktop_client.post(
+        "/api/v1/classify",
+        data={
+            "image": (
+                _png_header_without_pixels(width, 1),
+                "oversized.png",
+            )
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 413
+    assert response.json == {"error": "image exceeds 40,000,000 pixels"}
+    assert classifier.calls == 0
+    assert history_store.list_scans() == []
+
+
+def test_history_write_failure_preserves_desktop_prediction(tmp_path):
+    classifier = FakeClassifier()
+    database = tmp_path / "history.sqlite"
+    history_store = HistoryStore(database, tmp_path / "media")
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TRIGGER reject_scan BEFORE INSERT ON scans "
+            "BEGIN SELECT RAISE(ABORT, 'history unavailable'); END"
+        )
+    app = create_app(classifier=classifier, history_store=history_store)
+    app.config["TESTING"] = True
+
+    response = app.test_client().post(
+        "/api/v1/classify",
+        data={"image": (_jpeg_bytes(), "x.jpg")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert response.json["class_name"] == PREDICTION["class_name"]
+    assert response.json["scan_id"] is None
+    assert response.json["history_error"] == (
+        "Classification complete, but this scan was not saved to history."
+    )
+    assert classifier.calls == 1
+    assert history_store.list_scans() == []
+    assert list((tmp_path / "media").iterdir()) == []
 
 
 def test_desktop_classification_works_when_history_is_disabled(tmp_path):

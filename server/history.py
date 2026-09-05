@@ -1,7 +1,9 @@
 """Private SQLite scan history with app-managed media files."""
 
 import json
+import os
 import pathlib
+import re
 import sqlite3
 import uuid
 from collections.abc import Mapping
@@ -9,6 +11,9 @@ from contextlib import closing
 from datetime import datetime, timezone
 
 from PIL import Image
+
+
+_MANAGED_MEDIA_NAME = re.compile(r"^[0-9a-f]{32}-(?:thumbnail|original)\.jpg$")
 
 
 class HistoryStore:
@@ -30,6 +35,20 @@ class HistoryStore:
                     thumbnail_path TEXT NOT NULL,
                     original_path TEXT
                 )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pending_media_deletions (
+                    scan_id TEXT NOT NULL,
+                    media_name TEXT PRIMARY KEY
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS pending_media_deletions_scan_id
+                ON pending_media_deletions (scan_id)
                 """
             )
             connection.commit()
@@ -123,12 +142,60 @@ class HistoryStore:
             ).fetchone()
         return self._record(row) if row is not None else None
 
-    def _unlink_managed(self, stored_path: str | None) -> None:
+    def _managed_media_name(self, stored_path: str | None) -> str | None:
         if stored_path is None:
-            return
-        target = pathlib.Path(stored_path).resolve()
-        if target != self.media_dir and target.is_relative_to(self.media_dir):
-            target.unlink(missing_ok=True)
+            return None
+        target = pathlib.Path(stored_path)
+        if (
+            target.is_absolute()
+            and target.parent == self.media_dir
+            and _MANAGED_MEDIA_NAME.fullmatch(target.name)
+        ):
+            return target.name
+        return None
+
+    def _queue_media(self, connection, scan_id: str, row: sqlite3.Row) -> None:
+        for column in ("thumbnail_path", "original_path"):
+            media_name = self._managed_media_name(row[column])
+            if media_name is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO pending_media_deletions (scan_id, media_name)
+                    VALUES (?, ?)
+                    """,
+                    (scan_id, media_name),
+                )
+
+    def _unlink_media_name(self, media_name: str) -> None:
+        directory_fd = os.open(
+            self.media_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        )
+        try:
+            try:
+                os.unlink(media_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+        finally:
+            os.close(directory_fd)
+
+    def _drain_pending_deletions(self, scan_id: str | None = None) -> None:
+        query = "SELECT scan_id, media_name FROM pending_media_deletions"
+        parameters = ()
+        if scan_id is not None:
+            query += " WHERE scan_id = ?"
+            parameters = (scan_id,)
+        query += " ORDER BY rowid"
+        with closing(self._connect()) as connection:
+            rows = connection.execute(query, parameters).fetchall()
+
+        for row in rows:
+            self._unlink_media_name(row["media_name"])
+            with closing(self._connect()) as connection:
+                with connection:
+                    connection.execute(
+                        "DELETE FROM pending_media_deletions WHERE media_name = ?",
+                        (row["media_name"],),
+                    )
 
     def delete_scan(self, scan_id: str) -> bool:
         with closing(self._connect()) as connection:
@@ -137,21 +204,26 @@ class HistoryStore:
                     "SELECT thumbnail_path, original_path FROM scans WHERE scan_id = ?",
                     (scan_id,),
                 ).fetchone()
-                if row is None:
+                pending = connection.execute(
+                    "SELECT 1 FROM pending_media_deletions WHERE scan_id = ? LIMIT 1",
+                    (scan_id,),
+                ).fetchone()
+                if row is None and pending is None:
                     return False
-                connection.execute("DELETE FROM scans WHERE scan_id = ?", (scan_id,))
-        self._unlink_managed(row["thumbnail_path"])
-        self._unlink_managed(row["original_path"])
+                if row is not None:
+                    self._queue_media(connection, scan_id, row)
+                    connection.execute("DELETE FROM scans WHERE scan_id = ?", (scan_id,))
+        self._drain_pending_deletions(scan_id)
         return True
 
     def clear(self) -> int:
         with closing(self._connect()) as connection:
             with connection:
                 rows = connection.execute(
-                    "SELECT thumbnail_path, original_path FROM scans"
+                    "SELECT scan_id, thumbnail_path, original_path FROM scans"
                 ).fetchall()
+                for row in rows:
+                    self._queue_media(connection, row["scan_id"], row)
                 connection.execute("DELETE FROM scans")
-        for row in rows:
-            self._unlink_managed(row["thumbnail_path"])
-            self._unlink_managed(row["original_path"])
+        self._drain_pending_deletions()
         return len(rows)

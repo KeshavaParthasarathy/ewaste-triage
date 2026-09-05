@@ -48,23 +48,25 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
             return None, (jsonify({"error": "no file field named 'image'"}), 400)
         try:
             image = Image.open(request.files["image"].stream)
-            image.load()
-            return image, None
+            return normalize_image(image), None
+        except ImageTooLarge as exc:
+            return None, (jsonify({"error": str(exc)}), 413)
+        except Image.DecompressionBombError:
+            return None, (jsonify({"error": "image exceeds 40,000,000 pixels"}), 413)
         except (UnidentifiedImageError, OSError):
             return None, (jsonify({"error": "uploaded file is not a decodable image"}), 400)
 
     def _classification_result(image):
-        normalized = normalize_image(image)
-        result = app.config["CLASSIFIER"].classify(normalized)
+        result = app.config["CLASSIFIER"].classify(image)
         mass_g = request.form.get("mass_g", type=float)
 
         if result["low_confidence"]:
             result["advice"] = "Low confidence — route this device to manual teardown."
-            return result, normalized
+            return result, image
 
         if result["unu_key"] is None:
             result["advice"] = "Class name has no 4-digit UNU-KEY prefix; cannot estimate value."
-            return result, normalized
+            return result, image
 
         try:
             result["valuation"] = valuation.estimate(result["unu_key"], mass_g=mass_g)
@@ -72,7 +74,7 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
             result["advice"] = "Composition table not filled in — class only, no value estimate."
         except valuation.UnknownKey as exc:
             result["advice"] = str(exc)
-        return result, normalized
+        return result, image
 
     @app.get("/")
     def home():

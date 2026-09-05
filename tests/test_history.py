@@ -1,3 +1,4 @@
+import os
 import pathlib
 import sqlite3
 import uuid
@@ -130,6 +131,95 @@ def test_delete_scan_never_treats_media_directory_as_a_file(tmp_path):
 
     assert store.delete_scan(scan_id) is True
     assert media.is_dir()
+
+
+def test_delete_scan_keeps_failed_cleanup_recoverable(tmp_path, monkeypatch):
+    database = tmp_path / "history.sqlite"
+    media = tmp_path / "media"
+    store = HistoryStore(database, media)
+    scan_id = store.add_scan(
+        PREDICTION,
+        Image.new("RGB", (50, 50)),
+        retain_original=False,
+        original=None,
+    )
+    thumbnail = pathlib.Path(store.get_scan(scan_id)["thumbnail_path"])
+    real_unlink = os.unlink
+
+    def deny_unlink_once(path, *args, **kwargs):
+        monkeypatch.setattr(os, "unlink", real_unlink)
+        raise PermissionError("media is busy")
+
+    monkeypatch.setattr(os, "unlink", deny_unlink_once)
+
+    with pytest.raises(PermissionError, match="media is busy"):
+        store.delete_scan(scan_id)
+
+    assert thumbnail.exists()
+    reopened = HistoryStore(database, media)
+    assert reopened.delete_scan(scan_id) is True
+    assert not thumbnail.exists()
+    assert reopened.delete_scan(scan_id) is False
+
+
+def test_clear_reports_partial_cleanup_failure_and_retries_remaining_media(
+    tmp_path, monkeypatch
+):
+    database = tmp_path / "history.sqlite"
+    media = tmp_path / "media"
+    store = HistoryStore(database, media)
+    for color in ("blue", "red"):
+        store.add_scan(
+            PREDICTION,
+            Image.new("RGB", (50, 50), color),
+            retain_original=False,
+            original=None,
+        )
+    real_unlink = os.unlink
+    calls = 0
+
+    def fail_second_unlink(path, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise PermissionError("second media file is busy")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", fail_second_unlink)
+
+    with pytest.raises(PermissionError, match="second media file is busy"):
+        store.clear()
+
+    assert len(list(media.iterdir())) == 1
+    monkeypatch.setattr(os, "unlink", real_unlink)
+    reopened = HistoryStore(database, media)
+    assert reopened.clear() == 0
+    assert list(media.iterdir()) == []
+
+
+def test_delete_scan_unlinks_symlink_alias_without_deleting_another_scan(tmp_path):
+    store = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media")
+    first_id = store.add_scan(
+        PREDICTION,
+        Image.new("RGB", (50, 50), "blue"),
+        retain_original=False,
+        original=None,
+    )
+    second_id = store.add_scan(
+        PREDICTION,
+        Image.new("RGB", (50, 50), "red"),
+        retain_original=False,
+        original=None,
+    )
+    first_thumbnail = pathlib.Path(store.get_scan(first_id)["thumbnail_path"])
+    second_thumbnail = pathlib.Path(store.get_scan(second_id)["thumbnail_path"])
+    first_thumbnail.unlink()
+    first_thumbnail.symlink_to(second_thumbnail)
+
+    assert store.delete_scan(first_id) is True
+    assert not os.path.lexists(first_thumbnail)
+    assert second_thumbnail.exists()
+    assert store.get_scan(second_id) is not None
 
 
 def test_failed_database_insert_removes_new_media_files(tmp_path):
