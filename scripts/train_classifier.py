@@ -24,13 +24,15 @@ import argparse, json, pathlib, random, shutil, sys, time
 import numpy as np
 import torch
 import torch.nn as nn
-from PIL import ImageOps
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import datasets, models, transforms
 from sklearn.metrics import classification_report, confusion_matrix
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]   # ImageNet stats; the backbone expects these
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from server.imaging import MEAN, STD, normalize_image, preprocess_array
 
 
 def seed_everything(seed):
@@ -53,7 +55,7 @@ def build_transforms(train):
         # Aggressive augmentation is how you survive a small dataset AND narrow the
         # gap between clean dataset images and messy real phone photos.
         return transforms.Compose([
-            transforms.Lambda(ImageOps.exif_transpose),
+            transforms.Lambda(normalize_image),
             transforms.RandomResizedCrop(224, scale=(0.6, 1.0)),
             transforms.RandomHorizontalFlip(),
             transforms.RandomRotation(15),
@@ -62,13 +64,7 @@ def build_transforms(train):
             transforms.Normalize(MEAN, STD),
             transforms.RandomErasing(p=0.25, scale=(0.02, 0.15)),
         ])
-    return transforms.Compose([
-        transforms.Lambda(ImageOps.exif_transpose),
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize(MEAN, STD),
-    ])
+    return transforms.Lambda(lambda image: torch.from_numpy(preprocess_array(image))[0])
 
 
 def build_model(arch, n_classes, unfreeze_blocks):

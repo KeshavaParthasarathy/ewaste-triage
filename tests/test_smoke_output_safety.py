@@ -8,13 +8,17 @@ from pathlib import Path
 def test_smoke_test_does_not_overwrite_default_production_checkpoint(tmp_path):
     repo = tmp_path / "repo"
     script_dir = repo / "scripts"
+    server_dir = repo / "server"
     model_dir = repo / "models"
     script_dir.mkdir(parents=True)
+    server_dir.mkdir()
     model_dir.mkdir()
 
     source = Path(__file__).parents[1] / "scripts" / "train_classifier.py"
     script = script_dir / "train_classifier.py"
     shutil.copy2(source, script)
+    shutil.copy2(Path(__file__).parents[1] / "server" / "imaging.py",
+                 server_dir / "imaging.py")
 
     production_checkpoint = model_dir / "best.pt"
     production_classes = model_dir / "classes.json"

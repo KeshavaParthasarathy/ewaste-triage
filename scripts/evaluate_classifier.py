@@ -21,11 +21,11 @@ from datetime import datetime, timezone
 import numpy as np
 import torch
 import torch.nn.functional as F
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
-from torchvision import transforms
 
-from server.classifier import MEAN, STD, _build
+from server.classifier import _build
+from server.imaging import preprocess_array, preprocess_image
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -342,16 +342,11 @@ def evaluate_folder(data_dir, checkpoint, out_dir):
     heatmaps_dir = out_dir / "heatmaps"
     images_dir.mkdir(parents=True, exist_ok=True)
     heatmaps_dir.mkdir(parents=True, exist_ok=True)
-    crop_transform = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(224)])
-    tensor_transform = transforms.Compose([
-        transforms.ToTensor(), transforms.Normalize(MEAN, STD)
-    ])
     rows = []
     for number, sample in enumerate(samples, start=1):
         with Image.open(sample["path"]) as opened:
-            source_image = ImageOps.exif_transpose(opened).convert("RGB")
-        model_input = crop_transform(source_image)
-        tensor = tensor_transform(model_input).unsqueeze(0)
+            model_input = preprocess_image(opened)
+            tensor = torch.from_numpy(preprocess_array(opened))
         with torch.no_grad():
             probabilities = torch.softmax(model(tensor), dim=1)[0]
         count = min(3, len(classes))

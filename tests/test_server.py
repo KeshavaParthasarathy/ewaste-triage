@@ -8,6 +8,7 @@ from torchvision import models
 
 import server.app as app_module
 from server.app import create_app
+from server.imaging import ImageTooLarge
 
 
 @pytest.fixture
@@ -31,6 +32,16 @@ def client(ckpt, tmp_path):
 def _jpeg_bytes(color=(100, 140, 90)):
     buf = io.BytesIO()
     Image.new("RGB", (300, 300), color).save(buf, format="JPEG")
+    buf.seek(0)
+    return buf
+
+
+def _oriented_jpeg_bytes():
+    image = Image.new("RGB", (40, 20), "red")
+    exif = image.getexif()
+    exif[274] = 6
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", exif=exif)
     buf.seek(0)
     return buf
 
@@ -172,6 +183,19 @@ def test_classify_without_a_file_is_a_400(client):
     assert r.status_code == 400
 
 
+def test_classify_rejects_images_over_the_shared_pixel_limit(client, monkeypatch):
+    def reject_large_image(_image):
+        raise ImageTooLarge("image exceeds 40,000,000 pixels")
+
+    monkeypatch.setattr(client.application.config["CLASSIFIER"], "classify", reject_large_image)
+
+    r = client.post("/classify", data={"image": (_jpeg_bytes(), "x.jpg")},
+                    content_type="multipart/form-data")
+
+    assert r.status_code == 413
+    assert r.json == {"error": "image exceeds 40,000,000 pixels"}
+
+
 def test_ingest_writes_into_the_class_folder(client, tmp_path):
     r = client.post("/ingest",
                     data={"image": (_jpeg_bytes(), "x.jpg"),
@@ -181,6 +205,19 @@ def test_ingest_writes_into_the_class_folder(client, tmp_path):
     assert r.status_code == 200
     written = list((tmp_path / "photos" / "0306_mobile_phone").glob("dev01_*.jpg"))
     assert len(written) == 1
+
+
+def test_ingest_physically_applies_exif_orientation(client, tmp_path):
+    r = client.post("/ingest",
+                    data={"image": (_oriented_jpeg_bytes(), "x.jpg"),
+                          "class_name": "0306_mobile_phone",
+                          "device_id": "dev01"},
+                    content_type="multipart/form-data")
+
+    assert r.status_code == 200
+    written = next((tmp_path / "photos" / "0306_mobile_phone").glob("dev01_*.jpg"))
+    with Image.open(written) as saved:
+        assert saved.size == (20, 40)
 
 
 def test_ingest_uses_the_next_numeric_suffix_without_overwriting_a_gap(client, tmp_path):

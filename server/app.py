@@ -15,6 +15,7 @@ from PIL import Image, UnidentifiedImageError
 from scripts import valuation
 from scripts.photo_classes import PHOTO_CLASS_SPECS
 from server.classifier import Classifier
+from server.imaging import ImageTooLarge, normalize_image
 from server.netinfo import print_access_urls
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -76,7 +77,10 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
         if err:
             return err
 
-        result = app.config["CLASSIFIER"].classify(img)
+        try:
+            result = app.config["CLASSIFIER"].classify(img)
+        except ImageTooLarge as exc:
+            return jsonify({"error": str(exc)}), 413
         mass_g = request.form.get("mass_g", type=float)
 
         if result["low_confidence"]:
@@ -110,6 +114,11 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
         if err:
             return err
 
+        try:
+            normalized = normalize_image(img)
+        except ImageTooLarge as exc:
+            return jsonify({"error": str(exc)}), 413
+
         root = app.config["INGEST_ROOT"].resolve()
         out_dir = (root / class_name).resolve()
         # Defence in depth: the regex should already prevent this, but this writes to
@@ -124,7 +133,7 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
         next_number = max(numbers, default=-1) + 1
         # Always re-encode to JPEG: torchvision's ImageFolder silently drops .heic files.
         path = out_dir / f"{device_id}_{next_number:03d}.jpg"
-        img.convert("RGB").save(path, format="JPEG", quality=92)
+        normalized.save(path, format="JPEG", quality=92)
         return jsonify({"saved": str(path.relative_to(root)),
                         "device_photo_count": len(existing) + 1})
 
