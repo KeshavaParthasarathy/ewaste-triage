@@ -58,6 +58,8 @@ def test_capture_page_has_no_external_assets(client):
     assert "<form" in html or "<input" in html
     for scheme in ("http://", "https://", "//cdn"):
         assert scheme not in html, f"page references an external asset ({scheme}); it must be self-contained"
+    assert client.get("/static/app.css").status_code == 200
+    assert client.get("/static/app.js").status_code == 200
 
 
 def test_collection_mode_starts_without_checkpoint_and_serves_collection_page(tmp_path):
