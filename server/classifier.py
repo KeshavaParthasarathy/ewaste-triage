@@ -8,10 +8,13 @@ import pathlib
 
 import torch
 import torch.nn as nn
-from torchvision import models, transforms
+from torchvision import models
 
-MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
+from server.imaging import MEAN, STD, preprocess_array, register_image_formats
+
 DEFAULT_CONFIDENCE_FLOOR = 0.60
+
+register_image_formats()
 
 
 def _build(arch, n_classes):
@@ -47,15 +50,8 @@ class Classifier:
         self.model = _build(self.arch, len(self.classes))
         self.model.load_state_dict(ck["state_dict"])
         self.model.eval()
-        self.tf = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(MEAN, STD),
-        ])
-
     def classify(self, pil_image):
-        x = self.tf(pil_image.convert("RGB")).unsqueeze(0)
+        x = torch.from_numpy(preprocess_array(pil_image))
         with torch.no_grad():
             prob = torch.softmax(self.model(x), 1)[0]
         k = min(3, len(self.classes))

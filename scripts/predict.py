@@ -13,12 +13,12 @@ this one by hand" is more useful — and more honest — than one that always gu
 import argparse, pathlib, sys
 import torch
 from PIL import Image
-from torchvision import models, transforms
+from torchvision import models
 
 from scripts import valuation
+from server.imaging import preprocess_array, register_image_formats
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 CONFIDENCE_FLOOR = 0.60
 
 
@@ -51,9 +51,8 @@ def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     model, classes = load(a.ckpt, device)
 
-    tf = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(224),
-                             transforms.ToTensor(), transforms.Normalize(MEAN, STD)])
-    x = tf(Image.open(a.image).convert("RGB")).unsqueeze(0).to(device)
+    register_image_formats()
+    x = torch.from_numpy(preprocess_array(Image.open(a.image))).to(device)
     with torch.no_grad():
         prob = torch.softmax(model(x), 1)[0]
     conf, idx = prob.topk(min(a.topk, len(classes)))
