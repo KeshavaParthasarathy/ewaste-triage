@@ -2,11 +2,13 @@ import io
 import sqlite3
 import struct
 import zlib
+from unittest.mock import Mock
 
 import pytest
 from PIL import Image
 
 from server.app import create_app
+from server.explanations import ActiveSourceImageStore
 from server.history import HistoryStore
 
 
@@ -33,6 +35,22 @@ class FakeClassifier:
         self.calls += 1
         image.load()
         return dict(PREDICTION)
+
+    def probabilities(self, image):
+        brightness = sum(image.convert("RGB").resize((1, 1)).getpixel((0, 0))) / (3 * 255)
+        return [brightness, 1.0 - brightness]
+
+
+class ProtocolOnlyEngine:
+    def __init__(self):
+        self.probability_calls = 0
+
+    def classify(self, image):
+        return dict(PREDICTION)
+
+    def probabilities(self, image):
+        self.probability_calls += 1
+        return [0.9, 0.1]
 
 
 def _jpeg_bytes(color=(100, 140, 90)):
@@ -229,3 +247,99 @@ def test_history_api_is_empty_when_history_is_disabled():
     assert client.get("/api/v1/history/missing").status_code == 404
     assert client.delete("/api/v1/history/missing").status_code == 404
     assert client.delete("/api/v1/history").json == {"deleted_count": 0}
+
+
+def _desktop_scan(client):
+    response = client.post(
+        "/api/v1/classify",
+        data={"image": (_jpeg_bytes(), "x.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    return response.json["scan_id"]
+
+
+def test_explain_returns_normalized_grid_and_model_influence_copy(desktop_client):
+    scan_id = _desktop_scan(desktop_client)
+
+    response = desktop_client.post(f"/api/v1/explain/{scan_id}")
+
+    assert response.status_code == 200
+    assert response.json["scan_id"] == scan_id
+    assert response.json["grid_size"] == 7
+    assert len(response.json["values"]) == 7
+    assert all(len(row) == 7 for row in response.json["values"])
+    assert all(0.0 <= value <= 1.0 for row in response.json["values"] for value in row)
+    assert "influenced this result" in response.json["copy"]
+    assert "not a physical diagnosis" in response.json["copy"].lower()
+
+
+def test_explain_uses_the_inference_protocol_without_a_classes_attribute(tmp_path):
+    engine = ProtocolOnlyEngine()
+    app = create_app(
+        classifier=engine,
+        history_store=HistoryStore(tmp_path / "history.sqlite", tmp_path / "media"),
+    )
+    app.config["TESTING"] = True
+    client = app.test_client()
+    scan_id = _desktop_scan(client)
+    assert engine.probability_calls == 0
+
+    response = client.post(f"/api/v1/explain/{scan_id}")
+
+    assert response.status_code == 200
+
+
+def test_explanation_failure_does_not_remove_prediction(desktop_client, desktop_services, monkeypatch):
+    scan_id = _desktop_scan(desktop_client)
+    monkeypatch.setattr("server.app.occlusion_map", Mock(side_effect=RuntimeError("boom")))
+
+    response = desktop_client.post(f"/api/v1/explain/{scan_id}")
+
+    assert response.status_code == 503
+    assert response.json["prediction_available"] is True
+    assert desktop_services[1].get_scan(scan_id)["prediction"]["class_name"] == PREDICTION["class_name"]
+
+
+def test_explain_rejects_unknown_scan(desktop_client):
+    response = desktop_client.post("/api/v1/explain/not-a-scan")
+
+    assert response.status_code == 404
+
+
+def test_explain_rejects_expired_source_image(tmp_path):
+    now = [0.0]
+    source_images = ActiveSourceImageStore(clock=lambda: now[0])
+    app = create_app(
+        classifier=FakeClassifier(),
+        history_store=HistoryStore(tmp_path / "history.sqlite", tmp_path / "media"),
+        source_image_store=source_images,
+    )
+    app.config["TESTING"] = True
+    client = app.test_client()
+    scan_id = _desktop_scan(client)
+    now[0] = 300.0
+
+    response = client.post(f"/api/v1/explain/{scan_id}")
+
+    assert response.status_code == 404
+
+
+def test_explain_allows_only_one_concurrent_job(desktop_client):
+    scan_id = _desktop_scan(desktop_client)
+    source_images = desktop_client.application.config["SOURCE_IMAGE_STORE"]
+    assert source_images.try_acquire() is True
+    try:
+        response = desktop_client.post(f"/api/v1/explain/{scan_id}")
+    finally:
+        source_images.release()
+
+    assert response.status_code == 429
+
+
+def test_desktop_history_does_not_store_explanation_source_image(desktop_client, desktop_services):
+    scan_id = _desktop_scan(desktop_client)
+    record = desktop_services[1].get_scan(scan_id)
+
+    assert record["original_path"] is None
+    assert "source_image" not in record

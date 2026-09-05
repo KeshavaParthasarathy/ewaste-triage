@@ -10,11 +10,13 @@ import pathlib
 import re
 
 from flask import Flask, jsonify, request, send_from_directory
+import numpy as np
 from PIL import Image, UnidentifiedImageError
 
 from scripts import valuation
 from scripts.photo_classes import PHOTO_CLASS_SPECS
 from server.classifier import Classifier
+from server.explanations import ActiveSourceImageStore, occlusion_map
 from server.imaging import ImageTooLarge, normalize_image
 from server.netinfo import print_access_urls
 
@@ -27,7 +29,7 @@ SAFE_DEVICE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]*$")
 
 
 def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=False,
-               classifier=None, history_store=None):
+               classifier=None, history_store=None, source_image_store=None, clock=None):
     app = Flask(__name__, static_folder=str(ROOT / "server" / "static"))
     ckpt_path = pathlib.Path(ckpt_path or ROOT / "models" / "best.pt")
     ingest_root = pathlib.Path(ingest_root or ROOT / "data" / "photos" / "raw")
@@ -40,6 +42,11 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
         else Classifier(ckpt_path)
     )
     app.config["HISTORY_STORE"] = history_store
+    app.config["SOURCE_IMAGE_STORE"] = (
+        source_image_store if source_image_store is not None
+        else ActiveSourceImageStore(clock=clock) if clock is not None
+        else ActiveSourceImageStore()
+    )
     app.config["COLLECTION_ONLY"] = collection_only
     app.config["INGEST_ROOT"] = ingest_root
 
@@ -145,7 +152,55 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
                     "Classification complete, but this scan was not saved to history."
                 )
         result["scan_id"] = scan_id
+        if scan_id is not None:
+            try:
+                engine = app.config["CLASSIFIER"]
+                classes = getattr(engine, "classes", None)
+                class_index = classes.index(result["class_name"]) if classes is not None else None
+                app.config["SOURCE_IMAGE_STORE"].put(
+                    scan_id, normalized, class_index=class_index
+                )
+            except Exception:
+                app.logger.exception(
+                    "classification succeeded but explanation source could not be retained"
+                )
         return jsonify(result)
+
+    @app.post("/api/v1/explain/<scan_id>")
+    def explain(scan_id):
+        source_images = app.config["SOURCE_IMAGE_STORE"]
+        active_image = source_images.get_for_explanation(scan_id)
+        if active_image is None:
+            return jsonify({"error": "scan not found or explanation image expired"}), 404
+        if not source_images.try_acquire():
+            return jsonify({
+                "error": "an explanation is already in progress",
+                "prediction_available": True,
+            }), 429
+
+        image, class_index = active_image
+        try:
+            if class_index is None:
+                class_index = int(np.asarray(app.config["CLASSIFIER"].probabilities(image)).argmax())
+            values = occlusion_map(app.config["CLASSIFIER"], image, class_index)
+        except Exception:
+            app.logger.exception("explanation failed after classification")
+            return jsonify({
+                "error": "explanation unavailable",
+                "prediction_available": True,
+            }), 503
+        finally:
+            source_images.release()
+
+        return jsonify({
+            "scan_id": scan_id,
+            "grid_size": int(values.shape[0]),
+            "values": values.tolist(),
+            "copy": (
+                "These are regions that influenced this result. They describe model "
+                "behavior, not a physical diagnosis or detected component."
+            ),
+        })
 
     @app.get("/api/v1/history")
     def list_history():
@@ -166,12 +221,15 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
         deleted = store.delete_scan(scan_id) if store is not None else False
         if not deleted:
             return jsonify({"error": "scan not found"}), 404
+        app.config["SOURCE_IMAGE_STORE"].remove(scan_id)
         return jsonify({"deleted": True})
 
     @app.delete("/api/v1/history")
     def clear_history():
         store = app.config["HISTORY_STORE"]
-        return jsonify({"deleted_count": store.clear() if store is not None else 0})
+        deleted_count = store.clear() if store is not None else 0
+        app.config["SOURCE_IMAGE_STORE"].clear()
+        return jsonify({"deleted_count": deleted_count})
 
     @app.post("/ingest")
     def ingest():
