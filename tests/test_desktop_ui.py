@@ -150,6 +150,135 @@ Promise.all([first, second]).then(async ([firstAccepted, secondAccepted]) => {
     assert ["/api/v1/explain/scan-7", "POST"] in result["requests"]
 
 
+def test_stale_classification_success_cannot_replace_an_open_history_record():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const states = [];
+const busy = [];
+const requests = [];
+let resolveClassification;
+const classification = new Promise(resolve => { resolveClassification = resolve; });
+const view = {
+  transition(state, payload = {}) { states.push([state, payload.scan_id || null]); },
+  setBusy(value) { busy.push(value); },
+  showPreview() {}, clearPreview() {}, showSection() {},
+  renderInfluence() {}, renderHistory() {}, markHistoryDeleting() {}
+};
+const fetchImpl = async (url) => {
+  requests.push(url);
+  if (url === '/api/v1/classify') return classification;
+  if (url === '/api/v1/history') return {ok: true, json: async () => []};
+  if (url.startsWith('/api/v1/explain/')) return new Promise(() => {});
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({
+  view, fetchImpl,
+  formDataFactory: () => ({append() {}}),
+  nextFrame: async () => {},
+  objectUrl: () => 'blob:pending'
+});
+(async () => {
+  const pending = controller.analyze({name: 'pending.jpg', type: 'image/jpeg'});
+  await new Promise(resolve => setImmediate(resolve));
+  controller.openHistory({
+    scan_id: 'history-A',
+    prediction: {class_name: '0301_keyboard', confidence: .77, low_confidence: false, topk: []}
+  });
+  const busyBeforeResolve = busy.slice();
+  resolveClassification({
+    ok: true,
+    json: async () => ({scan_id: 'late-B', class_name: '0306_mobile_phone', confidence: .9, low_confidence: false, topk: []})
+  });
+  await pending;
+  await new Promise(resolve => setImmediate(resolve));
+  process.stdout.write(JSON.stringify({
+    states, busy, busyBeforeResolve, requests,
+    assessment: controller.getAssessmentContext()
+  }));
+})();
+""")
+
+    assert result["states"] == [
+        ["decoding", None],
+        ["classifying", None],
+        ["result", "history-A"],
+    ]
+    assert result["busyBeforeResolve"] == [True, False]
+    assert result["busy"] == [True, False]
+    assert result["assessment"]["scan_id"] == "history-A"
+    assert "/api/v1/explain/late-B" not in result["requests"]
+
+
+def test_stale_classification_error_cannot_end_busy_state_for_a_newer_analysis():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const states = [];
+const busy = [];
+const classifications = [];
+function deferredResponse() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return {promise, resolve};
+}
+const view = {
+  transition(state, payload = {}) { states.push([state, payload.scan_id || payload.message || null]); },
+  setBusy(value) { busy.push(value); },
+  showPreview() {}, reset() {},
+  renderInfluence() {}, renderHistory() {}, markHistoryDeleting() {}
+};
+const fetchImpl = async (url) => {
+  if (url === '/api/v1/classify') {
+    const deferred = deferredResponse();
+    classifications.push(deferred);
+    return deferred.promise;
+  }
+  if (url === '/api/v1/history') return {ok: true, json: async () => []};
+  if (url.startsWith('/api/v1/explain/')) return new Promise(() => {});
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({
+  view, fetchImpl,
+  formDataFactory: () => ({append() {}}),
+  nextFrame: async () => {},
+  objectUrl: file => 'blob:' + file.name
+});
+(async () => {
+  const first = controller.analyze({name: 'a.jpg', type: 'image/jpeg'});
+  await new Promise(resolve => setImmediate(resolve));
+  controller.reset();
+  const second = controller.analyze({name: 'b.jpg', type: 'image/jpeg'});
+  await new Promise(resolve => setImmediate(resolve));
+  const secondStarted = classifications.length === 2;
+  classifications[0].resolve({
+    ok: false, status: 503, json: async () => ({error: 'late failure from A'})
+  });
+  await first;
+  await new Promise(resolve => setImmediate(resolve));
+  const busyBeforeSecondResolve = busy.slice();
+  if (secondStarted) {
+    classifications[1].resolve({
+      ok: true,
+      json: async () => ({scan_id: null, class_name: '0303_laptop', confidence: .8, low_confidence: false, topk: []})
+    });
+  }
+  await second;
+  process.stdout.write(JSON.stringify({states, busy, busyBeforeSecondResolve, secondStarted}));
+})();
+""")
+
+    assert result["secondStarted"] is True
+    assert result["states"] == [
+        ["decoding", None],
+        ["classifying", None],
+        ["empty", None],
+        ["decoding", None],
+        ["classifying", None],
+        ["result", None],
+    ]
+    assert result["busyBeforeSecondResolve"] == [True, False, True]
+    assert result["busy"] == [True, False, True, False]
+
+
 def test_controller_ignores_an_explanation_from_an_older_active_scan():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);

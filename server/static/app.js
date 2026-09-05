@@ -60,8 +60,8 @@
     const formDataFactory = options.formDataFactory;
     const nextFrame = options.nextFrame;
     const objectUrl = options.objectUrl;
-    let running = false;
     let generation = 0;
+    let activeAnalysisGeneration = null;
     let activeScanId = null;
     let activeResult = null;
 
@@ -112,8 +112,22 @@
       }
     }
 
+    function analysisIsCurrent(analysisGeneration) {
+      return analysisGeneration === generation &&
+        analysisGeneration === activeAnalysisGeneration;
+    }
+
+    function invalidateAnalysis() {
+      generation += 1;
+      activeScanId = null;
+      if (activeAnalysisGeneration !== null) {
+        activeAnalysisGeneration = null;
+        view.setBusy(false);
+      }
+    }
+
     async function analyze(file) {
-      if (running) return false;
+      if (activeAnalysisGeneration !== null) return false;
       if (!isSupportedImage(file)) {
         view.transition("error", {
           message: "Choose a JPEG, PNG, HEIC, or WebP image and try again."
@@ -121,14 +135,15 @@
         return false;
       }
 
-      running = true;
       const analysisGeneration = ++generation;
+      activeAnalysisGeneration = analysisGeneration;
       activeScanId = null;
       view.setBusy(true);
       try {
         view.transition("decoding", {file});
         view.showPreview(objectUrl(file));
         await nextFrame();
+        if (!analysisIsCurrent(analysisGeneration)) return false;
 
         const body = formDataFactory();
         body.append("image", file, file.name);
@@ -137,6 +152,7 @@
 
         view.transition("classifying", {file});
         const result = await api("/api/v1/classify", {method: "POST", body});
+        if (!analysisIsCurrent(analysisGeneration)) return false;
         activeScanId = result.scan_id || null;
         activeResult = withModelEvidence(result);
         view.transition(result.low_confidence ? "review" : "result", activeResult);
@@ -144,11 +160,14 @@
         void loadHistory();
         return true;
       } catch (error) {
+        if (!analysisIsCurrent(analysisGeneration)) return false;
         view.transition("error", {message: error.message});
         return false;
       } finally {
-        running = false;
-        view.setBusy(false);
+        if (activeAnalysisGeneration === analysisGeneration) {
+          activeAnalysisGeneration = null;
+          view.setBusy(false);
+        }
       }
     }
 
@@ -170,16 +189,14 @@
     }
 
     function reset() {
-      generation += 1;
-      activeScanId = null;
+      invalidateAnalysis();
       activeResult = null;
       view.transition("empty");
       if (typeof view.reset === "function") view.reset();
     }
 
     function openHistory(record) {
-      generation += 1;
-      activeScanId = null;
+      invalidateAnalysis();
       const prediction = record.prediction || {};
       activeResult = withModelEvidence({
         ...prediction,
