@@ -6,11 +6,11 @@ the last block too). That is what makes ~100 images per class enough instead of 
 
 Expected layout (torchvision ImageFolder):
 
-    data/photos/train/0306_mobile_phones/*.jpg
+    data/photos/train/0306_mobile_phone/*.jpg
     data/photos/train/0301_small_it/*.jpg
-    data/photos/val/0306_mobile_phones/*.jpg
+    data/photos/val/0306_mobile_phone/*.jpg
     ...
-    data/photos/holdout_own/0306_mobile_phones/*.jpg    <- YOUR phone photos (optional)
+    data/photos/holdout_own/0306_mobile_phone/*.jpg    <- YOUR phone photos (optional)
 
 The holdout set is the science: train on public dataset images, then measure how much
 accuracy drops on photos you took yourself. That gap is domain shift, and reporting it
@@ -20,16 +20,24 @@ honestly is worth more than a single inflated benchmark number.
     .venv/bin/python scripts/train_classifier.py --data-dir data/photos --epochs 15
     .venv/bin/python scripts/train_classifier.py --data-dir data/photos --holdout-dir data/photos/holdout_own
 """
-import argparse, json, pathlib, shutil, sys, time
+import argparse, json, pathlib, random, shutil, sys, time
 import numpy as np
 import torch
 import torch.nn as nn
+from PIL import ImageOps
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import datasets, models, transforms
 from sklearn.metrics import classification_report, confusion_matrix
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]   # ImageNet stats; the backbone expects these
+
+
+def seed_everything(seed):
+    """Seed every RNG used by model initialization, augmentation, and sampling."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
 
 def pick_device():
@@ -45,6 +53,7 @@ def build_transforms(train):
         # Aggressive augmentation is how you survive a small dataset AND narrow the
         # gap between clean dataset images and messy real phone photos.
         return transforms.Compose([
+            transforms.Lambda(ImageOps.exif_transpose),
             transforms.RandomResizedCrop(224, scale=(0.6, 1.0)),
             transforms.RandomHorizontalFlip(),
             transforms.RandomRotation(15),
@@ -54,6 +63,7 @@ def build_transforms(train):
             transforms.RandomErasing(p=0.25, scale=(0.02, 0.15)),
         ])
     return transforms.Compose([
+        transforms.Lambda(ImageOps.exif_transpose),
         transforms.Resize(256),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
@@ -140,6 +150,23 @@ def warn_about_heic(data_dir):
         print("!! Example dropped file:", heic[0], "\n")
 
 
+def align_holdout_classes(dataset, training_classes):
+    """Remap a partial ImageFolder holdout onto the trained model's class indices."""
+    unknown = [name for name in dataset.classes if name not in training_classes]
+    if unknown:
+        raise ValueError(f"holdout contains classes absent from training: {unknown}")
+    old_to_new = {
+        old_idx: training_classes.index(name)
+        for name, old_idx in dataset.class_to_idx.items()
+    }
+    dataset.samples = [(path, old_to_new[target]) for path, target in dataset.samples]
+    dataset.imgs = dataset.samples
+    dataset.targets = [target for _, target in dataset.samples]
+    dataset.classes = list(training_classes)
+    dataset.class_to_idx = {name: idx for idx, name in enumerate(training_classes)}
+    return dataset
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=str(ROOT / "data" / "photos"))
@@ -149,15 +176,19 @@ def main():
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--unfreeze", type=int, default=1, help="0=head only, 1=head + last block")
-    ap.add_argument("--out", default=str(ROOT / "models"))
+    ap.add_argument("--seed", type=int, default=20260821)
+    ap.add_argument("--out", default=None)
     ap.add_argument("--smoke-test", action="store_true")
     a = ap.parse_args()
+    seed_everything(a.seed)
 
     data_dir = pathlib.Path(a.data_dir)
     if a.smoke_test:
         data_dir = make_synthetic(ROOT / "data" / "_smoketest")
         a.epochs = min(a.epochs, 3)
         print(f"SMOKE TEST — synthetic noise images in {data_dir}. Metrics are meaningless by design.\n")
+    if a.out is None:
+        a.out = str(ROOT / "models" / "smoke-test") if a.smoke_test else str(ROOT / "models")
     if not (data_dir / "train").exists():
         sys.exit(f"No {data_dir/'train'}. See the docstring for the expected folder layout, "
                  f"or run with --smoke-test first.")
@@ -168,7 +199,7 @@ def main():
     train_ds = datasets.ImageFolder(data_dir / "train", build_transforms(True))
     val_ds = datasets.ImageFolder(data_dir / "val", build_transforms(False))
     classes = train_ds.classes
-    print(f"device={device}  arch={a.arch}  classes={len(classes)}  "
+    print(f"device={device}  arch={a.arch}  seed={a.seed}  classes={len(classes)}  "
           f"train={len(train_ds)}  val={len(val_ds)}")
 
     counts = np.bincount([y for _, y in train_ds.samples], minlength=len(classes))
@@ -179,7 +210,10 @@ def main():
 
     # Oversample rare classes so the model does not simply learn to predict the common one.
     w = (1.0 / np.maximum(counts, 1))[[y for _, y in train_ds.samples]]
-    sampler = WeightedRandomSampler(torch.DoubleTensor(w), len(w), replacement=True)
+    sampler_generator = torch.Generator().manual_seed(a.seed)
+    sampler = WeightedRandomSampler(
+        torch.DoubleTensor(w), len(w), replacement=True, generator=sampler_generator
+    )
     train_dl = DataLoader(train_ds, batch_size=a.batch_size, sampler=sampler, num_workers=0)
     val_dl = DataLoader(val_ds, batch_size=a.batch_size, num_workers=0)
 
@@ -224,7 +258,16 @@ def main():
 
         if vacc > best:
             best = vacc
-            torch.save({"arch": a.arch, "classes": classes, "state_dict": model.state_dict()},
+            run_config = {
+                "arch": a.arch,
+                "epochs": a.epochs,
+                "batch_size": a.batch_size,
+                "lr": a.lr,
+                "unfreeze": a.unfreeze,
+                "seed": a.seed,
+            }
+            torch.save({"arch": a.arch, "classes": classes, "state_dict": model.state_dict(),
+                        "config": run_config, "best_val_accuracy": vacc},
                        outdir / "best.pt")
             (outdir / "classes.json").write_text(json.dumps(classes, indent=2))
 
@@ -237,9 +280,11 @@ def main():
         hd = pathlib.Path(a.holdout_dir)
         if hd.exists():
             h_ds = datasets.ImageFolder(hd, build_transforms(False))
-            if h_ds.classes != classes:
-                print(f"\nNOTE: holdout classes {h_ds.classes} differ from training classes {classes}; "
-                      f"folder names must match exactly for this comparison to be valid.")
+            present_holdout_classes = list(h_ds.classes)
+            h_ds = align_holdout_classes(h_ds, classes)
+            if present_holdout_classes != classes:
+                print(f"\nNOTE: holdout covers only {present_holdout_classes}; "
+                      "their labels were aligned to the trained model indices.")
             h_acc = evaluate(model, DataLoader(h_ds, batch_size=a.batch_size), device, classes,
                              "HOLDOUT (your own phone photos)")
             print(f"\nDOMAIN SHIFT: val {best:.3f} -> own photos {h_acc:.3f}  (drop {best-h_acc:+.3f})")

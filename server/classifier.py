@@ -1,7 +1,7 @@
 """
 Loads the trained checkpoint once and classifies PIL images.
 
-Class folder names must start with a 4-digit UNU-KEY (e.g. "0306_mobile_phones") so the
+Class folder names must start with a 4-digit UNU-KEY (e.g. "0306_mobile_phone") so the
 value chain can join. Anything before the first underscore is treated as the key.
 """
 import pathlib

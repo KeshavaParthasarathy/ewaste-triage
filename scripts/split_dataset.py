@@ -11,6 +11,7 @@ import argparse
 import pathlib
 import random
 import shutil
+import tempfile
 
 IMG_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -44,6 +45,49 @@ def group_split(files, val_frac=0.25, seed=0):
     return train, val
 
 
+def write_splits(src, dst, train, val):
+    """Build clean split directories, then swap them in with rollback support."""
+    src, dst = pathlib.Path(src), pathlib.Path(dst)
+    dst.mkdir(parents=True, exist_ok=True)
+    stage = pathlib.Path(tempfile.mkdtemp(prefix=".photo-split-", dir=dst))
+    splits = {"train": train, "val": val}
+    mutations = []
+    try:
+        for split, recs in splits.items():
+            (stage / split).mkdir()
+            for rel, cls, _ in recs:
+                out = stage / split / cls
+                out.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src / rel, out / pathlib.Path(rel).name)
+
+        for split in splits:
+            final = dst / split
+            backup = stage / f"{split}.old"
+            mutation = {
+                "final": final,
+                "backup": backup,
+                "backup_created": False,
+                "installed": False,
+            }
+            mutations.append(mutation)
+            if final.exists():
+                final.replace(backup)
+                mutation["backup_created"] = True
+            (stage / split).replace(final)
+            mutation["installed"] = True
+    except Exception:
+        for mutation in reversed(mutations):
+            final = mutation["final"]
+            backup = mutation["backup"]
+            if mutation["installed"] and final.exists():
+                shutil.rmtree(final)
+            if mutation["backup_created"] and backup.exists():
+                backup.replace(final)
+        raise
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", required=True, help="folder of <class>/<device_id>_<n>.jpg")
@@ -58,11 +102,7 @@ def main():
         raise SystemExit(f"no images found under {src}")
     train, val = group_split(files, a.val_frac, a.seed)
 
-    for split, recs in (("train", train), ("val", val)):
-        for rel, cls, _ in recs:
-            out = dst / split / cls
-            out.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src / rel, out / pathlib.Path(rel).name)
+    write_splits(src, dst, train, val)
 
     n_train_dev = len({d for _, _, d in train})
     n_val_dev = len({d for _, _, d in val})

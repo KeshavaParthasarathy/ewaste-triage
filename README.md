@@ -97,3 +97,95 @@ in Waste Printed Circuit Boards: A Transformer-Based Approach."
 Put a **US quarter (24.26 mm) or a ruler in every frame**. Without a scale reference you
 cannot convert pixels to area to mass, and the whole value chain breaks. Fixed height,
 fixed lighting, plain matte background, same orientation.
+
+### Collect labeled training photos from a phone
+
+Collection mode does not require a trained model. Join the Mac to the phone's Personal
+Hotspot, then run:
+
+    cd ~/ewaste-triage
+    caffeinate -i .venv/bin/python -m server.app --collect
+
+The command prints a phone URL and opens its QR code in Preview. Scan the QR with the
+phone; collection mode is the home page. Choose a class, enter one stable physical-device
+ID such as `phone01`, and take 12–20 varied photos before changing either field. Photos
+are converted to JPEG and saved as:
+
+    data/photos/raw/<class_name>/<device_id>_<photo_number>.jpg
+
+Device IDs must not contain underscores because the dataset splitter uses the first
+underscore as the device/photo boundary. Stop the server with Control-C when finished.
+
+The command above collects **training** devices into `raw/`. To collect separate
+evaluation devices directly into the own-photo holdout instead, run:
+
+    caffeinate -i .venv/bin/python -m server.app --collect \
+      --ingest-root data/photos/holdout_own
+
+Never photograph the same physical device into both locations. A holdout must contain
+devices the model did not see during training.
+
+### Build the licensed public-photo baseline
+
+The approved pilot has five classes: computer mouse, keyboard, laptop, mobile phone,
+and headphones. The importer downloads human-verified Open Images labels, keeps only
+photos with exactly one target label, accepts only CC BY images, normalizes every file
+to a bounded RGB JPEG, rejects exact duplicates, and writes full attribution to
+`data/photos/raw/public_manifest.csv`.
+
+    cd ~/ewaste-triage
+    .venv/bin/python -m scripts.download_public_photos --per-class 200 --seed 20260821
+
+The first run caches about 1.1 GB of official Open Images indexes. The normalized
+1,000-photo raw set is about 120 MB. Re-running the same command is resume-safe.
+
+Keep photos taken with your own phone in `data/photos/holdout_own/<class>/`, not in
+`raw/`; otherwise the domain-shift experiment leaks test photos into training. Then:
+
+    .venv/bin/python -m scripts.split_dataset \
+      --src data/photos/raw --dst data/photos --val-frac 0.25 --seed 20260821
+
+This produces 750 training and 250 validation photos, balanced at 150/50 per class.
+
+### Train and test the model
+
+    .venv/bin/python scripts/train_classifier.py \
+      --data-dir data/photos \
+      --holdout-dir data/photos/holdout_own \
+      --epochs 15 --batch-size 32 --seed 20260821
+
+The checkpoint is written to `models/best.pt`, including its training configuration and
+seed. The corrected seeded run on 2026-08-21 reached 75.2% validation accuracy and
+macro-F1 0.75. A later 32-photo holdout run on four classes reached 59.4% accuracy
+(19/32) and macro-F1 0.52. That own-device result exposed a large domain shift,
+especially on one laptop, and is a more useful improvement target than the public-image
+validation score. It is still a small test with only one physical device per tested
+class, and keyboard has no own-device holdout yet.
+
+### Generate a labeled evaluation report
+
+Run the frozen checkpoint on folder-labeled holdout photos without retraining it:
+
+    .venv/bin/python -m scripts.evaluate_classifier \
+      --data-dir data/photos/holdout_own \
+      --checkpoint models/best.pt \
+      --out reports/holdout-evaluation
+
+Open `reports/holdout-evaluation/index.html`. The report includes the actual and
+predicted class for every photo, confidence and top-three predictions, Grad-CAM
+influence overlays, per-class accuracy, macro-F1, a confusion matrix, `predictions.csv`,
+and `summary.json`. Grad-CAM shows which image regions influenced the prediction; it is
+not a human-readable causal explanation.
+
+### See predictions in the upload UI
+
+Start normal classifier mode (do not add `--collect`):
+
+    cd ~/ewaste-triage
+    caffeinate -i .venv/bin/python -m server.app --port 8778
+
+Open `http://localhost:8778/` on the Mac, or scan the QR code printed at startup to use
+the phone. Choose or take a photo and the page displays the predicted class, confidence,
+low-confidence advice, and valuation when composition priors are available. Until
+`data/composition_priors.csv` is populated from cited literature, the expected result is
+class plus confidence and an explicit “no value estimate” message.

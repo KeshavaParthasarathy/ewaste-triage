@@ -5,7 +5,7 @@ One photo -> device category -> mass -> material value.
     .venv/bin/python scripts/predict.py photo.jpg --mass-g 168     # measured mass beats the average
 
 Class folder names must start with the UNU-KEY so the value chain can join, e.g.
-"0306_mobile_phones". Anything before the first underscore is treated as the key.
+"0306_mobile_phone". Anything before the first underscore is treated as the key.
 
 Low confidence is reported, not hidden. A triage tool that says "I am not sure, open
 this one by hand" is more useful — and more honest — than one that always guesses.

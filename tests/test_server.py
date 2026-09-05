@@ -6,6 +6,7 @@ import torch.nn as nn
 from PIL import Image
 from torchvision import models
 
+import server.app as app_module
 from server.app import create_app
 
 
@@ -48,6 +49,109 @@ def test_capture_page_has_no_external_assets(client):
         assert scheme not in html, f"page references an external asset ({scheme}); it must be self-contained"
 
 
+def test_collection_mode_starts_without_checkpoint_and_serves_collection_page(tmp_path):
+    """Collection must work before the first model checkpoint exists."""
+    app = create_app(ckpt_path=tmp_path / "missing.pt",
+                     ingest_root=tmp_path / "photos",
+                     collection_only=True)
+    app.config["TESTING"] = True
+
+    r = app.test_client().get("/")
+
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "Training Photo Collection" in html
+    assert 'name="class_name"' in html
+    assert 'name="device_id"' in html
+    assert 'capture="environment"' in html
+
+
+def test_collection_page_is_available_alongside_classifier(client):
+    r = client.get("/collect")
+
+    assert r.status_code == 200
+    assert "Training Photo Collection" in r.get_data(as_text=True)
+
+
+def test_collection_classes_match_the_approved_training_taxonomy(client):
+    r = client.get("/collection-classes")
+
+    assert r.status_code == 200
+    assert r.json == {"classes": [
+        {"value": "0301_computer_mouse", "label": "Computer mouse"},
+        {"value": "0301_keyboard", "label": "Computer keyboard"},
+        {"value": "0303_laptop", "label": "Laptop"},
+        {"value": "0306_mobile_phone", "label": "Mobile phone"},
+        {"value": "0401_headphones", "label": "Headphones"},
+    ]}
+
+
+def test_collection_mode_reports_no_model_and_rejects_classification(tmp_path):
+    app = create_app(ckpt_path=tmp_path / "missing.pt",
+                     ingest_root=tmp_path / "photos",
+                     collection_only=True)
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    health = client.get("/health")
+    classify = client.post("/classify",
+                           data={"image": (_jpeg_bytes(), "x.jpg")},
+                           content_type="multipart/form-data")
+
+    assert health.status_code == 200
+    assert health.json == {"model_loaded": False, "classes": [], "collection_only": True}
+    assert classify.status_code == 503
+    assert classify.json["error"] == "classification unavailable in collection mode"
+
+
+def test_collect_flag_starts_collection_only_app(monkeypatch):
+    calls = {}
+
+    class NonBlockingApp:
+        def run(self, **kwargs):
+            calls["run"] = kwargs
+
+    def fake_create_app(*, ckpt_path=None, ingest_root=None, collection_only=False):
+        calls["ckpt_path"] = ckpt_path
+        calls["ingest_root"] = ingest_root
+        calls["collection_only"] = collection_only
+        return NonBlockingApp()
+
+    monkeypatch.setattr(app_module, "create_app", fake_create_app)
+    monkeypatch.setattr(app_module, "print_access_urls", lambda port: calls.setdefault("port", port))
+
+    app_module.main(["--collect", "--port", "9123"])
+
+    assert calls == {
+        "ckpt_path": None,
+        "ingest_root": None,
+        "collection_only": True,
+        "port": 9123,
+        "run": {"host": "::", "port": 9123, "threaded": False},
+    }
+
+
+def test_collect_flag_can_target_the_holdout_folder(monkeypatch, tmp_path):
+    calls = {}
+
+    class NonBlockingApp:
+        def run(self, **kwargs):
+            calls["run"] = kwargs
+
+    def fake_create_app(*, ckpt_path=None, ingest_root=None, collection_only=False):
+        calls["ingest_root"] = ingest_root
+        calls["collection_only"] = collection_only
+        return NonBlockingApp()
+
+    monkeypatch.setattr(app_module, "create_app", fake_create_app)
+    monkeypatch.setattr(app_module, "print_access_urls", lambda port: None)
+
+    app_module.main(["--collect", "--ingest-root", str(tmp_path / "holdout")])
+
+    assert calls["ingest_root"] == str(tmp_path / "holdout")
+    assert calls["collection_only"] is True
+
+
 def test_classify_returns_a_class(client):
     r = client.post("/classify", data={"image": (_jpeg_bytes(), "x.jpg")},
                     content_type="multipart/form-data")
@@ -71,12 +175,32 @@ def test_classify_without_a_file_is_a_400(client):
 def test_ingest_writes_into_the_class_folder(client, tmp_path):
     r = client.post("/ingest",
                     data={"image": (_jpeg_bytes(), "x.jpg"),
-                          "class_name": "0306_mobile_phones",
+                          "class_name": "0306_mobile_phone",
                           "device_id": "dev01"},
                     content_type="multipart/form-data")
     assert r.status_code == 200
-    written = list((tmp_path / "photos" / "0306_mobile_phones").glob("dev01_*.jpg"))
+    written = list((tmp_path / "photos" / "0306_mobile_phone").glob("dev01_*.jpg"))
     assert len(written) == 1
+
+
+def test_ingest_uses_the_next_numeric_suffix_without_overwriting_a_gap(client, tmp_path):
+    """Deleting a middle shot must not make the next upload overwrite a later shot."""
+    folder = tmp_path / "photos" / "0306_mobile_phone"
+    folder.mkdir(parents=True)
+    (folder / "dev01_000.jpg").write_bytes(b"zero")
+    existing_later = folder / "dev01_002.jpg"
+    existing_later.write_bytes(b"preserve me")
+
+    r = client.post("/ingest",
+                    data={"image": (_jpeg_bytes(), "x.jpg"),
+                          "class_name": "0306_mobile_phone",
+                          "device_id": "dev01"},
+                    content_type="multipart/form-data")
+
+    assert r.status_code == 200
+    assert r.json["saved"] == "0306_mobile_phone/dev01_003.jpg"
+    assert existing_later.read_bytes() == b"preserve me"
+    assert (folder / "dev01_003.jpg").exists()
 
 
 def test_ingest_rejects_a_path_traversing_class_name(client):
@@ -86,6 +210,17 @@ def test_ingest_rejects_a_path_traversing_class_name(client):
                           "device_id": "dev01"},
                     content_type="multipart/form-data")
     assert r.status_code == 400
+
+
+def test_ingest_rejects_a_regex_safe_but_unapproved_class(client):
+    r = client.post("/ingest",
+                    data={"image": (_jpeg_bytes(), "x.jpg"),
+                          "class_name": "9999_typo_class",
+                          "device_id": "dev01"},
+                    content_type="multipart/form-data")
+
+    assert r.status_code == 400
+    assert "approved" in r.json["error"]
 
 
 @pytest.mark.parametrize("bad", ["..", ".", "...", ".hidden"])
@@ -101,9 +236,20 @@ def test_ingest_rejects_dot_only_names(client, bad):
 def test_ingest_rejects_dot_only_device_id(client):
     r = client.post("/ingest",
                     data={"image": (_jpeg_bytes(), "x.jpg"),
-                          "class_name": "0306_mobile_phones", "device_id": ".."},
+                          "class_name": "0306_mobile_phone", "device_id": ".."},
                     content_type="multipart/form-data")
     assert r.status_code == 400
+
+
+def test_ingest_rejects_device_id_with_underscore(client):
+    """The splitter uses the first underscore as the device/photo boundary."""
+    r = client.post("/ingest",
+                    data={"image": (_jpeg_bytes(), "x.jpg"),
+                          "class_name": "0306_mobile_phone", "device_id": "phone_01"},
+                    content_type="multipart/form-data")
+
+    assert r.status_code == 400
+    assert "underscore" in r.json["error"]
 
 
 def test_ingest_writes_nothing_outside_the_root(client, tmp_path):
