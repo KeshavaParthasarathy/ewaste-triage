@@ -28,6 +28,19 @@ class ModelBundleError(ValueError):
     """A model bundle is missing, malformed, incompatible, or untrusted."""
 
 
+def _freeze_json(value: Any) -> Any:
+    """Convert JSON containers to recursively immutable equivalents."""
+    if isinstance(value, dict):
+        return MappingProxyType({key: _freeze_json(child) for key, child in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze_json(child) for child in value)
+    return value
+
+
+def _reject_non_finite_json(value: str) -> None:
+    raise ValueError(f"non-finite JSON value: {value}")
+
+
 @dataclass(frozen=True)
 class ModelManifest:
     model_id: str
@@ -94,7 +107,7 @@ class ModelManifest:
             confidence_floor=float(confidence_floor),
             artifact_sha256=artifact_sha256,
             schema_version=schema_version,
-            metrics=MappingProxyType(dict(metrics)),
+            metrics=_freeze_json(metrics),
         )
 
 
@@ -111,10 +124,13 @@ def load_model_bundle(bundle_dir: Path) -> tuple[ModelManifest, Path]:
     bundle_dir = Path(bundle_dir)
     manifest_path = bundle_dir / "manifest.json"
     try:
-        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+        raw = json.loads(
+            manifest_path.read_text(encoding="utf-8"),
+            parse_constant=_reject_non_finite_json,
+        )
     except FileNotFoundError as error:
         raise ModelBundleError("model manifest is missing") from error
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+    except (OSError, ValueError) as error:
         raise ModelBundleError("model manifest is malformed") from error
 
     manifest = ModelManifest.from_mapping(raw)
@@ -132,6 +148,10 @@ def load_model_bundle(bundle_dir: Path) -> tuple[ModelManifest, Path]:
         raise ModelBundleError("model artifact escapes bundle")
     if not resolved_artifact.is_file():
         raise ModelBundleError("model artifact is missing")
-    if sha256_file(resolved_artifact) != manifest.artifact_sha256:
+    try:
+        artifact_sha256 = sha256_file(resolved_artifact)
+    except OSError as error:
+        raise ModelBundleError("model artifact could not be read") from error
+    if artifact_sha256 != manifest.artifact_sha256:
         raise ModelBundleError("model artifact checksum mismatch")
     return manifest, resolved_artifact

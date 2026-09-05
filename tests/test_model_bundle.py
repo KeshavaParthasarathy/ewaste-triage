@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 
 import pytest
 
@@ -115,3 +116,37 @@ def test_load_model_bundle_rejects_symlinked_artifact_outside_bundle(tmp_path):
 
     with pytest.raises(ModelBundleError, match="escapes"):
         load_model_bundle(tmp_path)
+
+
+def test_load_model_bundle_deep_freezes_nested_metrics(tmp_path):
+    write_valid_bundle(tmp_path)
+    write_manifest(tmp_path, metrics={"per_class": {"0301_computer_mouse": [0.91]}})
+
+    manifest, _ = load_model_bundle(tmp_path)
+
+    with pytest.raises(TypeError):
+        manifest.metrics["per_class"]["0301_computer_mouse"] = (0.0,)
+    with pytest.raises(TypeError):
+        manifest.metrics["per_class"]["0301_computer_mouse"][0] = 0.0
+
+
+@pytest.mark.parametrize("non_finite", ["NaN", "Infinity", "-Infinity"])
+def test_load_model_bundle_rejects_non_finite_metrics_json(tmp_path, non_finite):
+    write_valid_bundle(tmp_path)
+    (tmp_path / "manifest.json").write_text(
+        (tmp_path / "manifest.json").read_text().replace("0.91", non_finite)
+    )
+
+    with pytest.raises(ModelBundleError, match="malformed"):
+        load_model_bundle(tmp_path)
+
+
+def test_load_model_bundle_normalizes_unreadable_artifact_errors(tmp_path):
+    write_valid_bundle(tmp_path)
+    artifact = tmp_path / "model.onnx"
+    artifact.chmod(0)
+    try:
+        with pytest.raises(ModelBundleError, match="artifact"):
+            load_model_bundle(tmp_path)
+    finally:
+        os.chmod(artifact, 0o600)
