@@ -12,7 +12,11 @@ import torch
 import torch.nn as nn
 from torchvision import models
 
-from server.imaging import MEAN, STD, preprocess_array, register_image_formats
+from server.imaging import (
+    preprocess_crop_array,
+    preprocess_image,
+    register_image_formats,
+)
 
 DEFAULT_CONFIDENCE_FLOOR = 0.60
 
@@ -77,7 +81,10 @@ class Classifier:
         self.model.eval()
 
     def probabilities(self, pil_image):
-        x = torch.from_numpy(preprocess_array(pil_image))
+        return self.probabilities_preprocessed(preprocess_image(pil_image))
+
+    def probabilities_preprocessed(self, crop):
+        x = torch.from_numpy(preprocess_crop_array(crop))
         with torch.no_grad():
             prob = torch.softmax(self.model(x), 1)[0]
         return prob.numpy().astype(np.float32, copy=False)

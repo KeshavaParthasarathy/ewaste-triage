@@ -40,6 +40,8 @@ class FakeClassifier:
         brightness = sum(image.convert("RGB").resize((1, 1)).getpixel((0, 0))) / (3 * 255)
         return [brightness, 1.0 - brightness]
 
+    probabilities_preprocessed = probabilities
+
 
 class ProtocolOnlyEngine:
     def __init__(self):
@@ -52,10 +54,19 @@ class ProtocolOnlyEngine:
         self.probability_calls += 1
         return [0.9, 0.1]
 
+    probabilities_preprocessed = probabilities
+
 
 def _jpeg_bytes(color=(100, 140, 90)):
     buf = io.BytesIO()
     Image.new("RGB", (300, 300), color).save(buf, format="JPEG")
+    buf.seek(0)
+    return buf
+
+
+def _maximum_size_jpeg_bytes():
+    buf = io.BytesIO()
+    Image.new("L", (8_000, 5_000), 100).save(buf, format="JPEG", quality=20)
     buf.seek(0)
     return buf
 
@@ -343,3 +354,22 @@ def test_desktop_history_does_not_store_explanation_source_image(desktop_client,
 
     assert record["original_path"] is None
     assert "source_image" not in record
+
+
+def test_desktop_classify_caches_only_a_detached_inference_crop_for_max_size_upload(
+    desktop_client,
+):
+    response = desktop_client.post(
+        "/api/v1/classify",
+        data={"image": (_maximum_size_jpeg_bytes(), "maximum.jpg")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    source_images = desktop_client.application.config["SOURCE_IMAGE_STORE"]
+    cached = source_images.get(response.json["scan_id"])
+    assert cached.mode == "RGB"
+    assert cached.size == (224, 224)
+    original_pixel = cached.getpixel((0, 0))
+    cached.putpixel((0, 0), (0, 0, 0))
+    assert source_images.get(response.json["scan_id"]).getpixel((0, 0)) == original_pixel

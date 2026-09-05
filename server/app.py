@@ -17,7 +17,7 @@ from scripts import valuation
 from scripts.photo_classes import PHOTO_CLASS_SPECS
 from server.classifier import Classifier
 from server.explanations import ActiveSourceImageStore, occlusion_map
-from server.imaging import ImageTooLarge, normalize_image
+from server.imaging import ImageTooLarge, inference_crop, normalize_image
 from server.netinfo import print_access_urls
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -158,7 +158,7 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
                 classes = getattr(engine, "classes", None)
                 class_index = classes.index(result["class_name"]) if classes is not None else None
                 app.config["SOURCE_IMAGE_STORE"].put(
-                    scan_id, normalized, class_index=class_index
+                    scan_id, inference_crop(normalized), class_index=class_index
                 )
             except Exception:
                 app.logger.exception(
@@ -181,8 +181,14 @@ def create_app(ckpt_path=None, ingest_root=None, demo_dir=None, collection_only=
         image, class_index = active_image
         try:
             if class_index is None:
-                class_index = int(np.asarray(app.config["CLASSIFIER"].probabilities(image)).argmax())
-            values = occlusion_map(app.config["CLASSIFIER"], image, class_index)
+                class_index = int(
+                    np.asarray(
+                        app.config["CLASSIFIER"].probabilities_preprocessed(image)
+                    ).argmax()
+                )
+            values = occlusion_map(
+                app.config["CLASSIFIER"], image, class_index, inference_crop=True
+            )
         except Exception:
             app.logger.exception("explanation failed after classification")
             return jsonify({

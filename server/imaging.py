@@ -7,6 +7,7 @@ from torchvision import transforms
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 SUPPORTED_PREPROCESSING_VERSION = "rgb-224-v1"
+INFERENCE_CROP_SIZE = (224, 224)
 RELEASE_IMAGE_TRANSFORM = transforms.Compose([
     transforms.Resize(256),
     transforms.CenterCrop(224),
@@ -43,10 +44,22 @@ def normalize_image(image: Image.Image, *, max_pixels: int = 40_000_000) -> Imag
 
 def preprocess_array(image: Image.Image) -> np.ndarray:
     """Return the release model's normalized NCHW float32 input array."""
-    tensor = RELEASE_TRANSFORM(preprocess_image(image)).unsqueeze(0)
+    return preprocess_crop_array(preprocess_image(image))
+
+
+def preprocess_crop_array(image: Image.Image) -> np.ndarray:
+    """Normalize an already-prepared 224×224 RGB release crop for inference."""
+    if image.mode != "RGB" or image.size != INFERENCE_CROP_SIZE:
+        raise ValueError("inference crop must be a 224x224 RGB image")
+    tensor = RELEASE_TRANSFORM(image).unsqueeze(0)
     return tensor.numpy().astype(np.float32, copy=False)
+
+
+def inference_crop(image: Image.Image) -> Image.Image:
+    """Return the release geometry crop from an already-normalized source image."""
+    return RELEASE_IMAGE_TRANSFORM(image)
 
 
 def preprocess_image(image: Image.Image) -> Image.Image:
     """Return the upright RGB image after the release model's geometry transform."""
-    return RELEASE_IMAGE_TRANSFORM(normalize_image(image))
+    return inference_crop(normalize_image(image))

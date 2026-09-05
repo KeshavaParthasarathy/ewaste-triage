@@ -10,7 +10,11 @@ import onnxruntime as ort
 from PIL import Image
 
 from server.classifier import prediction_from_probabilities
-from server.imaging import SUPPORTED_PREPROCESSING_VERSION, preprocess_array
+from server.imaging import (
+    SUPPORTED_PREPROCESSING_VERSION,
+    preprocess_crop_array,
+    preprocess_image,
+)
 from server.model_bundle import ModelBundleError, load_model_bundle
 
 
@@ -22,6 +26,8 @@ class InferenceEngine(Protocol):
     """Inference boundary shared by desktop product features."""
 
     def probabilities(self, image: Image.Image) -> np.ndarray: ...
+
+    def probabilities_preprocessed(self, crop: Image.Image) -> np.ndarray: ...
 
     def classify(self, image: Image.Image) -> dict: ...
 
@@ -67,8 +73,11 @@ class OnnxClassifier:
             )
 
     def probabilities(self, image: Image.Image) -> np.ndarray:
+        return self.probabilities_preprocessed(preprocess_image(image))
+
+    def probabilities_preprocessed(self, crop: Image.Image) -> np.ndarray:
         logits = self.session.run(
-            ["logits"], {"image": preprocess_array(image)}
+            ["logits"], {"image": preprocess_crop_array(crop)}
         )[0][0]
         shifted = logits - logits.max()
         exponentials = np.exp(shifted)

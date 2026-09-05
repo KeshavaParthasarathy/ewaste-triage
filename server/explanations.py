@@ -11,7 +11,7 @@ from typing import Callable
 import numpy as np
 from PIL import Image
 
-from server.imaging import MEAN, preprocess_image
+from server.imaging import INFERENCE_CROP_SIZE, MEAN, preprocess_image
 from server.inference import InferenceEngine
 
 
@@ -24,6 +24,7 @@ def occlusion_map(
     class_index: int,
     *,
     grid_size: int = 7,
+    inference_crop: bool = False,
 ) -> np.ndarray:
     """Return normalized probability drops for masked regions of an inference crop."""
     if isinstance(grid_size, bool) or not isinstance(grid_size, (int, np.integer)) or grid_size <= 0:
@@ -31,8 +32,13 @@ def occlusion_map(
     if isinstance(class_index, bool) or not isinstance(class_index, (int, np.integer)):
         raise ValueError("class_index must be an integer")
 
-    cropped = preprocess_image(image.copy())
-    baseline = np.asarray(engine.probabilities(cropped), dtype=np.float32)
+    if inference_crop:
+        if image.mode != "RGB" or image.size != INFERENCE_CROP_SIZE:
+            raise ValueError("inference crop must be a 224x224 RGB image")
+        cropped = image.copy()
+    else:
+        cropped = preprocess_image(image.copy())
+    baseline = np.asarray(engine.probabilities_preprocessed(cropped), dtype=np.float32)
     if baseline.ndim != 1 or class_index < 0 or class_index >= baseline.size:
         raise ValueError("class_index is outside the probability vector")
 
@@ -46,7 +52,9 @@ def occlusion_map(
             right = (column + 1) * cropped.width // grid_size
             occluded = cropped.copy()
             occluded.paste(IMAGENET_MEAN_RGB, (left, top, right, bottom))
-            probabilities = np.asarray(engine.probabilities(occluded), dtype=np.float32)
+            probabilities = np.asarray(
+                engine.probabilities_preprocessed(occluded), dtype=np.float32
+            )
             if probabilities.ndim != 1 or class_index >= probabilities.size:
                 raise ValueError("probability vector changed during explanation")
             heat[row, column] = max(0.0, baseline_score - float(probabilities[class_index]))
