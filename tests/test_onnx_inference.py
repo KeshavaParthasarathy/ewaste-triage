@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -9,13 +10,14 @@ import onnx
 import pytest
 import torch
 import torch.nn as nn
+from onnx import TensorProto, helper, numpy_helper
 from PIL import Image
 
 import scripts.export_onnx as export_module
 from scripts.export_onnx import ParityError, export_checkpoint
 from server.classifier import Classifier
 from server.inference import OnnxClassifier
-from server.model_bundle import load_model_bundle
+from server.model_bundle import ModelBundleError, load_model_bundle
 
 
 class TinyClassifier(nn.Module):
@@ -70,6 +72,51 @@ def reference_images(tmp_path):
         Image.new("RGB", size, color).save(path)
         paths.append(path)
     return paths
+
+
+def write_metadata_test_bundle(
+    bundle_dir,
+    *,
+    preprocessing_version="rgb-224-v1",
+    input_shape=(1, 3, 224, 224),
+    input_type=TensorProto.FLOAT,
+    output_width=3,
+):
+    bundle_dir.mkdir()
+    model_input = helper.make_tensor_value_info("image", input_type, input_shape)
+    model_output = helper.make_tensor_value_info(
+        "logits", TensorProto.FLOAT, (1, output_width)
+    )
+    logits = numpy_helper.from_array(
+        np.zeros((1, output_width), dtype=np.float32), name="constant_logits"
+    )
+    graph = helper.make_graph(
+        [helper.make_node("Constant", [], ["logits"], value=logits)],
+        "metadata-test-model",
+        [model_input],
+        [model_output],
+    )
+    model = helper.make_model(
+        graph, opset_imports=[helper.make_opsetid("", 17)], ir_version=10
+    )
+    artifact = bundle_dir / "model.onnx"
+    onnx.save(model, artifact)
+    manifest = {
+        "model_id": "metadata-test-model",
+        "architecture": "test_tiny",
+        "classes": [
+            "0301_computer_mouse",
+            "0306_mobile_phone",
+            "0401_small_consumer",
+        ],
+        "preprocessing_version": preprocessing_version,
+        "confidence_floor": 0.6,
+        "artifact_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        "schema_version": 1,
+        "metrics": {},
+    }
+    (bundle_dir / "manifest.json").write_text(json.dumps(manifest))
+    return bundle_dir
 
 
 def test_exported_onnx_matches_pytorch_top1(tiny_checkpoint, reference_images, tmp_path):
@@ -186,6 +233,81 @@ def test_probability_delta_failure_does_not_promote_bundle(
 
     assert not output.exists()
     assert not list(tmp_path.glob(".bundle-*.tmp"))
+
+
+@pytest.mark.parametrize(
+    ("engine_name", "non_finite"),
+    [("PyTorch", np.nan), ("ONNX", np.inf)],
+)
+def test_non_finite_probabilities_do_not_promote_bundle(
+    tiny_checkpoint,
+    reference_images,
+    tmp_path,
+    monkeypatch,
+    engine_name,
+    non_finite,
+):
+    if engine_name == "PyTorch":
+        real_probabilities = Classifier.probabilities
+
+        def non_finite_probabilities(self, image):
+            values = real_probabilities(self, image).copy()
+            values[0] = non_finite
+            return values
+
+        monkeypatch.setattr(Classifier, "probabilities", non_finite_probabilities)
+    else:
+        real_classifier = export_module.OnnxClassifier
+
+        class NonFiniteOnnxClassifier(real_classifier):
+            def probabilities(self, image):
+                values = super().probabilities(image).copy()
+                values[0] = non_finite
+                return values
+
+        monkeypatch.setattr(
+            export_module, "OnnxClassifier", NonFiniteOnnxClassifier
+        )
+
+    output = tmp_path / "bundle"
+    with pytest.raises(ParityError, match=f"{engine_name} probabilities.*non-finite"):
+        export_checkpoint(
+            tiny_checkpoint, output, reference_images, model_id="non-finite-model"
+        )
+
+    assert not output.exists()
+    assert not list(tmp_path.glob(".bundle-*.tmp"))
+
+
+def test_onnx_classifier_rejects_unsupported_preprocessing_version(tmp_path):
+    bundle = write_metadata_test_bundle(
+        tmp_path / "bundle", preprocessing_version="rgb-999-v9"
+    )
+
+    with pytest.raises(ModelBundleError, match="preprocessing version"):
+        OnnxClassifier(bundle)
+
+
+@pytest.mark.parametrize(
+    ("input_shape", "input_type"),
+    [((1, 3, 256, 256), TensorProto.FLOAT), ((1, 3, 224, 224), TensorProto.DOUBLE)],
+)
+def test_onnx_classifier_rejects_wrong_image_input_metadata(
+    tmp_path, input_shape, input_type
+):
+    bundle = write_metadata_test_bundle(
+        tmp_path / "bundle", input_shape=input_shape, input_type=input_type
+    )
+
+    with pytest.raises(ModelBundleError, match="image input"):
+        OnnxClassifier(bundle)
+
+
+def test_onnx_classifier_rejects_output_width_that_disagrees_with_classes(tmp_path):
+    bundle = write_metadata_test_bundle(tmp_path / "bundle", output_width=2)
+
+    with pytest.raises(ModelBundleError, match="output.*3 classes"):
+        OnnxClassifier(bundle)
 
 
 def test_export_requires_at_least_one_reference_image(tiny_checkpoint, tmp_path):

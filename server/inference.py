@@ -10,8 +10,12 @@ import onnxruntime as ort
 from PIL import Image
 
 from server.classifier import prediction_from_probabilities
-from server.imaging import preprocess_array
-from server.model_bundle import load_model_bundle
+from server.imaging import SUPPORTED_PREPROCESSING_VERSION, preprocess_array
+from server.model_bundle import ModelBundleError, load_model_bundle
+
+
+EXPECTED_INPUT_SHAPE = (1, 3, 224, 224)
+EXPECTED_TENSOR_TYPE = "tensor(float)"
 
 
 class InferenceEngine(Protocol):
@@ -27,9 +31,40 @@ class OnnxClassifier:
 
     def __init__(self, bundle_dir: Path):
         self.manifest, artifact = load_model_bundle(Path(bundle_dir))
+        if self.manifest.preprocessing_version != SUPPORTED_PREPROCESSING_VERSION:
+            raise ModelBundleError(
+                "unsupported preprocessing version: "
+                f"expected {SUPPORTED_PREPROCESSING_VERSION!r}, "
+                f"got {self.manifest.preprocessing_version!r}"
+            )
         self.session = ort.InferenceSession(
             str(artifact), providers=["CPUExecutionProvider"]
         )
+        inputs = self.session.get_inputs()
+        if (
+            len(inputs) != 1
+            or inputs[0].name != "image"
+            or inputs[0].type != EXPECTED_TENSOR_TYPE
+            or tuple(inputs[0].shape) != EXPECTED_INPUT_SHAPE
+        ):
+            raise ModelBundleError(
+                "ONNX image input must be one tensor(float) named 'image' "
+                "with shape (1, 3, 224, 224)"
+            )
+
+        outputs = self.session.get_outputs()
+        expected_output_shape = (1, len(self.manifest.classes))
+        if (
+            len(outputs) != 1
+            or outputs[0].name != "logits"
+            or outputs[0].type != EXPECTED_TENSOR_TYPE
+            or tuple(outputs[0].shape) != expected_output_shape
+        ):
+            raise ModelBundleError(
+                "ONNX logits output must be one tensor(float) named 'logits' "
+                f"with shape {expected_output_shape} for "
+                f"{len(self.manifest.classes)} classes"
+            )
 
     def probabilities(self, image: Image.Image) -> np.ndarray:
         logits = self.session.run(

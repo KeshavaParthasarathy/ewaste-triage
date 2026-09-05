@@ -21,11 +21,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from server.classifier import Classifier
+from server.imaging import SUPPORTED_PREPROCESSING_VERSION
 from server.inference import OnnxClassifier
 from server.model_bundle import SUPPORTED_SCHEMA, sha256_file
 
 
-PREPROCESSING_VERSION = "rgb-224-v1"
 MAX_PROBABILITY_DELTA = 1e-4
 
 
@@ -54,7 +54,7 @@ def _manifest(
         "model_id": model_id,
         "architecture": classifier.arch,
         "classes": list(classifier.classes),
-        "preprocessing_version": PREPROCESSING_VERSION,
+        "preprocessing_version": SUPPORTED_PREPROCESSING_VERSION,
         "confidence_floor": classifier.confidence_floor,
         "artifact_sha256": sha256_file(artifact),
         "schema_version": SUPPORTED_SCHEMA,
@@ -83,6 +83,10 @@ def _measure_parity(
                 "probability shape parity failed: "
                 f"PyTorch {pytorch_probabilities.shape}, ONNX {onnx_probabilities.shape}"
             )
+        if not np.isfinite(pytorch_probabilities).all():
+            raise ParityError("PyTorch probabilities contain non-finite values")
+        if not np.isfinite(onnx_probabilities).all():
+            raise ParityError("ONNX probabilities contain non-finite values")
         top1_matches += int(
             np.argmax(pytorch_probabilities) == np.argmax(onnx_probabilities)
         )
