@@ -38,6 +38,47 @@
       }
     },
     "created_at": {"type": "string", "format": "date-time"},
-    "parity": {"type": "object"}
+    "parity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "status", "model_id", "model_sha256", "labels", "metrics", "holdout"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "status": {"const": "passed"},
+        "model_id": {"type": "string", "minLength": 1},
+        "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "labels": {
+          "const": [
+            "0301_computer_mouse",
+            "0301_keyboard",
+            "0303_laptop",
+            "0306_mobile_phone",
+            "0401_headphones"
+          ]
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reference_images", "top1_matches", "max_probability_delta"],
+          "properties": {
+            "reference_images": {"type": "integer", "minimum": 1},
+            "top1_matches": {"type": "integer", "minimum": 0},
+            "max_probability_delta": {"type": "number", "minimum": 0, "maximum": 0.0001}
+          }
+        },
+        "holdout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "split", "valid", "overlaps_training", "samples"],
+          "properties": {
+            "status": {"const": "passed"},
+            "split": {"const": "holdout"},
+            "valid": {"const": true},
+            "overlaps_training": {"const": false},
+            "samples": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    }
   }
 }

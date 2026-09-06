@@ -151,6 +151,38 @@ def _copy_asset(source: Path, destination: Path) -> None:
     _fsync_file(destination)
 
 
+def _paths_overlap(first: Path, second: Path) -> bool:
+    return first == second or first.is_relative_to(second) or second.is_relative_to(first)
+
+
+def _validate_output_path(output: Path, protected: tuple[Path, ...]) -> None:
+    for protected_path in protected:
+        try:
+            resolved_protected = protected_path.resolve()
+        except (OSError, RuntimeError) as error:
+            raise ReleasePreparationError(
+                f"protected source path could not be resolved: {protected_path}"
+            ) from error
+        if _paths_overlap(output, resolved_protected):
+            raise ReleasePreparationError(
+                f"release output overlaps protected input or source path: {resolved_protected}"
+            )
+
+    try:
+        repository_root = ROOT.resolve()
+        staging_root = (repository_root / ".release-staging").resolve()
+    except (OSError, RuntimeError) as error:
+        raise ReleasePreparationError("repository staging paths could not be resolved") from error
+    if output.is_relative_to(repository_root) and not output.is_relative_to(staging_root):
+        raise ReleasePreparationError(
+            "repository release output must be below .release-staging"
+        )
+    if output == staging_root:
+        raise ReleasePreparationError(
+            "release output must be a child of .release-staging, not its staging root"
+        )
+
+
 def _promote(stage: Path, output: Path) -> None:
     backup: Path | None = None
     if output.exists():
@@ -160,9 +192,16 @@ def _promote(stage: Path, output: Path) -> None:
         os.replace(output, backup)
     try:
         os.replace(stage, output)
-    except BaseException:
+    except BaseException as promotion_error:
         if backup is not None:
-            os.replace(backup, output)
+            try:
+                os.replace(backup, output)
+            except BaseException as restoration_error:
+                raise ReleasePreparationError(
+                    f"release promotion failed ({promotion_error!r}); "
+                    f"previous release restore failed ({restoration_error!r}); "
+                    f"previous release is preserved at {backup}"
+                ) from restoration_error
         raise
     else:
         if backup is not None:
@@ -178,10 +217,13 @@ def prepare_release(
     app_version: str,
 ) -> Path:
     """Validate candidates and atomically replace *output_dir* with staged release assets."""
-    model_bundle = Path(model_bundle)
-    component_db = Path(component_db)
-    parity_report = Path(parity_report)
-    output_dir = Path(output_dir)
+    try:
+        model_bundle = Path(model_bundle).resolve(strict=True)
+        component_db = Path(component_db).resolve(strict=True)
+        parity_report = Path(parity_report).resolve(strict=True)
+        output_dir = Path(output_dir).resolve()
+    except (OSError, RuntimeError) as error:
+        raise ReleasePreparationError("release inputs must be readable paths") from error
     if not isinstance(app_version, str) or not app_version.strip():
         raise ReleasePreparationError("app_version must be a non-empty string")
     try:
@@ -192,6 +234,30 @@ def prepare_release(
         raise ReleasePreparationError("model schema_version is unsupported")
     if model_manifest.classes != CANONICAL_LABELS:
         raise ReleasePreparationError("model labels are not the approved canonical order")
+    try:
+        manifest_asset = (model_bundle / "manifest.json").resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise ReleasePreparationError("model manifest path could not be resolved") from error
+    _validate_output_path(
+        output_dir,
+        (
+            model_bundle,
+            artifact,
+            manifest_asset,
+            component_db,
+            parity_report,
+            ROOT / "models",
+            ROOT / "data",
+            ROOT / "desktop",
+            ROOT / "docs",
+            ROOT / "reference",
+            ROOT / "refs",
+            ROOT / "server",
+            ROOT / "scripts",
+            ROOT / "tests",
+            ROOT / "packaging",
+        ),
+    )
 
     try:
         with ReferenceStore(component_db) as references:
@@ -219,7 +285,7 @@ def prepare_release(
         model_stage = stage / "model"
         model_stage.mkdir()
         _copy_asset(artifact, model_stage / "model.onnx")
-        _copy_asset(model_bundle / "manifest.json", model_stage / "manifest.json")
+        _copy_asset(manifest_asset, model_stage / "manifest.json")
         labels_path = stage / "labels.json"
         # Keep the labels asset a plain JSON array for the runtime, with deterministic bytes.
         labels_path.write_text(

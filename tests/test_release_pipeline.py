@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.prepare_release as release_module
 from scripts.build_component_db import compile_reference
 from scripts.prepare_release import ReleasePreparationError, prepare_release
 
@@ -111,6 +112,111 @@ def test_prepare_release_reports_an_invalid_component_database(release_inputs):
         prepare_release(bundle, components, report, output, "1.2.3")
 
 
+@pytest.mark.parametrize(
+    "output_selector",
+    ("bundle", "inside_bundle", "model_asset", "manifest_asset", "components", "report"),
+)
+def test_prepare_release_rejects_output_paths_overlapping_input_assets(
+    release_inputs, output_selector
+):
+    bundle, components, report, _ = release_inputs
+    output = {
+        "bundle": bundle,
+        "inside_bundle": bundle / "release",
+        "model_asset": bundle / "model.onnx",
+        "manifest_asset": bundle / "manifest.json",
+        "components": components,
+        "report": report,
+    }[output_selector]
+    original_bundle = {
+        child.name: child.read_bytes()
+        for child in bundle.iterdir()
+    }
+
+    with pytest.raises(ReleasePreparationError, match="overlap"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert {
+        child.name: child.read_bytes()
+        for child in bundle.iterdir()
+    } == original_bundle
+    assert not list(bundle.parent.glob(f".{output.name}-*.tmp"))
+    assert not list(bundle.parent.glob(f".{output.name}-*.previous"))
+
+
+def test_prepare_release_rejects_output_overlapping_resolved_manifest_asset(
+    release_inputs
+):
+    bundle, components, report, _ = release_inputs
+    manifest_link = bundle / "manifest.json"
+    manifest_bytes = manifest_link.read_bytes()
+    manifest_source = bundle.parent / "manifest-source"
+    manifest_source.mkdir()
+    resolved_manifest = manifest_source / "manifest.json"
+    resolved_manifest.write_bytes(manifest_bytes)
+    manifest_link.unlink()
+    manifest_link.symlink_to(resolved_manifest)
+
+    with pytest.raises(ReleasePreparationError, match="overlap"):
+        prepare_release(bundle, components, report, manifest_source, "1.2.3")
+
+    assert resolved_manifest.read_bytes() == manifest_bytes
+    assert manifest_link.resolve(strict=True) == resolved_manifest
+    assert not list(bundle.parent.glob(f".{manifest_source.name}-*.tmp"))
+    assert not list(bundle.parent.glob(f".{manifest_source.name}-*.previous"))
+
+
+@pytest.mark.parametrize(
+    "repository_output",
+    (ROOT / "models" / "production", ROOT / "server", ROOT / "packaging"),
+)
+def test_prepare_release_rejects_repository_source_output(tmp_path, repository_output):
+    bundle = write_model_bundle(tmp_path)
+    components = tmp_path / "components.sqlite"
+    compile_reference(ROOT / "reference", components)
+    report = write_parity_report(tmp_path, bundle)
+
+    with pytest.raises(ReleasePreparationError, match="overlap|release-staging"):
+        prepare_release(bundle, components, report, repository_output, "1.2.3")
+
+
+@pytest.mark.parametrize(
+    "source_name",
+    ("data", "desktop", "docs", "models", "packaging", "reference", "refs", "scripts", "server", "tests"),
+)
+def test_prepare_release_rejects_output_overlapping_resolved_source_directory(
+    release_inputs, tmp_path, monkeypatch, source_name
+):
+    bundle, components, report, _ = release_inputs
+    repository = tmp_path / "checkout"
+    repository.mkdir()
+    source_directory = tmp_path / f"external-{source_name}"
+    source_directory.mkdir()
+    sentinel = source_directory / "source.py"
+    sentinel.write_text("preserve me")
+    (repository / source_name).symlink_to(source_directory, target_is_directory=True)
+    monkeypatch.setattr(release_module, "ROOT", repository)
+
+    with pytest.raises(ReleasePreparationError, match="overlap"):
+        prepare_release(bundle, components, report, source_directory, "1.2.3")
+
+    assert sentinel.read_text() == "preserve me"
+    assert not list(source_directory.parent.glob(f".{source_directory.name}-*.tmp"))
+    assert not list(source_directory.parent.glob(f".{source_directory.name}-*.previous"))
+
+
+def test_prepare_release_allows_a_child_of_repository_staging_root(
+    release_inputs, tmp_path, monkeypatch
+):
+    bundle, components, report, _ = release_inputs
+    repository = tmp_path / "checkout"
+    output = repository / ".release-staging" / "release"
+    monkeypatch.setattr(release_module, "ROOT", repository)
+
+    assert prepare_release(bundle, components, report, output, "1.2.3") == output
+    assert (output / "release-manifest.json").is_file()
+
+
 def test_prepare_release_rejects_invalid_or_overlapping_holdout(release_inputs):
     bundle, components, report, output = release_inputs
     write_parity_report(
@@ -146,6 +252,38 @@ def test_prepare_release_stages_model_labels_components_and_manifest_atomically(
     assert not list(output.parent.glob(f".{output.name}-*.tmp"))
 
 
+def test_release_manifest_schema_recursively_closes_the_actual_parity_contract():
+    schema = json.loads((ROOT / "packaging" / "release-manifest.schema.json").read_text())
+    parity = schema["properties"]["parity"]
+    metrics = parity["properties"]["metrics"]
+    holdout = parity["properties"]["holdout"]
+
+    assert parity["additionalProperties"] is False
+    assert set(parity["required"]) == {
+        "schema_version", "status", "model_id", "model_sha256", "labels", "metrics", "holdout"
+    }
+    assert set(parity["properties"]) == set(parity["required"])
+    assert parity["properties"]["labels"] == {"const": CANONICAL_LABELS}
+    assert metrics["additionalProperties"] is False
+    assert set(metrics["required"]) == {"reference_images", "top1_matches", "max_probability_delta"}
+    assert set(metrics["properties"]) == set(metrics["required"])
+    assert metrics["properties"]["reference_images"] == {"type": "integer", "minimum": 1}
+    assert metrics["properties"]["top1_matches"] == {"type": "integer", "minimum": 0}
+    assert metrics["properties"]["max_probability_delta"] == {
+        "type": "number", "minimum": 0, "maximum": 0.0001
+    }
+    assert holdout["additionalProperties"] is False
+    assert set(holdout["required"]) == {"status", "split", "valid", "overlaps_training", "samples"}
+    assert set(holdout["properties"]) == set(holdout["required"])
+    assert holdout["properties"] == {
+        "status": {"const": "passed"},
+        "split": {"const": "holdout"},
+        "valid": {"const": True},
+        "overlaps_training": {"const": False},
+        "samples": {"type": "integer", "minimum": 1},
+    }
+
+
 def test_failed_staging_preserves_previous_release(release_inputs, monkeypatch):
     bundle, components, report, output = release_inputs
     output.mkdir()
@@ -161,3 +299,60 @@ def test_failed_staging_preserves_previous_release(release_inputs, monkeypatch):
 
     assert (output / "previous-release.txt").read_text() == "keep me"
     assert not list(output.parent.glob(f".{output.name}-*.tmp"))
+
+
+def test_failed_stage_to_output_replace_restores_old_release_and_cleans_backup(
+    release_inputs, monkeypatch
+):
+    bundle, components, report, output = release_inputs
+    output.mkdir()
+    (output / "previous-release.txt").write_text("keep me")
+    real_replace = release_module.os.replace
+
+    def fail_once_after_backup(source, destination):
+        source = Path(source)
+        destination = Path(destination)
+        if source.name.endswith(".tmp") and destination == output:
+            raise OSError("stage promotion failed")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(release_module.os, "replace", fail_once_after_backup)
+
+    with pytest.raises(OSError, match="stage promotion failed"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert (output / "previous-release.txt").read_text() == "keep me"
+    assert not list(output.parent.glob(f".{output.name}-*.previous"))
+    assert not list(output.parent.glob(f".{output.name}-*.tmp"))
+
+
+def test_failed_restore_reports_both_failures_and_preserved_backup_path(
+    release_inputs, monkeypatch
+):
+    bundle, components, report, output = release_inputs
+    output.mkdir()
+    (output / "previous-release.txt").write_text("keep me")
+    real_replace = release_module.os.replace
+
+    def fail_promotion_and_restore(source, destination):
+        source = Path(source)
+        destination = Path(destination)
+        if source.name.endswith(".tmp") and destination == output:
+            raise OSError("stage promotion failed")
+        if source.name.endswith(".previous") and destination == output:
+            raise OSError("previous release restore failed")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(release_module.os, "replace", fail_promotion_and_restore)
+
+    with pytest.raises(ReleasePreparationError) as error:
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert "stage promotion failed" in str(error.value)
+    assert "previous release restore failed" in str(error.value)
+    assert "previous release is preserved" in str(error.value)
+    backup = Path(str(error.value).rsplit(" at ", 1)[1])
+    assert (backup / "previous-release.txt").read_text() == "keep me"
+    assert not output.exists()
+    assert not list(output.parent.glob(f".{output.name}-*.tmp"))
+    assert list(output.parent.glob(f".{output.name}-*.previous")) == [backup]
