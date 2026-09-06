@@ -378,6 +378,119 @@ process.stdout.write(JSON.stringify({before, afterClear, evidenceText, feedback:
     assert "Awaiting user confirmation" not in result["evidenceText"]
 
 
+def test_dom_history_correction_without_model_score_never_fabricates_zero_percent():
+    result = _run_ui_contract(FAKE_DOM + r"""
+const UI = require(process.argv[1]);
+const document = new FakeDocument();
+const view = UI.createDomView(document);
+view.renderCorrection({
+  scan_id: 'scan-fourth',
+  model_class_name: '0306_mobile_phone', model_confidence: .91,
+  confirmed_class_name: '0401_headphones', confirmed_confidence: null,
+  confirmation_source: 'user'
+});
+process.stdout.write(JSON.stringify({
+  category: document.getElementById('result-category').textContent,
+  note: document.getElementById('selection-note').textContent
+}));
+""")
+
+    assert result["category"] == "Headphones"
+    assert "0%" not in result["note"]
+    assert "not among the model alternatives displayed" in result["note"]
+
+
+def test_dom_save_then_back_to_scan_and_history_reopen_show_the_confirmed_category():
+    result = _run_ui_contract(FAKE_DOM + r"""
+const UI = require(process.argv[1]);
+const document = new FakeDocument();
+const domView = UI.createDomView(document);
+const categories = [
+  {category_id: '0306_mobile_phone', display_name: 'Mobile phone'},
+  {category_id: '0303_laptop', display_name: 'Laptop'},
+  {category_id: '0301_computer_mouse', display_name: 'Computer mouse'},
+  {category_id: '0401_headphones', display_name: 'Headphones'}
+];
+const prediction = {
+  class_name: '0306_mobile_phone', confidence: .91,
+  topk: [
+    {class_name: '0306_mobile_phone', confidence: .91},
+    {class_name: '0303_laptop', confidence: .06},
+    {class_name: '0301_computer_mouse', confidence: .03}
+  ]
+};
+const confirmationRecord = {
+  scan_id: 'scan-dom-fourth', prediction,
+  confirmation: {accepted_class_name: '0401_headphones', source: 'user'}
+};
+const template = {
+  category_id: '0306_mobile_phone', display_name: 'Mobile phone',
+  template_version: '1.0.0', components: [], rules: []
+};
+const saved = {
+  scan_id: 'scan-dom-fourth', category_id: '0401_headphones', template_version: '1.0.0',
+  template: {...template, category_id: '0401_headphones', display_name: 'Headphones'},
+  inputs: {usage: 'unknown', condition: 'unknown', operational: 'working', age_months: null, cycle_count: null},
+  component_overrides: {}, components: []
+};
+const view = {
+  ...domView,
+  readAssessmentForm() {
+    return {...saved.inputs, component_overrides: {}};
+  },
+  getAssessmentCategory() { return '0401_headphones'; }
+};
+const fetchImpl = async (url, options = {}) => {
+  if (url === '/api/v1/reference/categories') return {ok: true, json: async () => categories};
+  if (url === '/api/v1/scans/scan-dom-fourth/assessment' && !options.method) {
+    return {ok: false, status: 409, json: async () => ({error: 'confirm category'})};
+  }
+  if (url === '/api/v1/reference/categories/0306_mobile_phone') {
+    return {ok: true, json: async () => template};
+  }
+  if (url === '/api/v1/history/scan-dom-fourth/confirmation') {
+    return {ok: true, json: async () => confirmationRecord};
+  }
+  if (url === '/api/v1/scans/scan-dom-fourth/assessment' && options.method === 'PUT') {
+    return {ok: true, json: async () => saved};
+  }
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({
+  view, fetchImpl, formDataFactory: () => ({append() {}}),
+  nextFrame: async () => {}, objectUrl: () => ''
+});
+function scanSnapshot() {
+  return {
+    scanHidden: document.getElementById('scan-view').hidden,
+    category: document.getElementById('result-category').textContent,
+    label: document.getElementById('category-label').textContent,
+    badge: document.getElementById('result-badge').textContent,
+    note: document.getElementById('selection-note').textContent
+  };
+}
+(async () => {
+  controller.openHistory({scan_id: 'scan-dom-fourth', prediction});
+  await controller.openAssessment();
+  const savedResult = await controller.saveAssessment({});
+  view.showSection('scan');
+  const afterBack = scanSnapshot();
+  controller.openHistory(confirmationRecord);
+  const afterHistory = scanSnapshot();
+  process.stdout.write(JSON.stringify({savedResult, afterBack, afterHistory}));
+})();
+""")
+
+    assert result["savedResult"] is True
+    for snapshot in (result["afterBack"], result["afterHistory"]):
+        assert snapshot["scanHidden"] is False
+        assert snapshot["category"] == "Headphones"
+        assert snapshot["label"] == "Confirmed category"
+        assert snapshot["badge"] == "User correction"
+        assert "0%" not in snapshot["note"]
+        assert "not among the model alternatives displayed" in snapshot["note"]
+
+
 def test_assessment_presentation_keeps_ranges_units_unknowns_and_provenance_honest():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);
@@ -707,7 +820,7 @@ const controller = UI.createController({view, fetchImpl, formDataFactory: () => 
 def test_fourth_reference_category_confirmation_updates_evidence_and_survives_reopen():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);
-const renderedContexts = [], requests = [];
+const renderedContexts = [], scanCorrections = [], requests = [];
 let assessmentGets = 0;
 const categories = [
   {category_id: '0306_mobile_phone', display_name: 'Mobile phone'},
@@ -736,6 +849,14 @@ const view = {
   showSection() {}, clearPreview() {}, setAssessmentState() {}, setAssessmentBusy() {},
   clearAssessmentFormError() {}, showAssessmentFormError() {}, renderAssessmentDraft() {},
   renderAssessment(value) { renderedContexts.push(JSON.parse(JSON.stringify(value.context))); },
+  renderCorrection(value, shouldAnnounce) {
+    scanCorrections.push({
+      confirmed_class_name: value.confirmed_class_name,
+      confirmed_confidence: value.confirmed_confidence,
+      confirmation_source: value.confirmation_source,
+      shouldAnnounce
+    });
+  },
   readAssessmentForm() { return saved.inputs; },
   getAssessmentCategory() { return '0401_headphones'; }
 };
@@ -760,7 +881,7 @@ const controller = UI.createController({view, fetchImpl, formDataFactory: () => 
   const immediate = controller.getAssessmentContext();
   const reopened = await controller.openAssessment();
   const afterReopen = controller.getAssessmentContext();
-  process.stdout.write(JSON.stringify({savedResult, reopened, immediate, afterReopen, renderedContexts, requests}));
+  process.stdout.write(JSON.stringify({savedResult, reopened, immediate, afterReopen, renderedContexts, scanCorrections, requests}));
 })();
 """)
 
@@ -781,6 +902,12 @@ const controller = UI.createController({view, fetchImpl, formDataFactory: () => 
     assert result["immediate"] == expected_context
     assert result["afterReopen"] == expected_context
     assert result["renderedContexts"] == [expected_context, expected_context]
+    assert result["scanCorrections"] == [{
+        "confirmed_class_name": "0401_headphones",
+        "confirmed_confidence": None,
+        "confirmation_source": "user",
+        "shouldAnnounce": False,
+    }]
     assert ["/api/v1/history/scan-fourth/confirmation", "PUT"] in result["requests"]
 
 

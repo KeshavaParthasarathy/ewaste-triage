@@ -601,6 +601,9 @@
         });
         if (requestedGeneration !== assessmentGeneration) return false;
         consumeConfirmationRecord(confirmationRecord, categoryId);
+        if (typeof view.renderCorrection === "function") {
+          view.renderCorrection(activeResult, false);
+        }
         context = getAssessmentContext();
         const assessment = await api(`/api/v1/scans/${encodeURIComponent(scanId)}/assessment`, {
           method: "PUT",
@@ -877,7 +880,7 @@
       if (result.confirmation_source === "user") renderCorrection(result);
     }
 
-    function renderCorrection(correction) {
+    function renderCorrection(correction, shouldAnnounce = true) {
       resultCategory.textContent = formatCategory(correction.confirmed_class_name);
       categoryLabel.textContent = "Confirmed category";
       resultBadge.textContent = "User correction";
@@ -890,12 +893,27 @@
         ));
       }
       selectionNote.hidden = false;
-      selectionNote.textContent =
+      const confirmationCopy =
         `Confirmed as ${formatCategory(correction.confirmed_class_name)}. ` +
         `The model originally predicted ${formatCategory(correction.model_class_name)} ` +
-        `at ${percent(correction.model_confidence)}; this alternative scored ` +
-        `${percent(correction.confirmed_confidence)}.`;
-      announce(`${formatCategory(correction.confirmed_class_name)} confirmed as a user correction.`);
+        `at ${percent(correction.model_confidence)}.`;
+      if (correction.confirmed_class_name === correction.model_class_name) {
+        selectionNote.textContent = `${confirmationCopy} The user confirmed the model prediction.`;
+      } else if (
+        typeof correction.confirmed_confidence === "number" &&
+        Number.isFinite(correction.confirmed_confidence)
+      ) {
+        selectionNote.textContent =
+          `${confirmationCopy} This displayed alternative scored ` +
+          `${percent(correction.confirmed_confidence)}.`;
+      } else {
+        selectionNote.textContent =
+          `${confirmationCopy} The confirmed category was not among the model alternatives ` +
+          "displayed, so no model score is available.";
+      }
+      if (shouldAnnounce) {
+        announce(`${formatCategory(correction.confirmed_class_name)} confirmed as a user correction.`);
+      }
     }
 
     function transition(state, payload = {}) {
