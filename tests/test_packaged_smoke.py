@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import re
 import signal
 import socket
 import subprocess
+import sys
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
@@ -164,7 +166,7 @@ def _port_refused(port: int) -> bool:
     except ConnectionRefusedError:
         return True
     except OSError:
-        return True
+        return False
 
 
 def _wait_for_refusal(port: int, *, timeout: float = 5.0) -> None:
@@ -174,6 +176,43 @@ def _wait_for_refusal(port: int, *, timeout: float = 5.0) -> None:
             return
         time.sleep(0.05)
     raise AssertionError(f"loopback port {port} remained reachable after shutdown")
+
+
+def _cleanup_child(
+    process: subprocess.Popen[str],
+    *,
+    ready_file: Path,
+    ports: tuple[int | None, ...],
+    shutdown_timeout: float = 10.0,
+    refusal_timeout: float = 5.0,
+) -> None:
+    failures = []
+    if process.poll() is None:
+        process.send_signal(signal.SIGTERM)
+    timed_out = False
+    try:
+        stdout, stderr = process.communicate(timeout=shutdown_timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        process.kill()
+        stdout, stderr = process.communicate(timeout=10)
+    diagnostics = f"stdout:\n{stdout}\nstderr:\n{stderr}"
+    if timed_out:
+        failures.append(f"packaged app did not exit after SIGTERM\n{diagnostics}")
+    elif process.returncode != 0:
+        failures.append(f"packaged app exited with status {process.returncode}\n{diagnostics}")
+
+    if ready_file.exists():
+        failures.append("readiness file remained after graceful shutdown")
+    for port in dict.fromkeys(ports):
+        if port is None:
+            continue
+        try:
+            _wait_for_refusal(port, timeout=refusal_timeout)
+        except AssertionError as error:
+            failures.append(str(error))
+    if failures:
+        pytest.fail("\n".join(failures))
 
 
 def test_frozen_app_exercises_desktop_and_phone_paths(tmp_path: Path) -> None:
@@ -291,19 +330,11 @@ def test_frozen_app_exercises_desktop_and_phone_paths(tmp_path: Path) -> None:
         assert stopped == {"active": False, "result": None}
         _wait_for_refusal(phone_port)
     finally:
-        if process.poll() is None:
-            process.send_signal(signal.SIGTERM)
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            pytest.fail(f"packaged app did not exit after SIGTERM\n{_output(process)}")
-        assert process.returncode == 0, _output(process)
-        assert not ready_file.exists(), "readiness file remained after graceful shutdown"
-        if desktop_port is not None:
-            _wait_for_refusal(desktop_port)
-        if phone_port is not None:
-            _wait_for_refusal(phone_port)
+        _cleanup_child(
+            process,
+            ready_file=ready_file,
+            ports=(desktop_port, phone_port),
+        )
 
 
 def _phone_result(url: str) -> object:
@@ -312,3 +343,126 @@ def _phone_result(url: str) -> object:
     if result is None:
         raise AssertionError("phone result has not arrived")
     return result
+
+
+def _start_stubborn_child(tmp_path: Path) -> subprocess.Popen[str]:
+    child_ready = tmp_path / "child-ready"
+    script = (
+        "import signal, sys, time\n"
+        "from pathlib import Path\n"
+        "signal.signal(signal.SIGTERM, lambda *_args: None)\n"
+        "Path(sys.argv[1]).write_text('ready', encoding='utf-8')\n"
+        "print('captured child stdout', flush=True)\n"
+        "print('captured child stderr', file=sys.stderr, flush=True)\n"
+        "while True: time.sleep(1)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, str(child_ready)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.monotonic() + 2
+    while not child_ready.exists() and time.monotonic() < deadline:
+        assert process.poll() is None, "stubborn test child exited during setup"
+        time.sleep(0.01)
+    assert child_ready.exists(), "stubborn test child did not finish setup"
+    return process
+
+
+def test_cleanup_timeout_reaps_child_and_reports_captured_output(tmp_path: Path) -> None:
+    process = _start_stubborn_child(tmp_path)
+    try:
+        with pytest.raises(pytest.fail.Exception) as failure:
+            _cleanup_child(
+                process,
+                ready_file=tmp_path / "missing-ready.json",
+                ports=(),
+                shutdown_timeout=0.05,
+                refusal_timeout=0.05,
+            )
+        message = str(failure.value)
+        assert "did not exit after SIGTERM" in message
+        assert "captured child stdout" in message
+        assert "captured child stderr" in message
+        assert process.poll() is not None
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=2)
+
+
+def test_cleanup_timeout_still_checks_readiness_and_ports(tmp_path: Path) -> None:
+    process = _start_stubborn_child(tmp_path)
+    ready_file = tmp_path / "ready.json"
+    ready_file.write_text("{}", encoding="utf-8")
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        try:
+            with pytest.raises(pytest.fail.Exception) as failure:
+                _cleanup_child(
+                    process,
+                    ready_file=ready_file,
+                    ports=(port,),
+                    shutdown_timeout=0.05,
+                    refusal_timeout=0.01,
+                )
+            message = str(failure.value)
+            assert "readiness file remained after graceful shutdown" in message
+            assert f"loopback port {port} remained reachable after shutdown" in message
+            assert process.poll() is not None
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=2)
+
+
+def test_wait_for_refusal_retries_until_connection_is_refused(monkeypatch) -> None:
+    attempts = []
+    errors = iter(
+        (
+            socket.timeout("timed out"),
+            OSError(errno.EHOSTUNREACH, "No route to host"),
+            ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"),
+        )
+    )
+
+    def fail_in_sequence(_address, *, timeout):
+        assert timeout == 0.25
+        attempts.append(timeout)
+        raise next(errors)
+
+    monkeypatch.setattr(socket, "create_connection", fail_in_sequence)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    _wait_for_refusal(49152, timeout=1)
+
+    assert attempts == [0.25, 0.25, 0.25]
+
+
+def test_wait_for_refusal_fails_when_non_refusal_errors_reach_deadline(
+    monkeypatch,
+) -> None:
+    clock = iter((0.0, 0.0, 0.1, 1.0))
+    errors = iter(
+        (
+            socket.timeout("timed out"),
+            OSError(errno.EHOSTUNREACH, "No route to host"),
+        )
+    )
+    attempts = []
+
+    def fail_in_sequence(_address, *, timeout):
+        attempts.append(timeout)
+        raise next(errors)
+
+    monkeypatch.setattr(socket, "create_connection", fail_in_sequence)
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(AssertionError, match="remained reachable"):
+        _wait_for_refusal(49152, timeout=0.5)
+
+    assert attempts == [0.25, 0.25]

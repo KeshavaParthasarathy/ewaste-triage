@@ -51,7 +51,7 @@ For a candidate that has not already been independently approved, export to a ne
 Atomically validate and stage only the approved pair. `prepare_release.py` writes a temporary sibling and promotes it only after the closed-schema checks pass:
 
 ```sh
-APP_VERSION=0.1.0
+export APP_VERSION=0.1.0
 RELEASE_DIR=.release-staging/release-$APP_VERSION
 .venv/bin/python scripts/prepare_release.py \
   --model-bundle "$MODEL_BUNDLE" \
