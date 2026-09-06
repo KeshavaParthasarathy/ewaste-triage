@@ -1,4 +1,6 @@
 import io
+import json
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -160,7 +162,7 @@ def test_invalid_model_bundle_opens_a_safe_recovery_window(tmp_path):
 
     assert webview.created[0]["title"] == "E-Waste Triage"
     assert "Unable to start E-Waste Triage" in webview.page
-    assert "Model bundle: unavailable" in webview.page
+    assert "Model bundle: missing" in webview.page
     assert "Traceback" not in webview.page
 
 
@@ -184,3 +186,50 @@ def test_recovery_diagnostics_are_supplied_from_runtime_metadata():
 
     assert "App version: 2026.9.6" in page
     assert "Model bundle: bundle r17" in page
+
+
+def test_recovery_uses_packaged_build_and_readable_model_metadata(tmp_path):
+    resources = tmp_path / "resources"
+    bundle = resources / "models" / "production"
+    bundle.mkdir(parents=True)
+    model = bundle / "model.onnx"
+    model.write_bytes(b"not a valid ONNX graph")
+    (bundle / "manifest.json").write_text(json.dumps({
+        "model_id": "release-2026.09",
+        "architecture": "resnet18",
+        "classes": ["0306_mobile_phone"],
+        "preprocessing_version": "rgb-224-v1",
+        "confidence_floor": 0.6,
+        "artifact_sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
+        "schema_version": 1,
+        "metrics": {},
+    }))
+    (resources / "build-metadata.json").write_text(json.dumps({"app_version": "1.4.2"}))
+    paths = AppPaths(
+        resources_dir=resources, static_dir=resources / "server/static",
+        model_bundle_dir=bundle, reference_dir=resources / "reference",
+        data_dir=tmp_path / "support", history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+    webview = FakeWebview()
+
+    assert run(webview_module=webview, paths=paths) == 0
+
+    assert "App version: 1.4.2" in webview.page
+    assert "Model bundle: release-2026.09 (schema 1)" in webview.page
+
+
+def test_recovery_uses_sanitized_missing_manifest_state(tmp_path):
+    resources = tmp_path / "resources"
+    paths = AppPaths(
+        resources_dir=resources, static_dir=resources / "server/static",
+        model_bundle_dir=resources / "models/production", reference_dir=resources / "reference",
+        data_dir=tmp_path / "support", history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+    webview = FakeWebview()
+
+    assert run(webview_module=webview, paths=paths) == 0
+
+    assert "Model bundle: missing" in webview.page
+    assert str(paths.model_bundle_dir) not in webview.page
