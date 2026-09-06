@@ -260,7 +260,11 @@ def test_stop_phone_session_closes_listener_and_revokes_url(phone_desktop):
     }
 
 
-def test_stopped_session_discards_result_from_inflight_phone_upload(tmp_path):
+@pytest.mark.parametrize("revocation", ["stop", "replace", "expire"])
+def test_revoked_session_discards_inflight_phone_upload_side_effects(
+    tmp_path,
+    revocation,
+):
     entered_classifier = threading.Event()
     release_classifier = threading.Event()
 
@@ -271,7 +275,15 @@ def test_stopped_session_discards_result_from_inflight_phone_upload(tmp_path):
             assert release_classifier.wait(timeout=2)
             return dict(PREDICTION)
 
-    sessions = PhoneSessionManager(ttl_seconds=600)
+    class RecordingSourceImages:
+        def __init__(self):
+            self.puts = []
+
+        def put(self, *args, **kwargs):
+            self.puts.append((args, kwargs))
+
+    clock = FakeClock()
+    sessions = PhoneSessionManager(now=clock, ttl_seconds=600)
     controllers = []
 
     def controller_factory(phone_app):
@@ -279,15 +291,20 @@ def test_stopped_session_discards_result_from_inflight_phone_upload(tmp_path):
         controllers.append(controller)
         return controller
 
+    history = HistoryStore(
+        tmp_path / "history.sqlite",
+        tmp_path / "media",
+    )
+    source_images = RecordingSourceImages()
     app = create_desktop_app(
         classifier=BlockingClassifier(),
-        history_store=HistoryStore(
-            tmp_path / "history.sqlite",
-            tmp_path / "media",
-        ),
+        history_store=history,
+        source_image_store=source_images,
         phone_sessions=sessions,
         phone_server_factory=controller_factory,
         lan_address_provider=lambda: "192.168.1.42",
+        phone_clock=clock,
+        phone_monitor_interval=60,
     )
     app.config["TESTING"] = True
     client = app.test_client()
@@ -315,16 +332,23 @@ def test_stopped_session_discards_result_from_inflight_phone_upload(tmp_path):
     upload_thread.start()
     try:
         assert entered_classifier.wait(timeout=2)
-        assert client.delete("/api/phone-session").status_code == 200
+        if revocation == "stop":
+            assert client.delete("/api/phone-session").status_code == 200
+        elif revocation == "replace":
+            replacement = client.post("/api/phone-session")
+            assert replacement.status_code == 201
+        else:
+            clock.advance(601)
         release_classifier.set()
         upload_thread.join(timeout=2)
 
         assert upload_thread.is_alive() is False
         assert upload_status == [200]
-        assert client.get("/api/phone-session").get_json() == {
-            "active": False,
-            "result": None,
-        }
+        status = client.get("/api/phone-session").get_json()
+        assert status["active"] is (revocation == "replace")
+        assert status["result"] is None
+        assert history.list_scans() == []
+        assert source_images.puts == []
     finally:
         release_classifier.set()
         upload_thread.join(timeout=2)
@@ -380,6 +404,55 @@ def test_expired_session_closes_listener_without_desktop_polling(phone_desktop):
 
     assert wait_until(lambda: not controller.is_running)
     assert sessions.active() is None
+
+
+def test_status_discards_queued_result_when_session_expired_before_monitor(
+    tmp_path,
+):
+    clock = FakeClock()
+    sessions = PhoneSessionManager(now=clock, ttl_seconds=600)
+    controllers = []
+
+    def controller_factory(phone_app):
+        controller = RecordingPhoneController(phone_app)
+        controllers.append(controller)
+        return controller
+
+    app = create_desktop_app(
+        classifier=FakeClassifier(),
+        history_store=HistoryStore(
+            tmp_path / "history.sqlite",
+            tmp_path / "media",
+        ),
+        phone_sessions=sessions,
+        phone_server_factory=controller_factory,
+        lan_address_provider=lambda: "192.168.1.42",
+        phone_clock=clock,
+        phone_monitor_interval=60,
+    )
+    app.config["TESTING"] = True
+    client = app.test_client()
+    try:
+        started = client.post("/api/phone-session").get_json()
+        token = parse_qs(urlparse(started["upload_url"]).query)["token"][0]
+        accepted = controllers[0].app.test_client().post(
+            "/phone/upload",
+            data={
+                "token": token,
+                "code": started["pairing_code"],
+                "image": (io.BytesIO(jpeg_bytes()), "capture.jpg"),
+            },
+            content_type="multipart/form-data",
+        )
+        assert accepted.status_code == 200
+        clock.advance(601)
+
+        response = client.get("/api/phone-session")
+
+        assert response.get_json() == {"active": False, "result": None}
+        assert controllers[0].is_running is False
+    finally:
+        app.extensions["close_phone_capture"]()
 
 
 def test_missing_lan_address_keeps_phone_listener_closed(tmp_path):

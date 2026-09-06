@@ -317,8 +317,8 @@ def create_desktop_app(
         except (UnidentifiedImageError, OSError):
             return None, (jsonify({"error": "uploaded file is not a decodable image"}), 400)
 
-    def classify_normalized_image(image, *, retain_original=False):
-        result = dict(app.config["CLASSIFIER"].classify(image))
+    def persist_classification(result, image, *, retain_original=False):
+        result = dict(result)
         scan_id = None
         store = app.config["HISTORY_STORE"]
         if store is not None:
@@ -351,19 +351,43 @@ def create_desktop_app(
             )
         return result
 
+    def classify_normalized_image(image, *, retain_original=False):
+        result = app.config["CLASSIFIER"].classify(image)
+        return persist_classification(
+            result,
+            image,
+            retain_original=retain_original,
+        )
+
     phone_inbox = _PhoneResultInbox()
     phone_operation_lock = threading.Lock()
+    phone_image_environ_key = "ewaste.phone.normalized_image"
+
+    def classify_phone_image(image):
+        result = dict(app.config["CLASSIFIER"].classify(image))
+        # The restricted-app callback intentionally receives only a result.
+        # Keep its live normalized image on this request until that callback.
+        request.environ[phone_image_environ_key] = image
+        return result
 
     def receive_phone_result(result):
+        image = request.environ.pop(phone_image_environ_key, None)
+        if image is None:
+            return
         token = request.form.get("token")
         pairing_code = request.form.get("code")
         with phone_operation_lock:
             if phone_sessions.authorize(token, pairing_code):
+                result = persist_classification(
+                    result,
+                    image,
+                    retain_original=False,
+                )
                 phone_inbox.put(result)
 
     phone_app = create_phone_app(
         phone_sessions,
-        lambda image: classify_normalized_image(image, retain_original=False),
+        classify_phone_image,
         receive_phone_result,
     )
     phone_app.config["PHONE_REQUIRE_PAIRING_CODE"] = True
@@ -450,8 +474,7 @@ def create_desktop_app(
             )
             phone_monitor_thread.start()
 
-    def session_payload(*, result=None):
-        session = phone_sessions.active()
+    def session_payload(session, *, result=None):
         if session is None:
             return {"active": False, "result": result}
         return {
@@ -480,7 +503,7 @@ def create_desktop_app(
                         host=bound.host,
                         port=bound.port,
                     )
-                    payload = session_payload(result=None)
+                    payload = session_payload(session, result=None)
                     payload["qr_png"] = _phone_qr_data_url(
                         session.upload_url
                     )
@@ -573,10 +596,21 @@ def create_desktop_app(
 
     @app.get("/api/phone-session")
     def get_phone_session():
-        result = phone_inbox.pop()
-        payload = session_payload(result=result)
-        if not payload["active"] and phone_controller.is_running:
-            stop_phone_capture(clear_result=False)
+        monitor_thread = None
+        stop_error = None
+        with phone_operation_lock:
+            session = phone_sessions.active()
+            if session is None:
+                monitor_thread, stop_error = stop_phone_capture_locked(
+                    clear_result=True
+                )
+                result = None
+            else:
+                result = phone_inbox.pop()
+            payload = session_payload(session, result=result)
+        join_phone_monitor(monitor_thread)
+        if stop_error is not None:
+            raise stop_error
         response = jsonify(payload)
         response.headers["Cache-Control"] = "no-store"
         return response
