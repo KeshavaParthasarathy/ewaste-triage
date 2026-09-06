@@ -110,6 +110,31 @@ def test_cycle_lifecycle_requires_user_supplied_cycle_range():
     assert supplied.percent_used == Range(25, 50)
 
 
+def test_phone_battery_cycles_to_capacity_reference_uses_cycle_range_with_capacity_provenance():
+    component = component_with_lifecycle(
+        {
+            "metric": "cycles_to_capacity",
+            "minimum": 800,
+            "maximum": 800,
+            "capacity_percent": 80,
+            "source_ids": ["eu_phone_ecodesign_2023_1670"],
+        },
+        safety_sensitive=True,
+    )
+
+    result = assess_component(component, inputs(cycle_count=Range(200, 400)))
+
+    assert result.percent_used == Range(25, 50)
+    assert result.confidence is Confidence.MODERATE
+    assert any(
+        evidence.kind == "lifecycle_reference"
+        and "80% capacity" in evidence.detail
+        and evidence.source_ids == ("eu_phone_ecodesign_2023_1670",)
+        for evidence in result.evidence
+    )
+    assert "80% capacity" in " ".join(result.reasons)
+
+
 @pytest.mark.parametrize("metric", ("years", "cycles"))
 def test_zero_minimum_lifetime_returns_unknown_instead_of_dividing_by_zero(metric):
     component = component_with_lifecycle(

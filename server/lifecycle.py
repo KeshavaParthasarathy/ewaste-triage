@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from math import ceil, floor
+from math import ceil, floor, isfinite
 from typing import Mapping
 
 
@@ -133,9 +133,16 @@ def _age_estimate(lifecycle: Mapping, age_months: Range | None, cycle_count: Ran
         if age_months is None:
             return None
         return _outward_percent(age_months, Range(life.minimum * 12, life.maximum * 12))
-    if lifecycle.get("metric") == "cycles" and cycle_count is not None:
+    if lifecycle.get("metric") in {"cycles", "cycles_to_capacity"} and cycle_count is not None:
         return _outward_percent(cycle_count, life)
     return None
+
+
+def _capacity_percent(lifecycle: Mapping) -> int | float | None:
+    value = lifecycle.get("capacity_percent")
+    if type(value) not in (int, float) or not isfinite(value) or not 0 < value <= 100:
+        return None
+    return value
 
 
 def _lower(confidence: Confidence) -> Confidence:
@@ -247,8 +254,24 @@ def assess_component(component: Mapping, inputs: AssessmentInputs) -> LifecycleR
             Recommendation.UNKNOWN,
             ("Invalid lifecycle range; a positive finite ordered lifetime is required.",),
         )
+    metric = lifecycle.get("metric")
+    capacity_percent = _capacity_percent(lifecycle) if metric == "cycles_to_capacity" else None
+    if metric == "cycles_to_capacity" and capacity_percent is None:
+        return LifecycleResult(
+            None,
+            Confidence.UNAVAILABLE,
+            tuple(evidence),
+            Recommendation.UNKNOWN,
+            ("Invalid capacity endpoint for a cycles-to-capacity lifecycle reference.",),
+        )
     base = _age_estimate(lifecycle, inputs.age_months, inputs.cycle_count)
-    evidence.append(Evidence("lifecycle_reference", "Sourced lifecycle reference.", source_ids))
+    capacity_reason: tuple[str, ...] = ()
+    if capacity_percent is not None:
+        capacity_text = f"{capacity_percent:g}% capacity"
+        evidence.append(Evidence("lifecycle_reference", f"Sourced cycle reference with an endpoint at {capacity_text}.", source_ids))
+        capacity_reason = (f"The sourced cycle endpoint is {capacity_text}.",)
+    else:
+        evidence.append(Evidence("lifecycle_reference", "Sourced lifecycle reference.", source_ids))
     if inputs.age_months is not None:
         evidence.append(Evidence("age", f"User-reported age: {inputs.age_months.minimum}–{inputs.age_months.maximum} months."))
     if inputs.cycle_count is not None:
@@ -260,11 +283,11 @@ def assess_component(component: Mapping, inputs: AssessmentInputs) -> LifecycleR
             evidence.append(Evidence("age_estimate", f"Age-based estimate retained for provenance: {base.minimum}–{base.maximum}%.", source_ids))
         evidence.append(Evidence("measured_diagnostic", f"Measured {measured.metric}: {measured.value.minimum}–{measured.value.maximum}%.", (measured.source_id,)))
         recommendation, reasons = _recommendation(component, inputs, measured.value)
-        return LifecycleResult(measured.value, Confidence.HIGH, tuple(evidence), recommendation, reasons)
+        return LifecycleResult(measured.value, Confidence.HIGH, tuple(evidence), recommendation, (*reasons, *capacity_reason))
 
     if base is None:
         metric = lifecycle.get("metric")
-        if metric not in {"years", "cycles"}:
+        if metric not in {"years", "cycles", "cycles_to_capacity"}:
             recommendation, reasons = _recommendation(component, inputs, None)
             return LifecycleResult(
                 None,
@@ -273,14 +296,14 @@ def assess_component(component: Mapping, inputs: AssessmentInputs) -> LifecycleR
                 recommendation,
                 (f"Unsupported lifecycle metric: {metric!r}.", *reasons),
             )
-        requirement = "cycle-count range" if lifecycle.get("metric") == "cycles" else "age range"
+        requirement = "cycle-count range" if metric in {"cycles", "cycles_to_capacity"} else "age range"
         recommendation, reasons = _recommendation(component, inputs, None)
         return LifecycleResult(
             None,
             Confidence.UNAVAILABLE,
             tuple(evidence),
             recommendation,
-            (f"A user-supplied {requirement} is required for this sourced lifecycle estimate.", *reasons),
+            (f"A user-supplied {requirement} is required for this sourced lifecycle estimate.", *reasons, *capacity_reason),
         )
 
     evidence.append(Evidence("age_estimate", f"Outward-rounded sourced estimate: {base.minimum}–{base.maximum}%.", source_ids))
@@ -289,4 +312,4 @@ def assess_component(component: Mapping, inputs: AssessmentInputs) -> LifecycleR
     if inputs.condition in {Condition.UNKNOWN, Condition.VISIBLE_WEAR}:
         confidence = _lower(confidence)
     recommendation, reasons = _recommendation(component, inputs, adjusted)
-    return LifecycleResult(adjusted, confidence, tuple(evidence), recommendation, reasons)
+    return LifecycleResult(adjusted, confidence, tuple(evidence), recommendation, (*reasons, *capacity_reason))
