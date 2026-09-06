@@ -27,6 +27,46 @@ _COMPONENT_FIELDS = {
     "evidence_grade", "reviewed_on", "safety_sensitive", "notes",
 }
 _RULE_FIELDS = {"rule_id", "text", "source_ids", "evidence_grade", "reviewed_on"}
+_STARTUP_ERROR = "component reference database is unavailable or incompatible"
+_REQUIRED_DATABASE_COLUMNS = {
+    "metadata": {"key", "value"},
+    "sources": {
+        "source_id",
+        "title",
+        "publisher",
+        "url",
+        "reviewed_on",
+        "evidence_grade",
+    },
+    "categories": {
+        "category_id",
+        "display_name",
+        "template_version",
+        "handling_note",
+        "source_ids_json",
+    },
+    "components": {"component_id", "display_name"},
+    "category_components": {
+        "category_id",
+        "component_id",
+        "ordinal",
+        "presence_label",
+        "lifecycle_json",
+        "source_ids_json",
+        "evidence_grade",
+        "reviewed_on",
+        "safety_sensitive",
+        "notes_json",
+    },
+    "rules": {
+        "category_id",
+        "rule_id",
+        "text",
+        "source_ids_json",
+        "evidence_grade",
+        "reviewed_on",
+    },
+}
 
 
 class ReferenceValidationError(ValueError):
@@ -36,6 +76,10 @@ class ReferenceValidationError(ValueError):
         self.filename = filename
         self.record_path = record_path
         super().__init__(f"{filename}: {record_path}: {message}")
+
+
+class ReferenceStartupError(ValueError):
+    """Raised when a compiled reference artifact is unusable at startup."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -400,14 +444,133 @@ class ReferenceStore:
     """Query a compiled component release without permitting mutations."""
 
     def __init__(self, database_path: Path):
-        path = Path(database_path).resolve()
+        try:
+            path = Path(database_path).resolve()
+        except (OSError, RuntimeError, TypeError) as exc:
+            raise ReferenceStartupError(_STARTUP_ERROR) from exc
         self._lock = threading.RLock()
-        self._connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, check_same_thread=False)
-        self._connection.row_factory = sqlite3.Row
-        self._connection.execute("PRAGMA query_only = ON")
-        self._manifest = ReferenceManifest(
-            int(self._metadata("schema_version")), self._metadata("version"), self._metadata("content_sha256")
+        connection = None
+        try:
+            connection = sqlite3.connect(
+                f"{path.as_uri()}?mode=ro", uri=True, check_same_thread=False
+            )
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA query_only = ON")
+            self._connection = connection
+            self._manifest = self._validate_startup()
+        except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            if connection is not None:
+                connection.close()
+            raise ReferenceStartupError(_STARTUP_ERROR) from exc
+
+    def _validate_startup(self) -> ReferenceManifest:
+        quick_check = [row[0] for row in self._connection.execute("PRAGMA quick_check")]
+        if quick_check != ["ok"]:
+            raise ValueError("reference database integrity check failed")
+
+        tables = {
+            row["name"]
+            for row in self._connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        if not set(_REQUIRED_DATABASE_COLUMNS) <= tables:
+            raise ValueError("reference database is missing required tables")
+        for table, required_columns in _REQUIRED_DATABASE_COLUMNS.items():
+            columns = {
+                row["name"]
+                for row in self._connection.execute(f"PRAGMA table_info({table})")
+            }
+            if not required_columns <= columns:
+                raise ValueError(f"reference database table {table} is incompatible")
+
+        metadata_rows = self._connection.execute(
+            "SELECT key, value FROM metadata"
+        ).fetchall()
+        metadata = {row["key"]: row["value"] for row in metadata_rows}
+        if set(metadata) != {"schema_version", "version", "content_sha256"}:
+            raise ValueError("reference database metadata is incomplete")
+        if int(metadata["schema_version"]) != SCHEMA_VERSION:
+            raise ValueError("unsupported reference database schema")
+        version = metadata["version"]
+        content_sha256 = metadata["content_sha256"]
+        if not isinstance(version, str) or not version.strip():
+            raise ValueError("reference database version is invalid")
+        if (
+            not isinstance(content_sha256, str)
+            or len(content_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in content_sha256)
+        ):
+            raise ValueError("reference database content hash is invalid")
+
+        for table in ("sources", "categories", "components", "category_components"):
+            count = self._connection.execute(
+                f"SELECT COUNT(*) AS count FROM {table}"
+            ).fetchone()["count"]
+            if count <= 0:
+                raise ValueError(f"reference database table {table} is empty")
+        category_without_components = self._connection.execute(
+            """SELECT c.category_id
+                 FROM categories c
+                 LEFT JOIN category_components cc USING (category_id)
+                GROUP BY c.category_id
+               HAVING COUNT(cc.component_id) = 0
+                LIMIT 1"""
+        ).fetchone()
+        if category_without_components is not None:
+            raise ValueError("reference database category has no components")
+        if self._connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise ValueError("reference database has broken relationships")
+
+        known_source_ids = {
+            row["source_id"]
+            for row in self._connection.execute("SELECT source_id FROM sources")
+        }
+        if any(
+            not isinstance(source_id, str) or not source_id
+            for source_id in known_source_ids
+        ):
+            raise ValueError("reference database has an invalid source ID")
+        source_id_fields = (
+            ("categories", "source_ids_json", True),
+            ("category_components", "source_ids_json", False),
+            ("rules", "source_ids_json", True),
         )
+        for table, column, required in source_id_fields:
+            rows = self._connection.execute(f"SELECT {column} FROM {table}")
+            for row in rows:
+                source_ids = json.loads(row[column])
+                if not isinstance(source_ids, list) or (required and not source_ids):
+                    raise ValueError(
+                        f"reference database {table}.{column} has invalid data"
+                    )
+                if any(
+                    not isinstance(source_id, str)
+                    or not source_id
+                    or source_id not in known_source_ids
+                    for source_id in source_ids
+                ) or len(source_ids) != len(set(source_ids)):
+                    raise ValueError(
+                        f"reference database {table}.{column} has invalid source IDs"
+                    )
+
+        json_fields = (
+            ("category_components", "lifecycle_json", dict, True),
+            ("category_components", "notes_json", list, False),
+        )
+        for table, column, expected_type, nullable in json_fields:
+            rows = self._connection.execute(f"SELECT {column} FROM {table}")
+            for row in rows:
+                value = row[column]
+                if value is None and nullable:
+                    continue
+                decoded = json.loads(value)
+                if not isinstance(decoded, expected_type):
+                    raise ValueError(
+                        f"reference database {table}.{column} has invalid data"
+                    )
+
+        return ReferenceManifest(SCHEMA_VERSION, version, content_sha256)
 
     def _metadata(self, key: str) -> str:
         with self._lock:

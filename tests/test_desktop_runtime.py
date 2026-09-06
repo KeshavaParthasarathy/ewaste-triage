@@ -86,3 +86,76 @@ def test_desktop_run_opens_one_native_window(monkeypatch, tmp_path):
     assert window["url"].startswith("http://127.0.0.1:")
     assert window["min_size"] == (760, 620)
     assert fake_webview.started == [{"debug": False}]
+
+
+def test_desktop_run_closes_reference_store_when_shutdown_fails(
+    monkeypatch, tmp_path
+):
+    fake_webview = FakeWebview()
+    paths = AppPaths(
+        resources_dir=tmp_path / "resources",
+        static_dir=tmp_path / "resources" / "server" / "static",
+        model_bundle_dir=tmp_path / "resources" / "models" / "production",
+        reference_dir=tmp_path / "resources" / "reference",
+        data_dir=tmp_path / "support",
+        history_database_path=tmp_path / "support" / "history.sqlite",
+        history_media_dir=tmp_path / "support" / "media",
+    )
+    app = create_health_app()
+    closed = []
+    app.extensions["close_reference_store"] = lambda: closed.append(True)
+
+    class ShutdownFailure:
+        def __init__(self, _app):
+            pass
+
+        def start_and_wait(self):
+            return "http://127.0.0.1:12345"
+
+        def shutdown(self):
+            raise ValueError("shutdown failed")
+
+    monkeypatch.setattr("desktop.main.build_desktop_app", lambda _paths: app)
+    monkeypatch.setattr("desktop.main.ServerThread", ShutdownFailure)
+
+    try:
+        raise LookupError("outer handled error")
+    except LookupError:
+        with pytest.raises(ValueError, match="shutdown failed"):
+            run(webview_module=fake_webview, paths=paths)
+
+    assert closed == [True]
+
+
+def test_desktop_run_preserves_startup_error_while_cleaning_up(monkeypatch, tmp_path):
+    fake_webview = FakeWebview()
+    paths = AppPaths(
+        resources_dir=tmp_path / "resources",
+        static_dir=tmp_path / "resources" / "server" / "static",
+        model_bundle_dir=tmp_path / "resources" / "models" / "production",
+        reference_dir=tmp_path / "resources" / "reference",
+        data_dir=tmp_path / "support",
+        history_database_path=tmp_path / "support" / "history.sqlite",
+        history_media_dir=tmp_path / "support" / "media",
+    )
+    app = create_health_app()
+    closed = []
+    app.extensions["close_reference_store"] = lambda: closed.append(True)
+
+    class StartupAndShutdownFailure:
+        def __init__(self, _app):
+            pass
+
+        def start_and_wait(self):
+            raise ValueError("startup failed")
+
+        def shutdown(self):
+            raise RuntimeError("shutdown failed")
+
+    monkeypatch.setattr("desktop.main.build_desktop_app", lambda _paths: app)
+    monkeypatch.setattr("desktop.main.ServerThread", StartupAndShutdownFailure)
+
+    with pytest.raises(ValueError, match="startup failed"):
+        run(webview_module=fake_webview, paths=paths)
+
+    assert closed == [True]

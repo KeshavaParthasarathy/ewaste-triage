@@ -19,6 +19,9 @@ from server.history import AssessmentConflictError
 
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+MAX_LIFECYCLE_YEARS = 100
+MAX_LIFECYCLE_CYCLES = 1_000_000
+USER_PROVIDED_EVIDENCE_GRADE = "user_provided_unverified"
 
 
 def create_desktop_app(
@@ -64,6 +67,59 @@ def create_desktop_app(
             raise OverflowError(f"{name} bounds are reversed or outside accepted bounds")
         return {"minimum": minimum, "maximum": maximum}
 
+    def validate_enum(value, enum, name):
+        if not isinstance(value, str):
+            raise ValueError(f"invalid {name}")
+        try:
+            return enum(value).value
+        except ValueError as exc:
+            raise ValueError(f"invalid {name}") from exc
+
+    def validate_lifecycle(lifecycle):
+        allowed = {"metric", "minimum", "maximum", "capacity_percent"}
+        required = {"metric", "minimum", "maximum"}
+        if not isinstance(lifecycle, Mapping):
+            raise ValueError("component lifecycle must be a supported mapping")
+        fields = set(lifecycle)
+        if fields - allowed or not required <= fields:
+            raise ValueError("component lifecycle must be a supported mapping")
+        metric = lifecycle["metric"]
+        if not isinstance(metric, str) or metric not in {
+            "years",
+            "cycles",
+            "cycles_to_capacity",
+        }:
+            raise ValueError("unsupported component lifecycle metric")
+        minimum, maximum = lifecycle["minimum"], lifecycle["maximum"]
+        for bound in (minimum, maximum):
+            if isinstance(bound, float) and not math.isfinite(bound):
+                raise OverflowError("component lifecycle bounds must be finite")
+            if type(bound) is not int:
+                raise ValueError("component lifecycle bounds must be integers")
+        maximum_lifetime = (
+            MAX_LIFECYCLE_YEARS
+            if metric == "years"
+            else MAX_LIFECYCLE_CYCLES
+        )
+        if minimum <= 0 or maximum < minimum or maximum > maximum_lifetime:
+            raise OverflowError(
+                "component lifecycle bounds are reversed or outside accepted bounds"
+            )
+        has_capacity = "capacity_percent" in lifecycle
+        if metric == "cycles_to_capacity" and not has_capacity:
+            raise ValueError("cycles_to_capacity requires capacity_percent")
+        if metric != "cycles_to_capacity" and has_capacity:
+            raise ValueError("capacity_percent is only valid for cycles_to_capacity")
+        if has_capacity:
+            capacity = lifecycle["capacity_percent"]
+            if isinstance(capacity, float) and not math.isfinite(capacity):
+                raise OverflowError("capacity_percent must be finite")
+            if type(capacity) is not int:
+                raise ValueError("capacity_percent must be an integer")
+            if not 1 <= capacity <= 100:
+                raise OverflowError("capacity_percent is outside accepted bounds")
+        return dict(lifecycle)
+
     def validate_payload(payload):
         if not isinstance(payload, Mapping):
             raise ValueError("assessment payload must be an object")
@@ -73,10 +129,7 @@ def create_desktop_app(
         result = {}
         for name, enum in (("usage", Usage), ("condition", Condition), ("operational", OperationalState)):
             value = payload.get(name, getattr(enum, "UNKNOWN").value)
-            try:
-                result[name] = enum(value).value
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"invalid {name}") from exc
+            result[name] = validate_enum(value, enum, name)
         for name in ("age_months", "cycle_count"):
             if name in payload and payload[name] is not None:
                 result[name] = validate_range(payload[name], name)
@@ -93,38 +146,22 @@ def create_desktop_app(
             if set(override) - allowed_override:
                 raise ValueError("component override contains unsupported fields")
             clean = dict(override)
-            if "presence_label" in clean and clean["presence_label"] not in {"standard", "common", "optional", "unknown"}:
-                raise ValueError("invalid component presence_label")
+            if "presence_label" in clean:
+                presence_label = clean["presence_label"]
+                if not isinstance(presence_label, str) or presence_label not in {
+                    "standard",
+                    "common",
+                    "optional",
+                    "unknown",
+                }:
+                    raise ValueError("invalid component presence_label")
             for name, enum in (("condition", Condition),):
                 if name in clean:
-                    try:
-                        clean[name] = enum(clean[name]).value
-                    except (TypeError, ValueError) as exc:
-                        raise ValueError(f"invalid component {name}") from exc
+                    clean[name] = validate_enum(
+                        clean[name], enum, f"component {name}"
+                    )
             if "lifecycle" in clean:
-                lifecycle = clean["lifecycle"]
-                allowed_lifecycle = {"metric", "minimum", "maximum", "capacity_percent", "source_ids", "evidence_grade", "reviewed_on"}
-                required_lifecycle = {"metric", "minimum", "maximum", "source_ids", "evidence_grade", "reviewed_on"}
-                if not isinstance(lifecycle, Mapping) or set(lifecycle) - allowed_lifecycle or not required_lifecycle <= set(lifecycle):
-                    raise ValueError("component lifecycle must be a supported mapping")
-                if lifecycle["metric"] not in {"years", "cycles", "cycles_to_capacity"}:
-                    raise ValueError("unsupported component lifecycle metric")
-                if type(lifecycle["minimum"]) is not int or type(lifecycle["maximum"]) is not int:
-                    raise ValueError("component lifecycle bounds must be integers")
-                maximum_lifetime = 200 if lifecycle["metric"] == "years" else 10_000_000
-                if lifecycle["minimum"] <= 0 or lifecycle["maximum"] < lifecycle["minimum"] or lifecycle["maximum"] > maximum_lifetime:
-                    raise OverflowError("component lifecycle bounds are reversed or outside accepted bounds")
-                has_capacity = "capacity_percent" in lifecycle
-                if lifecycle["metric"] == "cycles_to_capacity" and not has_capacity:
-                    raise ValueError("cycles_to_capacity requires capacity_percent")
-                if lifecycle["metric"] != "cycles_to_capacity" and has_capacity:
-                    raise ValueError("capacity_percent is only valid for cycles_to_capacity")
-                if has_capacity and (type(lifecycle["capacity_percent"]) is not int or not 1 <= lifecycle["capacity_percent"] <= 100):
-                    raise OverflowError("capacity_percent is outside accepted bounds")
-                if not isinstance(lifecycle["source_ids"], list) or not lifecycle["source_ids"] or not all(isinstance(item, str) and item for item in lifecycle["source_ids"]):
-                    raise ValueError("component lifecycle requires source_ids")
-                if not isinstance(lifecycle["evidence_grade"], str) or not lifecycle["evidence_grade"] or not isinstance(lifecycle["reviewed_on"], str) or not lifecycle["reviewed_on"]:
-                    raise ValueError("component lifecycle requires evidence metadata")
+                clean["lifecycle"] = validate_lifecycle(clean["lifecycle"])
             clean_overrides[component_id] = clean
         result["component_overrides"] = clean_overrides
         return result
@@ -147,10 +184,18 @@ def create_desktop_app(
             component = dict(original)
             component.update({key: value for key, value in override.items() if key not in {"condition", "operational"}})
             if isinstance(component.get("lifecycle"), Mapping):
-                component["lifecycle"] = {
-                    **component["lifecycle"],
-                    "source_ids": component["lifecycle"].get("source_ids", component.get("source_ids", [])),
-                }
+                lifecycle = dict(component["lifecycle"])
+                if "lifecycle" in override:
+                    lifecycle.update({
+                        "source_ids": [],
+                        "evidence_grade": USER_PROVIDED_EVIDENCE_GRADE,
+                        "reviewed_on": None,
+                    })
+                else:
+                    lifecycle["source_ids"] = lifecycle.get(
+                        "source_ids", component.get("source_ids", [])
+                    )
+                component["lifecycle"] = lifecycle
             inputs = AssessmentInputs(
                 age_months=Range(**age) if age else None,
                 cycle_count=Range(**cycles) if cycles else None,

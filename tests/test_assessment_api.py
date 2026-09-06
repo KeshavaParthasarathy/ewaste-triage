@@ -1,8 +1,10 @@
 import copy
 import json
+import math
 import urllib.request
 
 from PIL import Image
+import pytest
 
 from server.desktop_app import create_desktop_app
 from server.history import HistoryStore
@@ -109,7 +111,7 @@ def test_assessment_payload_and_scan_errors_are_strict(tmp_path):
     invalid_enum = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"usage": "extreme"})
     invalid_range = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"age_months": {"minimum": 5, "maximum": 4}})
     unknown_component = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"component_overrides": {"missing": {}}})
-    invalid_lifecycle = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"component_overrides": {"battery": {"lifecycle": {"metric": "years", "minimum": 0, "maximum": 2, "source_ids": ["manual"], "evidence_grade": "documented", "reviewed_on": "2026-09-06"}}}})
+    invalid_lifecycle = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"component_overrides": {"battery": {"lifecycle": {"metric": "years", "minimum": 0, "maximum": 2}}}})
     forbidden_safety = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"component_overrides": {"battery": {"safety_sensitive": False}}})
     unknown = client.put("/api/v1/scans/missing/assessment", json={})
     valid = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"age_months": {"minimum": 24, "maximum": 36}, "usage": "heavy", "condition": "no_visible_damage", "component_overrides": {"battery": {"presence_label": "standard"}}})
@@ -124,6 +126,186 @@ def test_assessment_payload_and_scan_errors_are_strict(tmp_path):
     assert valid.json["inputs"]["usage"] == "heavy"
     assert valid.json["components"][0]["result"]["percent_used"] == {"minimum": 33, "maximum": 75}
     assert valid.json["component_overrides"] == {"battery": {"presence_label": "standard"}}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"usage": []},
+        {"condition": {}},
+        {"component_overrides": {"battery": {"presence_label": []}}},
+        {
+            "component_overrides": {
+                "battery": {
+                    "lifecycle": {"metric": [], "minimum": 1, "maximum": 2}
+                }
+            }
+        },
+        {
+            "component_overrides": {
+                "battery": {
+                    "lifecycle": {
+                        "metric": "years",
+                        "minimum": 1,
+                        "maximum": 2,
+                        "unexpected": {},
+                    }
+                }
+            }
+        },
+    ],
+)
+def test_malformed_scalar_and_nested_lifecycle_values_return_json_400(tmp_path, payload):
+    client, _, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+
+    response = client.put(f"/api/v1/scans/{scan_id}/assessment", json=payload)
+
+    assert response.status_code == 400
+    assert response.is_json
+    assert set(response.json) == {"error"}
+
+
+@pytest.mark.parametrize(
+    "provenance",
+    [
+        {
+            "source_ids": ["fabricated-source"],
+            "evidence_grade": "regulatory",
+            "reviewed_on": "2026-09-05",
+        },
+        {
+            "source_ids": ["source"],
+            "evidence_grade": "fabricated-grade",
+            "reviewed_on": "2026-09-05",
+        },
+        {
+            "source_ids": ["source"],
+            "evidence_grade": "regulatory",
+            "reviewed_on": "not-a-date",
+        },
+    ],
+)
+def test_user_lifecycle_override_cannot_fabricate_reference_provenance(
+    tmp_path, provenance
+):
+    client, _, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+    lifecycle = {"metric": "years", "minimum": 2, "maximum": 3, **provenance}
+
+    response = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"component_overrides": {"battery": {"lifecycle": lifecycle}}},
+    )
+
+    assert response.status_code == 400
+    assert response.is_json
+
+
+def test_user_lifecycle_override_is_persisted_as_unverified_not_sourced(tmp_path):
+    client, _, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+
+    override_lifecycle = {"metric": "years", "minimum": 2, "maximum": 3}
+    response = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={
+            "age_months": {"minimum": 12, "maximum": 12},
+            "component_overrides": {
+                "battery": {"lifecycle": override_lifecycle}
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.json["component_overrides"]["battery"]["lifecycle"]
+        == override_lifecycle
+    )
+    lifecycle = response.json["components"][0]["lifecycle"]
+    assert lifecycle["source_ids"] == []
+    assert lifecycle["evidence_grade"] == "user_provided_unverified"
+    assert lifecycle["reviewed_on"] is None
+    battery = response.json["components"][0]
+    assert battery["result"]["percent_used"] is None
+    assert battery["result"]["confidence"] == "unavailable"
+
+
+def test_server_tagged_unverified_lifecycle_override_can_be_saved_unchanged(tmp_path):
+    client, _, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+    first = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={
+            "age_months": {"minimum": 12, "maximum": 12},
+            "component_overrides": {
+                "battery": {
+                    "lifecycle": {"metric": "years", "minimum": 2, "maximum": 3}
+                }
+            },
+        },
+    )
+
+    second = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={
+            **first.json["inputs"],
+            "component_overrides": first.json["component_overrides"],
+        },
+    )
+
+    assert second.status_code == 200
+    assert second.json["component_overrides"] == first.json["component_overrides"]
+    assert second.json["components"] == first.json["components"]
+
+
+@pytest.mark.parametrize(
+    ("lifecycle", "status"),
+    [
+        ({"metric": "cycles_to_capacity", "minimum": 1, "maximum": 2}, 400),
+        (
+            {
+                "metric": "years",
+                "minimum": 1,
+                "maximum": 2,
+                "capacity_percent": 80,
+            },
+            400,
+        ),
+        ({"metric": "years", "minimum": math.nan, "maximum": 2}, 422),
+        ({"metric": "cycles", "minimum": 1, "maximum": math.inf}, 422),
+        ({"metric": "years", "minimum": 1, "maximum": 101}, 422),
+        ({"metric": "cycles", "minimum": 1, "maximum": 1_000_001}, 422),
+    ],
+)
+def test_lifecycle_override_rejects_invalid_metric_combinations_and_bounds(
+    tmp_path, lifecycle, status
+):
+    client, _, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+
+    response = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"component_overrides": {"battery": {"lifecycle": lifecycle}}},
+    )
+
+    assert response.status_code == status
+    assert response.is_json
 
 
 def test_real_compiled_reference_works_over_threaded_http(tmp_path):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 
@@ -11,6 +12,7 @@ import pytest
 import yaml
 
 from server.reference_db import (
+    ReferenceStartupError,
     ReferenceStore,
     ReferenceValidationError,
     compile_reference,
@@ -137,6 +139,89 @@ def test_store_is_read_only_and_unknown_category_is_none(tmp_path):
     assert store.get_category("not-a-category") is None
     with pytest.raises(Exception):
         store._connection.execute("DELETE FROM categories")
+
+
+def test_store_rejects_metadata_only_database_during_startup(tmp_path):
+    database = tmp_path / "metadata-only.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        connection.executemany(
+            "INSERT INTO metadata VALUES (?, ?)",
+            (
+                ("schema_version", "1"),
+                ("version", "1.0.0"),
+                ("content_sha256", "a" * 64),
+            ),
+        )
+
+    with pytest.raises(ReferenceStartupError) as error:
+        ReferenceStore(database)
+
+    assert str(error.value) == "component reference database is unavailable or incompatible"
+    assert str(database) not in str(error.value)
+
+
+@pytest.mark.parametrize("kind", ("empty", "corrupt", "schema-999"))
+def test_store_rejects_unusable_database_during_startup(tmp_path, kind):
+    database = tmp_path / f"{kind}.sqlite"
+    if kind == "empty":
+        database.touch()
+    elif kind == "corrupt":
+        database.write_bytes(b"not a SQLite database")
+    else:
+        compile_reference(ROOT / "reference", database)
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                "UPDATE metadata SET value = '999' WHERE key = 'schema_version'"
+            )
+
+    with pytest.raises(
+        ReferenceStartupError,
+        match="component reference database is unavailable or incompatible",
+    ):
+        ReferenceStore(database)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "ALTER TABLE categories DROP COLUMN source_ids_json",
+        "UPDATE categories SET source_ids_json = 'not-json'",
+    ),
+)
+def test_store_rejects_incomplete_or_unreadable_schema_during_startup(
+    tmp_path, mutation
+):
+    database = tmp_path / "incompatible.sqlite"
+    compile_reference(ROOT / "reference", database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(mutation)
+
+    with pytest.raises(ReferenceStartupError):
+        ReferenceStore(database)
+
+
+def test_store_rejects_dangling_json_source_ids_during_startup(tmp_path):
+    database = tmp_path / "dangling-source.sqlite"
+    compile_reference(ROOT / "reference", database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "DELETE FROM sources WHERE source_id = 'epa_used_li_ion_2026'"
+        )
+
+    with pytest.raises(ReferenceStartupError):
+        ReferenceStore(database)
+
+
+def test_store_sanitizes_unresolvable_database_path(tmp_path):
+    database = tmp_path / "components.sqlite"
+    database.symlink_to(database.name)
+
+    with pytest.raises(
+        ReferenceStartupError,
+        match="component reference database is unavailable or incompatible",
+    ):
+        ReferenceStore(database)
 
 
 def test_invalid_referenced_source_identifies_record_path(tmp_path):

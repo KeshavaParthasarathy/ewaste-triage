@@ -10,7 +10,7 @@ from PIL import Image
 
 import pytest
 
-from desktop.main import build_recovery_app, run
+from desktop.main import build_desktop_app, build_recovery_app, run
 from desktop.paths import AppPaths
 from server.history import HistoryStore
 
@@ -196,6 +196,53 @@ def test_unrelated_onnx_constructor_runtime_error_propagates(monkeypatch, tmp_pa
 
     with pytest.raises(RuntimeError, match="unexpected constructor bug"):
         run(webview_module=FakeWebview(), paths=paths)
+
+
+def test_invalid_reference_database_opens_reference_specific_recovery(
+    monkeypatch, tmp_path
+):
+    paths = AppPaths(
+        resources_dir=tmp_path / "resources", static_dir=tmp_path / "static",
+        model_bundle_dir=tmp_path / "model", reference_dir=tmp_path / "reference",
+        data_dir=tmp_path / "support", history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+    webview = FakeWebview()
+    monkeypatch.setattr("desktop.main.OnnxClassifier", lambda _path: FakeClassifier())
+
+    assert run(webview_module=webview, paths=paths) == 0
+
+    assert "component reference data could not be loaded" in webview.page.lower()
+    assert "Reference database: unavailable or incompatible" in webview.page
+    assert "included model could not be loaded" not in webview.page
+    assert str(paths.reference_database_path) not in webview.page
+    assert "Traceback" not in webview.page
+
+
+def test_reference_store_closes_when_later_app_assembly_fails(monkeypatch, tmp_path):
+    paths = AppPaths(
+        resources_dir=tmp_path / "resources", static_dir=tmp_path / "static",
+        model_bundle_dir=tmp_path / "model", reference_dir=tmp_path / "reference",
+        data_dir=tmp_path / "support", history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+    closed = []
+
+    class OwnedReference:
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr("desktop.main.OnnxClassifier", lambda _path: FakeClassifier())
+    monkeypatch.setattr("desktop.main.ReferenceStore", lambda _path: OwnedReference())
+    monkeypatch.setattr(
+        "server.desktop_app.create_desktop_app",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("assembly bug")),
+    )
+
+    with pytest.raises(RuntimeError, match="assembly bug"):
+        build_desktop_app(paths)
+
+    assert closed == [True]
 
 
 def test_recovery_diagnostics_are_supplied_from_runtime_metadata():
