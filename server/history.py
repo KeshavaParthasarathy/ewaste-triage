@@ -33,10 +33,14 @@ class HistoryStore:
                     created_at TEXT NOT NULL,
                     prediction_json TEXT NOT NULL,
                     thumbnail_path TEXT NOT NULL,
-                    original_path TEXT
+                    original_path TEXT,
+                    confirmation_json TEXT
                 )
                 """
             )
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(scans)")}
+            if "confirmation_json" not in columns:
+                connection.execute("ALTER TABLE scans ADD COLUMN confirmation_json TEXT")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS pending_media_deletions (
@@ -133,6 +137,7 @@ class HistoryStore:
             "prediction": json.loads(row["prediction_json"]),
             "thumbnail_path": row["thumbnail_path"],
             "original_path": row["original_path"],
+            "confirmation": json.loads(row["confirmation_json"]) if row["confirmation_json"] else None,
         }
 
     def list_scans(self) -> list[dict]:
@@ -148,6 +153,23 @@ class HistoryStore:
                 "SELECT * FROM scans WHERE scan_id = ?", (scan_id,)
             ).fetchone()
         return self._record(row) if row is not None else None
+
+    def set_confirmation(self, scan_id: str, accepted_class_name: str):
+        """Store a user choice separately from the immutable model prediction."""
+        record = self.get_scan(scan_id)
+        if record is None:
+            return None
+        offered = {item.get("class_name") for item in record["prediction"].get("topk", [])}
+        if accepted_class_name not in offered:
+            return False
+        confirmation = {"accepted_class_name": accepted_class_name, "source": "user"}
+        with closing(self._connect()) as connection:
+            with connection:
+                connection.execute(
+                    "UPDATE scans SET confirmation_json = ? WHERE scan_id = ?",
+                    (json.dumps(confirmation, separators=(",", ":"), sort_keys=True), scan_id),
+                )
+        return self.get_scan(scan_id)
 
     def _managed_media_name(self, stored_path: str | None) -> str | None:
         if stored_path is None:

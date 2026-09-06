@@ -60,10 +60,15 @@
     const formDataFactory = options.formDataFactory;
     const nextFrame = options.nextFrame;
     const objectUrl = options.objectUrl;
+    const undoDelay = options.undoDelay === undefined ? 5000 : options.undoDelay;
+    const schedule = options.schedule || global.setTimeout.bind(global);
+    const cancelSchedule = options.cancelSchedule || global.clearTimeout.bind(global);
     let generation = 0;
     let activeAnalysisGeneration = null;
     let activeScanId = null;
     let activeResult = null;
+    let historyGeneration = 0;
+    let pendingHistoryAction = null;
 
     function withModelEvidence(result) {
       const modelClassName = result.model_class_name || result.class_name;
@@ -102,11 +107,14 @@
     }
 
     async function loadHistory() {
+      const requestedGeneration = ++historyGeneration;
       try {
         const records = await api("/api/v1/history");
+        if (requestedGeneration !== historyGeneration) return [];
         view.renderHistory(Array.isArray(records) ? records : []);
         return records;
       } catch (error) {
+        if (requestedGeneration !== historyGeneration) return [];
         view.renderHistory([], error.message);
         return [];
       }
@@ -171,21 +179,60 @@
       }
     }
 
-    async function deleteHistory(scanId) {
+    async function commitDelete(scanId) {
       view.markHistoryDeleting(scanId);
       try {
         await api(`/api/v1/history/${encodeURIComponent(scanId)}`, {method: "DELETE"});
-      } finally {
         await loadHistory();
+        return true;
+      } catch (error) {
+        if (typeof view.renderHistoryError === "function") view.renderHistoryError(`Could not delete this scan: ${error.message}`);
+        return false;
       }
     }
 
-    async function clearHistory() {
+    function stageHistoryAction(message, commit) {
+      if (pendingHistoryAction) pendingHistoryAction.undo();
+      if (undoDelay <= 0) return commit();
+      const pending = {
+        timer: null,
+        undo() {
+          if (!pending.timer) return;
+          cancelSchedule(pending.timer);
+          pending.timer = null;
+          if (pendingHistoryAction === pending) pendingHistoryAction = null;
+          if (typeof view.clearHistoryUndo === "function") view.clearHistoryUndo();
+          void loadHistory();
+        }
+      };
+      pendingHistoryAction = pending;
+      if (typeof view.showHistoryUndo === "function") view.showHistoryUndo(message, pending.undo);
+      pending.timer = schedule(() => {
+        pending.timer = null;
+        if (pendingHistoryAction === pending) pendingHistoryAction = null;
+        if (typeof view.clearHistoryUndo === "function") view.clearHistoryUndo();
+        void commit();
+      }, undoDelay);
+      return Promise.resolve(true);
+    }
+
+    function deleteHistory(scanId) {
+      return stageHistoryAction("Scan will be deleted. Undo", () => commitDelete(scanId));
+    }
+
+    async function commitClear() {
       try {
         await api("/api/v1/history", {method: "DELETE"});
-      } finally {
         await loadHistory();
+        return true;
+      } catch (error) {
+        if (typeof view.renderHistoryError === "function") view.renderHistoryError(`Could not clear history: ${error.message}`);
+        return false;
       }
+    }
+
+    function clearHistory() {
+      return stageHistoryAction("History will be cleared. Undo", commitClear);
     }
 
     function reset() {
@@ -198,10 +245,13 @@
     function openHistory(record) {
       invalidateAnalysis();
       const prediction = record.prediction || {};
+      const confirmation = record.confirmation || {};
       activeResult = withModelEvidence({
         ...prediction,
         scan_id: record.scan_id,
-        from_history: true
+        from_history: true,
+        confirmed_class_name: confirmation.accepted_class_name,
+        confirmation_source: confirmation.source
       });
       view.showSection("scan");
       view.clearPreview("The source image is unavailable for this history record.");
@@ -234,6 +284,20 @@
         confirmed_confidence: activeResult.confirmed_confidence,
         confirmation_source: activeResult.confirmation_source
       });
+      if (activeResult.scan_id) {
+        void api(
+          `/api/v1/history/${encodeURIComponent(activeResult.scan_id)}/confirmation`,
+          {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({accepted_class_name: selected.class_name})
+          }
+        ).catch(error => {
+          if (typeof view.renderHistoryError === "function") {
+            view.renderHistoryError(`The category change was not saved: ${error.message}`);
+          }
+        });
+      }
       return true;
     }
 
@@ -296,6 +360,9 @@
     const historyWarning = document.getElementById("history-warning");
     const historyList = document.getElementById("history-list");
     const historyEmpty = document.getElementById("history-empty");
+    const historyUndo = document.getElementById("history-undo");
+    const historyUndoMessage = document.getElementById("history-undo-message");
+    const historyUndoButton = document.getElementById("history-undo-button");
     let previewUrl = "";
     let activeResult = null;
     let alternativeHandler = null;
@@ -502,6 +569,25 @@
       announce("Deleting scan from local history.");
     }
 
+    function showHistoryUndo(message, undo) {
+      historyUndoMessage.textContent = message;
+      historyUndo.hidden = false;
+      historyUndoButton.onclick = undo;
+      announce(message);
+    }
+
+    function clearHistoryUndo() {
+      historyUndo.hidden = true;
+      historyUndoButton.onclick = null;
+    }
+
+    function renderHistoryError(message) {
+      historyEmpty.hidden = false;
+      historyEmpty.querySelector("h2").textContent = "History action failed";
+      historyEmpty.querySelector("p").textContent = message;
+      announce(message);
+    }
+
     function showSection(section) {
       const scan = section === "scan";
       document.getElementById("scan-view").hidden = !scan;
@@ -538,13 +624,16 @@
     return {
       getMass: () => "",
       markHistoryDeleting,
+      clearHistoryUndo,
       clearPreview,
       renderCorrection,
       renderHistory,
+      renderHistoryError,
       renderInfluence,
       reset,
       setBusy,
       showPreview,
+      showHistoryUndo,
       showSection,
       setAlternativeHandler(handler) { alternativeHandler = handler; },
       transition,

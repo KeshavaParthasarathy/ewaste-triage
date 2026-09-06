@@ -395,6 +395,7 @@ let chooseAlternative;
 const corrections = [];
 const view = {
   transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {},
+  showSection() {}, clearPreview() {},
   renderHistory() {}, markHistoryDeleting() {},
   setAlternativeHandler(handler) { chooseAlternative = handler; },
   renderCorrection(payload) { corrections.push(payload); }
@@ -523,7 +524,7 @@ const fetchImpl = async (url, options = {}) => {
   if (url === '/api/v1/history') return {ok: true, json: async () => records};
   throw new Error('unexpected request ' + url);
 };
-const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => ''});
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => '', undoDelay: 0});
 (async () => {
   await controller.loadHistory();
   await controller.deleteHistory('old');
@@ -545,3 +546,40 @@ const controller = UI.createController({view, fetchImpl, formDataFactory: () => 
         ["new"],
         [],
     ]
+
+
+def test_history_fetches_ignore_stale_responses_and_corrections_are_persisted():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const renders = [], requests = [];
+let first, second;
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {},
+  showSection() {}, clearPreview() {},
+  renderHistory(records) { renders.push(records.map(row => row.scan_id)); },
+  renderCorrection() {}
+};
+const fetchImpl = (url, options = {}) => {
+  requests.push([url, options.method || 'GET']);
+  if (url === '/api/v1/history' && !first) return new Promise(resolve => { first = resolve; });
+  if (url === '/api/v1/history') return new Promise(resolve => { second = resolve; });
+  if (url === '/api/v1/history/scan-1/confirmation') return Promise.resolve({ok: true, json: async () => ({})});
+};
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => ''});
+(async () => {
+  const older = controller.loadHistory();
+  const newer = controller.loadHistory();
+  await new Promise(resolve => setImmediate(resolve));
+  second({ok: true, json: async () => [{scan_id: 'new'}]});
+  await newer;
+  first({ok: true, json: async () => [{scan_id: 'old'}]});
+  await older;
+  controller.openHistory({scan_id: 'scan-1', prediction: {class_name: '0306_mobile_phone', confidence: .9, topk: [{class_name: '0306_mobile_phone', confidence: .9}, {class_name: '0303_laptop', confidence: .1}]}});
+  controller.selectAlternative({class_name: '0303_laptop'});
+  await new Promise(resolve => setImmediate(resolve));
+  process.stdout.write(JSON.stringify({renders, requests}));
+})();
+""")
+
+    assert result["renders"] == [["new"]]
+    assert ["/api/v1/history/scan-1/confirmation", "PUT"] in result["requests"]

@@ -170,6 +170,10 @@
           <button class="danger-button" type="button" id="clear-history">Clear history</button>
         </div>
         <div class="history-surface">
+          <div class="history-undo" id="history-undo" role="status" hidden>
+            <span id="history-undo-message"></span>
+            <button type="button" id="history-undo-button">Undo</button>
+          </div>
           <ul class="history-list" id="history-list" aria-label="Saved scans"></ul>
           <div class="history-empty" id="history-empty">
             <span aria-hidden="true">◷</span>
