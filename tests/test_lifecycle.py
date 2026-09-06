@@ -110,7 +110,7 @@ def test_cycle_lifecycle_requires_user_supplied_cycle_range():
     assert supplied.percent_used == Range(25, 50)
 
 
-def test_phone_battery_cycles_to_capacity_reference_uses_cycle_range_with_capacity_provenance():
+def test_phone_battery_cycles_to_capacity_endpoint_stays_unknown_with_provenance():
     component = component_with_lifecycle(
         {
             "metric": "cycles_to_capacity",
@@ -124,15 +124,40 @@ def test_phone_battery_cycles_to_capacity_reference_uses_cycle_range_with_capaci
 
     result = assess_component(component, inputs(cycle_count=Range(200, 400)))
 
-    assert result.percent_used == Range(25, 50)
-    assert result.confidence is Confidence.MODERATE
+    assert result.percent_used is None
+    assert result.confidence is Confidence.UNAVAILABLE
+    assert result.recommendation is Recommendation.UNKNOWN
     assert any(
         evidence.kind == "lifecycle_reference"
         and "80% capacity" in evidence.detail
         and evidence.source_ids == ("eu_phone_ecodesign_2023_1670",)
         for evidence in result.evidence
     )
+    assert any(
+        evidence.kind == "cycle_count" and "200–400" in evidence.detail
+        for evidence in result.evidence
+    )
     assert "80% capacity" in " ".join(result.reasons)
+    assert "total lifecycle" in " ".join(result.reasons).lower()
+
+
+def test_cycles_to_capacity_endpoint_never_means_fully_used_or_recycle():
+    component = component_with_lifecycle(
+        {
+            "metric": "cycles_to_capacity",
+            "minimum": 800,
+            "maximum": 800,
+            "capacity_percent": 80,
+            "source_ids": ["eu_phone_ecodesign_2023_1670"],
+        },
+        safety_sensitive=True,
+    )
+
+    result = assess_component(component, inputs(cycle_count=Range(800, 800)))
+
+    assert result.percent_used is None
+    assert result.recommendation is not Recommendation.RECYCLE
+    assert "800" in " ".join(item.detail for item in result.evidence)
 
 
 @pytest.mark.parametrize("metric", ("years", "cycles"))
@@ -219,6 +244,99 @@ def test_not_working_safety_sensitive_component_blocks_reuse():
 
     assert result.recommendation is Recommendation.SPECIALIST_HANDLING
     assert result.percent_used is None
+
+
+@pytest.mark.parametrize(
+    ("component", "changes", "expected"),
+    [
+        (
+            component_with_lifecycle(None),
+            {"operational": OperationalState.INTERMITTENT},
+            Recommendation.DIAGNOSTIC_TEST,
+        ),
+        (
+            component_with_lifecycle(None),
+            {"condition": Condition.DAMAGED},
+            Recommendation.REPAIR_ASSESSMENT,
+        ),
+        (
+            component_with_lifecycle(None),
+            {"operational": OperationalState.NOT_WORKING},
+            Recommendation.REPAIR_ASSESSMENT,
+        ),
+        (
+            component_with_lifecycle(None, safety_sensitive=True),
+            {"condition": Condition.DAMAGED},
+            Recommendation.SPECIALIST_HANDLING,
+        ),
+    ],
+)
+def test_actionable_condition_policy_applies_without_lifecycle(
+    component, changes, expected
+):
+    result = assess_component(component, inputs(**changes))
+
+    assert result.percent_used is None
+    assert result.recommendation is expected
+
+
+def test_structured_known_issue_escalates_safety_with_user_evidence():
+    result = assess_component(
+        component_with_lifecycle(None, safety_sensitive=True),
+        inputs(known_issues=("overheating",)),
+    )
+
+    assert result.percent_used is None
+    assert result.recommendation is Recommendation.SPECIALIST_HANDLING
+    assert any(
+        item.kind == "user_known_issue"
+        and "overheating" in item.detail.lower()
+        and item.source_ids == ()
+        for item in result.evidence
+    )
+
+
+def test_known_issue_notes_are_user_evidence_but_do_not_trigger_a_rule():
+    result = assess_component(
+        component_with_lifecycle(None),
+        inputs(known_issue_notes="Fan clicks after ten minutes"),
+    )
+
+    assert result.recommendation is Recommendation.UNKNOWN
+    assert any(
+        item.kind == "user_known_issue_notes"
+        and "Fan clicks" in item.detail
+        and item.source_ids == ()
+        for item in result.evidence
+    )
+
+
+def test_every_lifecycle_exit_records_the_engine_policy_revision():
+    results = [
+        assess_component(component_with_lifecycle(None), inputs()),
+        assess_component(
+            component_with_lifecycle(
+                {
+                    "metric": "manufacturer_score",
+                    "minimum": 1,
+                    "maximum": 2,
+                    "source_ids": ["source"],
+                }
+            ),
+            inputs(),
+        ),
+        assess_component(component_with_life_years(4, 6), inputs()),
+        assess_component(
+            component_with_life_years(4, 6),
+            inputs(age_months=Range(12, 12)),
+        ),
+        assess_component(
+            component_with_lifecycle(None, safety_sensitive=True),
+            inputs(condition=Condition.DAMAGED),
+        ),
+    ]
+
+    assert {result.policy_revision for result in results} == {"1.0.0"}
 
 
 def test_intermittent_operation_requires_diagnostic_test_even_with_low_estimate():

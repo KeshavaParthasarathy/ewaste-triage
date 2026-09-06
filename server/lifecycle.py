@@ -46,6 +46,10 @@ class Recommendation(str, Enum):
 
 
 HIGH_CONSUMPTION_PERCENT = 80
+LIFECYCLE_POLICY_REVISION = "1.0.0"
+SAFETY_KNOWN_ISSUES = frozenset(
+    {"overheating", "odor", "swelling_or_battery_damage", "recall"}
+)
 
 
 @dataclass(frozen=True)
@@ -87,6 +91,8 @@ class AssessmentInputs:
     operational: OperationalState = OperationalState.UNKNOWN
     diagnostics: tuple[Diagnostic, ...] = ()
     cycle_count: Range | None = None
+    known_issues: tuple[str, ...] = ()
+    known_issue_notes: str | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +102,7 @@ class LifecycleResult:
     evidence: tuple[Evidence, ...]
     recommendation: Recommendation
     reasons: tuple[str, ...]
+    policy_revision: str = LIFECYCLE_POLICY_REVISION
 
 
 def _source_ids(lifecycle: Mapping) -> tuple[str, ...]:
@@ -133,7 +140,7 @@ def _age_estimate(lifecycle: Mapping, age_months: Range | None, cycle_count: Ran
         if age_months is None:
             return None
         return _outward_percent(age_months, Range(life.minimum * 12, life.maximum * 12))
-    if lifecycle.get("metric") in {"cycles", "cycles_to_capacity"} and cycle_count is not None:
+    if lifecycle.get("metric") == "cycles" and cycle_count is not None:
         return _outward_percent(cycle_count, life)
     return None
 
@@ -183,6 +190,14 @@ def _recommendation(
     percent_used: Range | None,
 ) -> tuple[Recommendation, tuple[str, ...]]:
     safety_sensitive = component.get("safety_sensitive") is True
+    reported_safety_issues = tuple(
+        issue for issue in inputs.known_issues if issue in SAFETY_KNOWN_ISSUES
+    )
+    if safety_sensitive and reported_safety_issues:
+        labels = ", ".join(issue.replace("_", " ") for issue in reported_safety_issues)
+        return Recommendation.SPECIALIST_HANDLING, (
+            f"User-reported safety issue ({labels}) needs specialist handling before reuse.",
+        )
     if safety_sensitive and inputs.condition is Condition.DAMAGED:
         return Recommendation.SPECIALIST_HANDLING, (
             "Damage on a safety-sensitive component needs specialist handling before reuse.",
@@ -231,45 +246,70 @@ def assess_component(component: Mapping, inputs: AssessmentInputs) -> LifecycleR
         Evidence("condition", f"User-reported visible condition: {inputs.condition.value}."),
         Evidence("operational", f"User-reported operating state: {inputs.operational.value}."),
     ]
+    evidence.extend(
+        Evidence(
+            "user_known_issue",
+            f"User-reported known issue: {issue.replace('_', ' ')}.",
+        )
+        for issue in inputs.known_issues
+    )
+    if inputs.known_issue_notes:
+        evidence.append(
+            Evidence(
+                "user_known_issue_notes",
+                f"User-reported known-issue notes: {inputs.known_issue_notes}",
+            )
+        )
 
     recommendation, safety_reasons = _recommendation(component, inputs, None)
     if recommendation is Recommendation.SPECIALIST_HANDLING:
         return LifecycleResult(None, Confidence.UNAVAILABLE, tuple(evidence), recommendation, safety_reasons)
 
     if not isinstance(lifecycle, Mapping) or not _source_ids(lifecycle):
+        recommendation, reasons = _recommendation(component, inputs, None)
         return LifecycleResult(
             None,
             Confidence.UNAVAILABLE,
             tuple(evidence),
-            Recommendation.UNKNOWN,
-            ("No supported lifecycle reference is available for this component.",),
+            recommendation,
+            ("No supported lifecycle reference is available for this component.", *reasons),
         )
 
     source_ids = _source_ids(lifecycle)
     if _lifecycle_range(lifecycle) is None:
+        recommendation, reasons = _recommendation(component, inputs, None)
         return LifecycleResult(
             None,
             Confidence.UNAVAILABLE,
             tuple(evidence),
-            Recommendation.UNKNOWN,
-            ("Invalid lifecycle range; a positive finite ordered lifetime is required.",),
+            recommendation,
+            (
+                "Invalid lifecycle range; a positive finite ordered lifetime is required.",
+                *reasons,
+            ),
         )
     metric = lifecycle.get("metric")
     capacity_percent = _capacity_percent(lifecycle) if metric == "cycles_to_capacity" else None
     if metric == "cycles_to_capacity" and capacity_percent is None:
+        recommendation, reasons = _recommendation(component, inputs, None)
         return LifecycleResult(
             None,
             Confidence.UNAVAILABLE,
             tuple(evidence),
-            Recommendation.UNKNOWN,
-            ("Invalid capacity endpoint for a cycles-to-capacity lifecycle reference.",),
+            recommendation,
+            (
+                "Invalid capacity endpoint for a cycles-to-capacity lifecycle reference.",
+                *reasons,
+            ),
         )
     base = _age_estimate(lifecycle, inputs.age_months, inputs.cycle_count)
     capacity_reason: tuple[str, ...] = ()
     if capacity_percent is not None:
         capacity_text = f"{capacity_percent:g}% capacity"
         evidence.append(Evidence("lifecycle_reference", f"Sourced cycle reference with an endpoint at {capacity_text}.", source_ids))
-        capacity_reason = (f"The sourced cycle endpoint is {capacity_text}.",)
+        capacity_reason = (
+            f"The sourced cycle endpoint is {capacity_text}; it is not a total lifecycle endpoint.",
+        )
     else:
         evidence.append(Evidence("lifecycle_reference", "Sourced lifecycle reference.", source_ids))
     if inputs.age_months is not None:

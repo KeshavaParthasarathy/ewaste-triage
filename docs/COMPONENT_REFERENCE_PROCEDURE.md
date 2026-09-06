@@ -18,9 +18,11 @@ The release contains exactly these category templates:
 - mobile phone (`0306_mobile_phone`); and
 - headphones (`0401_headphones`).
 
-The only sourced generic lifecycle in version `1.0.0` is the mobile-phone lithium-ion
-battery regulatory minimum of 800 cycles to 80% capacity. Every other generic component
-lifecycle is null and must appear to the user as **Unknown**. Do not copy the phone rule
+The only sourced generic endurance endpoint in version `2.0.0` is the mobile-phone
+lithium-ion battery regulatory minimum of 800 cycles to 80% capacity. It is not a
+total-lifetime denominator: cycle count alone must leave lifecycle percentage
+**Unknown**, including at or beyond 800 cycles. Every other generic component lifecycle
+is null and must also appear as **Unknown**. Do not copy the phone rule
 to laptops, headphones, keyboards, mice, or manufacturer-specific products without a
 source that actually supports that scope.
 
@@ -58,7 +60,8 @@ not something detected in the image. Use `optional` for batteries in devices tha
 wired, including the released mouse, keyboard, and headphones templates.
 
 Every non-null lifecycle and every safety-sensitive component must carry `source_ids`,
-`evidence_grade`, and `reviewed_on`. Every safety rule must carry the same provenance.
+`evidence_grade`, and `reviewed_on`. Every safety rule must carry the same provenance
+plus an explicit `revision`; version `2.0.0` starts the authored rules at `1.0.0`.
 Category handling notes must cite registered sources and remain potential-substance
 context; they must never claim that a photographed item contains a specific substance.
 
@@ -103,7 +106,8 @@ policy:
 - major: an incompatible schema or meaning change that requires migration or a new app
   compatibility boundary.
 
-The current compiler checks that both version strings are present and equal; it does not
+The current compiled schema is `2`; the reference data version is `2.0.0`. The compiler
+checks that both version strings are present and equal; it does not
 validate semantic-version syntax or decide the increment. Reviewers own those checks.
 Reference data ships only through the normal application release process.
 
@@ -125,7 +129,7 @@ integrity, fsyncs it, and atomically replaces the destination. The summary repor
 - deterministic category and category-component counts;
 - null and sourced non-null lifecycle counts;
 - source coverage for release claims; and
-- a SHA-256 of the normalized, reviewed reference content.
+- a SHA-256 of the canonical logical database content.
 
 “Release claims” in source coverage means category context, each component with a
 non-null lifecycle or safety-sensitive flag, and each safety rule. A claim is covered
@@ -134,9 +138,13 @@ review date are present. This metric does not mean that every registered source 
 nor does it judge whether a citation actually supports the prose; human review does.
 
 The reported SHA-256 is the canonical reference-content checksum stored in database
-metadata. It is intentionally not a byte hash of the SQLite file, whose physical layout
-is not the data contract. Save the complete summary in the release record. Build twice
-from the same commit and confirm that the summaries and reported checksums match.
+metadata. Compilation calculates it from stable ordered relational content, and every
+`ReferenceStore` startup reconstructs and compares the same logical representation.
+It is intentionally distinct from the SQLite byte hash, whose physical layout is not
+the data contract. Release staging records both hashes and reopens the copied database
+against its logical hash, byte hash, schema, and version. Save the complete summary in
+the release record. Build twice from the same commit and confirm that the summaries and
+reported checksums match.
 
 ## 6. Run the release gate
 
@@ -152,7 +160,10 @@ Do not publish unless the gate confirms:
 - every lifecycle and safety claim has the required provenance;
 - only the mobile-phone battery has a sourced generic lifecycle;
 - unsupported lifecycle values remain null and render as **Unknown**;
+- a cycles-to-capacity endurance endpoint never becomes percent lifecycle used or a
+  recycle decision without a separately supported measurement;
 - safety rules precede reuse decisions in assessment behavior;
+- engine-policy and authored-rule revisions survive serialized results and snapshots;
 - template versions and the canonical checksum are deterministic; and
 - existing assessment snapshots remain immutable when reference data changes.
 
@@ -178,6 +189,7 @@ source review, versioning, compilation, and release process before becoming stan
 - [ ] Evidence grades are accurate and use the project convention.
 - [ ] Unsupported lifecycle values are null; no generic values were copied across scopes.
 - [ ] Safety copy is sourced, conditional where needed, and reviewed before reuse copy.
+- [ ] Every authored safety rule has the approved explicit revision.
 - [ ] Both YAML files use the approved matching version increment.
 - [ ] Compiler and whole-reference tests pass.
 - [ ] Two build summaries and canonical SHA-256 values match.

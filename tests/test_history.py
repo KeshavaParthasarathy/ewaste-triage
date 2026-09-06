@@ -1,4 +1,5 @@
 import os
+import json
 import pathlib
 import sqlite3
 import uuid
@@ -7,7 +8,7 @@ from datetime import datetime, timezone
 import pytest
 from PIL import Image
 
-from server.history import HistoryStore
+from server.history import AssessmentConflictError, HistoryStore
 
 
 PREDICTION = {
@@ -34,14 +35,87 @@ def test_assessment_snapshot_is_versioned_and_survives_store_reopen(tmp_path):
         "source_ids": ["source"],
     }
 
-    created = store.create_assessment(scan_id, template)
+    initial_components = [{"component_id": "battery", "result": {"confidence": "unavailable"}}]
+    created = store.create_assessment(
+        scan_id, template, {"usage": "unknown"}, {}, initial_components
+    )
     updated = store.update_assessment(scan_id, {"usage": "heavy"}, {})
     reopened = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media").get_assessment(scan_id)
 
     assert created["template_version"] == "1.0.0"
     assert updated["inputs"] == {"usage": "heavy"}
     assert reopened == updated
-    assert store.create_assessment(scan_id, {**template, "template_version": "2.0.0"}) == updated
+    assert store.create_assessment(
+        scan_id,
+        {**template, "template_version": "2.0.0"},
+        {"usage": "unknown"},
+        {},
+        initial_components,
+    ) == updated
+
+
+def test_initial_assessment_rejects_empty_derived_components_without_writing(tmp_path):
+    store = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media")
+    scan_id = store.add_scan(
+        PREDICTION,
+        Image.new("RGB", (10, 10)),
+        retain_original=False,
+        original=None,
+    )
+    store.set_confirmation(scan_id, "0306_mobile_phone")
+    template = {
+        "category_id": "0306_mobile_phone",
+        "template_version": "2.0.0",
+        "components": [{"component_id": "battery", "lifecycle": None}],
+        "rules": [],
+    }
+
+    with pytest.raises(ValueError, match="components"):
+        store.create_assessment(scan_id, template, {}, {}, [])
+
+    assert store.get_assessment(scan_id) is None
+
+
+def test_legacy_repair_compare_and_swap_does_not_overwrite_newer_inputs(tmp_path):
+    store = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media")
+    scan_id = store.add_scan(
+        PREDICTION,
+        Image.new("RGB", (10, 10)),
+        retain_original=False,
+        original=None,
+    )
+    store.set_confirmation(scan_id, "0306_mobile_phone")
+    legacy = {
+        "scan_id": scan_id,
+        "category_id": "0306_mobile_phone",
+        "template_version": "1.0.0",
+        "template": {
+            "category_id": "0306_mobile_phone",
+            "template_version": "1.0.0",
+            "components": [{"component_id": "battery"}],
+        },
+        "inputs": {},
+        "component_overrides": {},
+        "components": [],
+    }
+    with sqlite3.connect(store.database_path) as connection:
+        connection.execute(
+            "INSERT INTO assessments VALUES (?, ?, ?, ?, ?)",
+            (scan_id, "0306_mobile_phone", "1.0.0", json.dumps(legacy), "legacy"),
+        )
+    observed = store.get_assessment(scan_id)
+    store.update_assessment(scan_id, {"usage": "heavy"}, {})
+
+    with pytest.raises(AssessmentConflictError):
+        store.repair_incomplete_assessment(
+            scan_id,
+            observed,
+            {"usage": "unknown"},
+            {},
+            [{"component_id": "battery", "result": {}}],
+        )
+
+    assert store.get_assessment(scan_id)["inputs"] == {"usage": "heavy"}
 
 
 def test_scan_persists_with_stable_uuid_and_utc_timestamp(tmp_path):

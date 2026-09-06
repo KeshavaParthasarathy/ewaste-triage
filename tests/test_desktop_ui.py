@@ -764,6 +764,163 @@ const controller = UI.createController({view, fetchImpl, formDataFactory: () => 
     assert ["/api/v1/history/scan-1/confirmation", "PUT"] in result["requests"]
 
 
+def test_history_row_uses_confirmed_category_and_retains_original_model_evidence():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+process.stdout.write(JSON.stringify(UI.historyPresentation({
+  scan_id: 'corrected', created_at: '2026-09-05T12:00:00Z',
+  prediction: {class_name: '0306_mobile_phone', confidence: .91},
+  confirmation: {accepted_class_name: '0303_laptop', source: 'user'}
+})));
+""")
+
+    assert result["category"] == "Laptop"
+    assert result["model_evidence"] == "Original model: Mobile phone · 91% confidence"
+
+
+def test_rapid_corrections_are_serialized_and_pending_choices_are_coalesced():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const requests = [], corrections = [];
+let resolveFirst, resolveLast;
+const prediction = {
+  class_name: '0306_mobile_phone', confidence: .91,
+  topk: [
+    {class_name: '0306_mobile_phone', confidence: .91},
+    {class_name: '0303_laptop', confidence: .05},
+    {class_name: '0301_computer_mouse', confidence: .03},
+    {class_name: '0301_keyboard', confidence: .01}
+  ]
+};
+const record = category => ({
+  scan_id: 'ordered-scan', prediction,
+  confirmation: {accepted_class_name: category, source: 'user'}
+});
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {}, renderHistory() {},
+  markHistoryDeleting() {}, showSection() {}, clearPreview() {},
+  renderCorrection(value) { corrections.push(value.confirmed_class_name); },
+  renderHistoryError(message) { corrections.push(message); }
+};
+const fetchImpl = (url, options = {}) => {
+  if (url === '/api/v1/history/ordered-scan/confirmation') {
+    const category = JSON.parse(options.body).accepted_class_name;
+    requests.push(category);
+    if (requests.length === 1) {
+      return new Promise(resolve => { resolveFirst = () => resolve({ok: true, json: async () => record(category)}); });
+    }
+    return new Promise(resolve => { resolveLast = () => resolve({ok: true, json: async () => record(category)}); });
+  }
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({
+  view, fetchImpl, formDataFactory: () => ({append() {}}),
+  nextFrame: async () => {}, objectUrl: () => ''
+});
+(async () => {
+  controller.openHistory({scan_id: 'ordered-scan', prediction});
+  controller.selectAlternative({class_name: '0303_laptop'});
+  controller.selectAlternative({class_name: '0301_computer_mouse'});
+  controller.selectAlternative({class_name: '0301_keyboard'});
+  await new Promise(resolve => setImmediate(resolve));
+  const beforeFirstSettles = [...requests];
+  resolveFirst();
+  await new Promise(resolve => setImmediate(resolve));
+  const afterFirstSettles = [...requests];
+  resolveLast();
+  await new Promise(resolve => setImmediate(resolve));
+  process.stdout.write(JSON.stringify({
+    beforeFirstSettles, afterFirstSettles, corrections,
+    finalCategory: controller.getAssessmentContext().confirmed_class_name
+  }));
+})();
+""")
+
+    assert result["beforeFirstSettles"] == ["0303_laptop"]
+    assert result["afterFirstSettles"] == [
+        "0303_laptop",
+        "0301_keyboard",
+    ]
+    assert result["corrections"][-1] == "0301_keyboard"
+    assert result["finalCategory"] == "0301_keyboard"
+
+
+def test_reset_suppresses_obsolete_confirmation_error_reporting():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const errors = [];
+let settle;
+const prediction = {
+  class_name: '0306_mobile_phone', confidence: .9,
+  topk: [{class_name: '0306_mobile_phone', confidence: .9}, {class_name: '0303_laptop', confidence: .1}]
+};
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {}, renderHistory() {},
+  markHistoryDeleting() {}, showSection() {}, clearPreview() {}, renderCorrection() {}, reset() {},
+  renderHistoryError(message) { errors.push(message); }
+};
+const fetchImpl = () => new Promise(resolve => { settle = resolve; });
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => ''});
+(async () => {
+  controller.openHistory({scan_id: 'stale-scan', prediction});
+  controller.selectAlternative({class_name: '0303_laptop'});
+  controller.reset();
+  settle({ok: false, status: 503, json: async () => ({error: 'late failure'})});
+  await new Promise(resolve => setImmediate(resolve));
+  process.stdout.write(JSON.stringify({errors}));
+})();
+""")
+
+    assert result["errors"] == []
+
+
+def test_delete_waits_for_and_cancels_confirmation_writer_before_removal():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const requests = [], corrections = [];
+let settleConfirmation;
+const prediction = {
+  class_name: '0306_mobile_phone', confidence: .9,
+  topk: [{class_name: '0306_mobile_phone', confidence: .9}, {class_name: '0303_laptop', confidence: .1}]
+};
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {}, renderHistory() {},
+  markHistoryDeleting() {}, showSection() {}, clearPreview() {},
+  renderCorrection(value) { corrections.push(value.confirmed_class_name); }
+};
+const fetchImpl = (url, options = {}) => {
+  requests.push([url, options.method || 'GET']);
+  if (url.endsWith('/confirmation')) {
+    return new Promise(resolve => { settleConfirmation = () => resolve({ok: true, json: async () => ({scan_id: 'delete-scan', prediction, confirmation: {accepted_class_name: '0303_laptop', source: 'user'}})}); });
+  }
+  if (url === '/api/v1/history/delete-scan') return Promise.resolve({ok: true, json: async () => ({deleted: true})});
+  if (url === '/api/v1/history') return Promise.resolve({ok: true, json: async () => []});
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => '', undoDelay: 0});
+(async () => {
+  controller.openHistory({scan_id: 'delete-scan', prediction});
+  controller.selectAlternative({class_name: '0303_laptop'});
+  const deletion = controller.deleteHistory('delete-scan');
+  await new Promise(resolve => setImmediate(resolve));
+  const beforeSettle = [...requests];
+  settleConfirmation();
+  await deletion;
+  process.stdout.write(JSON.stringify({beforeSettle, requests, corrections}));
+})();
+""")
+
+    assert result["beforeSettle"] == [
+        ["/api/v1/history/delete-scan/confirmation", "PUT"]
+    ]
+    assert result["requests"] == [
+        ["/api/v1/history/delete-scan/confirmation", "PUT"],
+        ["/api/v1/history/delete-scan", "DELETE"],
+        ["/api/v1/history", "GET"],
+    ]
+    assert result["corrections"] == ["0303_laptop"]
+
+
 def test_history_delete_invalidates_an_inflight_list_before_commit():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);

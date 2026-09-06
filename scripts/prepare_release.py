@@ -317,12 +317,17 @@ def prepare_release(
     )
 
     try:
+        component_sha256 = sha256_file(component_db)
         with ReferenceStore(component_db) as references:
             component_manifest = references.manifest
     except (OSError, ValueError, sqlite3.Error) as error:  # type: ignore[name-defined]
         raise ReleasePreparationError("component database validation failed") from error
     if component_manifest.schema_version != REFERENCE_SCHEMA_VERSION:
         raise ReleasePreparationError("component database schema_version is unsupported")
+    if sha256_file(component_db) != component_sha256:
+        raise ReleasePreparationError(
+            "component database changed while validating release inputs"
+        )
 
     report = _validate_parity_report(
         parity_report,
@@ -369,7 +374,22 @@ def prepare_release(
             encoding="utf-8",
         )
         _fsync_file(labels_path)
-        _copy_asset(component_db, stage / "components.sqlite")
+        staged_components = stage / "components.sqlite"
+        _copy_asset(component_db, staged_components)
+        try:
+            with ReferenceStore(
+                staged_components,
+                expected_sha256=component_sha256,
+                expected_content_sha256=component_manifest.content_sha256,
+                expected_schema_version=component_manifest.schema_version,
+                expected_version=component_manifest.version,
+            ) as staged_references:
+                if staged_references.manifest != component_manifest:
+                    raise ValueError("component manifest changed")
+        except (OSError, ValueError, sqlite3.Error) as error:
+            raise ReleasePreparationError(
+                "component database changed while staging"
+            ) from error
         _write_json(stage / "parity-report.json", report)
 
         manifest = {
@@ -383,7 +403,8 @@ def prepare_release(
                 "schema_version": staged_model_manifest.schema_version,
             },
             "components": {
-                "sha256": sha256_file(stage / "components.sqlite"),
+                "sha256": sha256_file(staged_components),
+                "content_sha256": component_manifest.content_sha256,
                 "schema_version": component_manifest.schema_version,
                 "version": component_manifest.version,
             },

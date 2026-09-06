@@ -32,6 +32,13 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_LIFECYCLE_YEARS = 100
 MAX_LIFECYCLE_CYCLES = 1_000_000
 USER_PROVIDED_EVIDENCE_GRADE = "user_provided_unverified"
+KNOWN_ISSUE_FIELDS = {
+    "overheating",
+    "odor",
+    "swelling_or_battery_damage",
+    "recall",
+}
+MAX_KNOWN_ISSUE_NOTES = 500
 
 
 class _PhoneResultInbox:
@@ -181,7 +188,15 @@ def create_desktop_app(
     def validate_payload(payload):
         if not isinstance(payload, Mapping):
             raise ValueError("assessment payload must be an object")
-        allowed = {"age_months", "cycle_count", "usage", "condition", "operational", "component_overrides"}
+        allowed = {
+            "age_months",
+            "cycle_count",
+            "usage",
+            "condition",
+            "operational",
+            "component_overrides",
+            "known_issues",
+        }
         if set(payload) - allowed:
             raise ValueError("assessment payload contains unsupported fields")
         result = {}
@@ -193,6 +208,29 @@ def create_desktop_app(
                 result[name] = validate_range(payload[name], name)
             else:
                 result[name] = None
+        known_issues = payload.get("known_issues", {})
+        if not isinstance(known_issues, Mapping):
+            raise ValueError("known_issues must be an object")
+        if set(known_issues) - (KNOWN_ISSUE_FIELDS | {"notes"}):
+            raise ValueError("known_issues contains unsupported fields")
+        clean_known_issues = {}
+        for name in sorted(KNOWN_ISSUE_FIELDS):
+            value = known_issues.get(name, False)
+            if type(value) is not bool:
+                raise ValueError(f"known_issues.{name} must be boolean")
+            clean_known_issues[name] = value
+        notes = known_issues.get("notes")
+        if notes is not None and not isinstance(notes, str):
+            raise ValueError("known_issues.notes must be text or null")
+        notes = notes.strip() if isinstance(notes, str) else None
+        if notes == "":
+            notes = None
+        if notes is not None and len(notes) > MAX_KNOWN_ISSUE_NOTES:
+            raise OverflowError(
+                f"known_issues.notes must be at most {MAX_KNOWN_ISSUE_NOTES} characters"
+            )
+        clean_known_issues["notes"] = notes
+        result["known_issues"] = clean_known_issues
         overrides = payload.get("component_overrides", {})
         if not isinstance(overrides, Mapping):
             raise ValueError("component_overrides must be an object")
@@ -231,6 +269,7 @@ def create_desktop_app(
             "recommendation": result.recommendation.value,
             "reasons": list(result.reasons),
             "evidence": [{"kind": item.kind, "detail": item.detail, "source_ids": list(item.source_ids)} for item in result.evidence],
+            "policy_revision": result.policy_revision,
         }
 
     def computed_components(template, payload):
@@ -260,11 +299,17 @@ def create_desktop_app(
                 usage=Usage(payload["usage"]),
                 condition=Condition(override.get("condition", payload["condition"])),
                 operational=OperationalState(override.get("operational", payload["operational"])),
+                known_issues=tuple(
+                    name
+                    for name in sorted(KNOWN_ISSUE_FIELDS)
+                    if payload["known_issues"][name]
+                ),
+                known_issue_notes=payload["known_issues"]["notes"],
             )
             outputs.append({**component, "result": result_json(app.config["LIFECYCLE_ASSESSOR"](component, inputs))})
         return outputs
 
-    def assessment_for(scan_id):
+    def assessment_for(scan_id, repair_attempted=False):
         store = app.config["HISTORY_STORE"]
         if store is None or store.get_scan(scan_id) is None:
             return None, assessment_error("scan not found", 404)
@@ -274,7 +319,44 @@ def create_desktop_app(
             return None, assessment_error("confirm or correct the category before starting an assessment", 409)
         existing = store.get_assessment(scan_id)
         if existing is not None:
-            return existing, None
+            if existing.get("components"):
+                return existing, None
+            try:
+                stored_inputs = existing.get("inputs")
+                stored_overrides = existing.get("component_overrides")
+                stored_template = existing.get("template")
+                if not isinstance(stored_inputs, Mapping) or not isinstance(
+                    stored_overrides, Mapping
+                ) or not isinstance(stored_template, Mapping):
+                    raise ValueError("legacy assessment state is malformed")
+                payload = validate_payload(
+                    {**stored_inputs, "component_overrides": stored_overrides}
+                )
+                components = computed_components(stored_template, payload)
+                repaired = store.repair_incomplete_assessment(
+                    scan_id,
+                    existing,
+                    {
+                        key: value
+                        for key, value in payload.items()
+                        if key != "component_overrides"
+                    },
+                    payload["component_overrides"],
+                    components,
+                )
+                if repaired is None or not repaired.get("components"):
+                    raise ValueError("legacy assessment cannot be completed")
+            except AssessmentConflictError:
+                if not repair_attempted:
+                    return assessment_for(scan_id, repair_attempted=True)
+                return None, assessment_error(
+                    "stored assessment changed while it was being repaired", 409
+                )
+            except (KeyError, TypeError, ValueError, OverflowError):
+                return None, assessment_error(
+                    "stored assessment is incomplete and cannot be repaired", 409
+                )
+            return repaired, None
         refs = reference()
         if refs is None:
             return None, assessment_error("component reference data is unavailable", 503)
@@ -286,17 +368,25 @@ def create_desktop_app(
         except (sqlite3.Error, ValueError, RuntimeError):
             return None, assessment_error("component reference data is unavailable", 503)
         try:
-            assessment = store.create_assessment(scan_id, template)
+            payload = validate_payload({})
+            components = computed_components(template, payload)
+            assessment = store.create_assessment(
+                scan_id,
+                template,
+                {
+                    key: value
+                    for key, value in payload.items()
+                    if key != "component_overrides"
+                },
+                payload["component_overrides"],
+                components,
+            )
         except AssessmentConflictError:
             return None, assessment_error("confirmed category changed before assessment creation", 409)
-        if not assessment["components"]:
-            payload = validate_payload(assessment["inputs"])
-            assessment = store.update_assessment(
-                scan_id,
-                {key: value for key, value in payload.items() if key != "component_overrides"},
-                payload["component_overrides"],
-                computed_components(assessment["template"], payload),
-            )
+        if assessment is None:
+            return None, assessment_error("scan not found", 404)
+        if not assessment.get("components"):
+            return assessment_for(scan_id)
         return assessment, None
 
     @app.errorhandler(RequestEntityTooLarge)

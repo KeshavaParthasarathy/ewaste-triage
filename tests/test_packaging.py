@@ -9,11 +9,14 @@ import os
 from pathlib import Path
 import plistlib
 import shutil
+import sqlite3
 import subprocess
 import sys
 import xml.etree.ElementTree as ElementTree
 
 import pytest
+
+from server.reference_db import ReferenceStore, compile_reference
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,7 +88,7 @@ def _write_release_stage(root: Path, *, version: str = "1.2.3") -> Path:
     labels = release / "labels.json"
     labels.write_text(json.dumps(CANONICAL_LABELS, separators=(",", ":")) + "\n")
     components = release / "components.sqlite"
-    components.write_bytes(b"compiled component database")
+    component_manifest = compile_reference(ROOT / "reference", components)
     parity = {
         "schema_version": 1,
         "status": "passed",
@@ -116,8 +119,9 @@ def _write_release_stage(root: Path, *, version: str = "1.2.3") -> Path:
             },
             "components": {
                 "sha256": _sha256(components),
-                "schema_version": 1,
-                "version": "1.0.0",
+                "content_sha256": component_manifest.content_sha256,
+                "schema_version": component_manifest.schema_version,
+                "version": component_manifest.version,
             },
             "target": {"architecture": "arm64", "minimum_macos": "14.0"},
             "created_at": "2026-09-06T12:00:00+00:00",
@@ -390,6 +394,26 @@ def test_release_stage_verifier_rejects_asset_checksum_mismatch(tmp_path):
         validate_release_stage(release)
 
 
+def test_release_stage_verifier_rejects_logically_tampered_component_database(
+    tmp_path,
+):
+    from scripts.verify_macos_bundle import BundleVerificationError, validate_release_stage
+
+    release = _write_release_stage(tmp_path)
+    database = release / "components.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE rules SET text = text || ' tampered' WHERE rule_id = 'li_ion_no_household_trash'"
+        )
+    manifest_path = release / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["components"]["sha256"] = _sha256(database)
+    _write_json(manifest_path, manifest)
+
+    with pytest.raises(BundleVerificationError, match="component database"):
+        validate_release_stage(release)
+
+
 def test_release_stage_verifier_rejects_tampered_model_manifest_bytes(tmp_path):
     from scripts.verify_macos_bundle import BundleVerificationError, validate_release_stage
 
@@ -609,7 +633,7 @@ def test_build_script_refuses_dirty_source_before_creating_outputs(tmp_path, dir
         project / "packaging" / "release-manifest.schema.json",
     )
     (project / "server").mkdir()
-    for filename in ("__init__.py", "imaging.py", "model_bundle.py"):
+    for filename in ("__init__.py", "imaging.py", "model_bundle.py", "reference_db.py"):
         shutil.copy2(ROOT / "server" / filename, project / "server" / filename)
     subprocess.run(["/usr/bin/git", "init", "-q", str(project)], check=True)
     subprocess.run(["/usr/bin/git", "-C", str(project), "add", "."], check=True)

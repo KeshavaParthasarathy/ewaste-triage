@@ -27,6 +27,14 @@ class AppPaths:
         """Immutable compiled component-reference artifact bundled with the app."""
         return self.reference_dir / "components.sqlite"
 
+    @property
+    def release_manifest_path(self) -> Path:
+        return self.resources_dir / "release" / "release-manifest.json"
+
+    @property
+    def build_metadata_path(self) -> Path:
+        return self.resources_dir / "build-metadata.json"
+
     @classmethod
     def for_runtime(
         cls, frozen: bool, executable: Path | None = None

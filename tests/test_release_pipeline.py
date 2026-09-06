@@ -5,12 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import shutil
 
 import pytest
+import yaml
 
 import scripts.prepare_release as release_module
 from scripts.build_component_db import compile_reference
 from scripts.prepare_release import ReleasePreparationError, prepare_release
+from server.reference_db import ReferenceStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -312,6 +315,31 @@ def test_prepare_release_reports_an_invalid_component_database(release_inputs):
         prepare_release(bundle, components, report, output, "1.2.3")
 
 
+def test_prepare_release_reopens_staged_component_copy_and_rejects_swap(
+    release_inputs, tmp_path, monkeypatch
+):
+    bundle, components, report, output = release_inputs
+    changed_source = tmp_path / "changed-reference"
+    shutil.copytree(ROOT / "reference", changed_source)
+    component_yaml = changed_source / "device_components.yaml"
+    document = yaml.safe_load(component_yaml.read_text())
+    document["categories"][0]["display_name"] = "Changed mouse"
+    component_yaml.write_text(yaml.safe_dump(document, sort_keys=False))
+    swapped = tmp_path / "swapped.sqlite"
+    compile_reference(changed_source, swapped)
+    real_copy = release_module._copy_asset
+
+    def swap_component_copy(source, destination):
+        return real_copy(swapped if Path(source) == components else source, destination)
+
+    monkeypatch.setattr(release_module, "_copy_asset", swap_component_copy)
+
+    with pytest.raises(ReleasePreparationError, match="component database.*staging"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert not output.exists()
+
+
 @pytest.mark.parametrize(
     "output_selector",
     ("bundle", "inside_bundle", "model_asset", "manifest_asset", "components", "report"),
@@ -447,7 +475,14 @@ def test_prepare_release_stages_model_labels_components_and_manifest_atomically(
         "labels_sha256": sha256(output / "labels.json"),
         "schema_version": 1,
     }
-    assert manifest["components"] == {"sha256": sha256(output / "components.sqlite"), "schema_version": 1, "version": "1.0.0"}
+    with ReferenceStore(output / "components.sqlite") as references:
+        logical_sha256 = references.manifest.content_sha256
+    assert manifest["components"] == {
+        "sha256": sha256(output / "components.sqlite"),
+        "content_sha256": logical_sha256,
+        "schema_version": 2,
+        "version": "2.0.0",
+    }
     assert manifest["target"] == {"architecture": "arm64", "minimum_macos": "14.0"}
     assert manifest["parity"]["holdout"]["overlaps_training"] is False
     assert not list(output.parent.glob(f".{output.name}-*.tmp"))
@@ -459,6 +494,19 @@ def test_release_manifest_schema_recursively_closes_the_actual_parity_contract()
     parity = schema["properties"]["parity"]
     metrics = parity["properties"]["metrics"]
     holdout = parity["properties"]["holdout"]
+    components = schema["properties"]["components"]
+
+    assert components["additionalProperties"] is False
+    assert set(components["required"]) == {
+        "sha256",
+        "content_sha256",
+        "schema_version",
+        "version",
+    }
+    assert components["properties"]["content_sha256"] == {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+    }
 
     assert model["additionalProperties"] is False
     assert set(model["required"]) == {

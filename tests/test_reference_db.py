@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
+import hashlib
 import sqlite3
 import subprocess
 import sys
@@ -53,8 +54,8 @@ def test_release_reference_contains_exactly_five_categories(tmp_path):
     store = ReferenceStore(tmp_path / "components.sqlite")
 
     assert {row["category_id"] for row in store.list_categories()} == EXPECTED
-    assert manifest.schema_version == 1
-    assert manifest.version == "1.0.0"
+    assert manifest.schema_version == 2
+    assert manifest.version == "2.0.0"
     assert len(manifest.content_sha256) == 64
 
 
@@ -129,6 +130,49 @@ def test_snapshot_keeps_category_context_and_battery_disposal_rule(tmp_path):
     assert "household trash" in battery_rule["text"].lower()
     assert "municipal recycling" in battery_rule["text"].lower()
     assert battery_rule["source_ids"] == ["epa_used_li_ion_2026"]
+    assert battery_rule["revision"] == "1.0.0"
+
+
+def test_store_recomputes_logical_hash_and_rejects_semantic_tampering(tmp_path):
+    database = tmp_path / "components.sqlite"
+    compile_reference(ROOT / "reference", database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE rules SET text = text || ' tampered' WHERE rule_id = 'li_ion_no_household_trash'"
+        )
+
+    with pytest.raises(ReferenceStartupError):
+        ReferenceStore(database)
+
+
+def test_store_release_expectations_reject_a_valid_swapped_database(tmp_path):
+    expected = tmp_path / "expected.sqlite"
+    swapped = tmp_path / "swapped.sqlite"
+    expected_manifest = compile_reference(ROOT / "reference", expected)
+    fixture = copy_reference_fixture(tmp_path / "changed")
+    fixture["categories"][0]["display_name"] = "Changed mouse"
+    write_component_fixture(tmp_path / "changed", fixture)
+    compile_reference(tmp_path / "changed", swapped)
+
+    with pytest.raises(ReferenceStartupError):
+        ReferenceStore(
+            swapped,
+            expected_sha256=hashlib.sha256(expected.read_bytes()).hexdigest(),
+            expected_content_sha256=expected_manifest.content_sha256,
+            expected_schema_version=expected_manifest.schema_version,
+            expected_version=expected_manifest.version,
+        )
+
+
+def test_store_logical_hash_survives_byte_stable_copy_and_reopen(tmp_path):
+    original = tmp_path / "components.sqlite"
+    copied = tmp_path / "copied.sqlite"
+    manifest = compile_reference(ROOT / "reference", original)
+    copied.write_bytes(original.read_bytes())
+
+    for database in (original, copied):
+        with ReferenceStore(database) as store:
+            assert store.manifest == manifest
 
 
 def test_store_is_read_only_and_unknown_category_is_none(tmp_path):
@@ -148,8 +192,8 @@ def test_store_rejects_metadata_only_database_during_startup(tmp_path):
         connection.executemany(
             "INSERT INTO metadata VALUES (?, ?)",
             (
-                ("schema_version", "1"),
-                ("version", "1.0.0"),
+                ("schema_version", "2"),
+                ("version", "2.0.0"),
                 ("content_sha256", "a" * 64),
             ),
         )

@@ -18,7 +18,7 @@ from typing import Any
 import yaml
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _PRESENCE_LABELS = {"standard", "common", "optional", "unknown"}
 _SOURCE_FIELDS = {"source_id", "title", "publisher", "url", "reviewed_on", "evidence_grade"}
 _CATEGORY_FIELDS = {"category_id", "display_name", "handling_note", "source_ids", "components", "rules"}
@@ -26,7 +26,14 @@ _COMPONENT_FIELDS = {
     "component_id", "display_name", "presence_label", "lifecycle", "source_ids",
     "evidence_grade", "reviewed_on", "safety_sensitive", "notes",
 }
-_RULE_FIELDS = {"rule_id", "text", "source_ids", "evidence_grade", "reviewed_on"}
+_RULE_FIELDS = {
+    "rule_id",
+    "revision",
+    "text",
+    "source_ids",
+    "evidence_grade",
+    "reviewed_on",
+}
 _STARTUP_ERROR = "component reference database is unavailable or incompatible"
 _REQUIRED_DATABASE_COLUMNS = {
     "metadata": {"key", "value"},
@@ -61,11 +68,56 @@ _REQUIRED_DATABASE_COLUMNS = {
     "rules": {
         "category_id",
         "rule_id",
+        "revision",
         "text",
         "source_ids_json",
         "evidence_grade",
         "reviewed_on",
     },
+}
+_LOGICAL_TABLES = {
+    "sources": (
+        ("source_id", "title", "publisher", "url", "reviewed_on", "evidence_grade"),
+        "source_id",
+    ),
+    "categories": (
+        (
+            "category_id",
+            "display_name",
+            "template_version",
+            "handling_note",
+            "source_ids_json",
+        ),
+        "category_id",
+    ),
+    "components": (("component_id", "display_name"), "component_id"),
+    "category_components": (
+        (
+            "category_id",
+            "component_id",
+            "ordinal",
+            "presence_label",
+            "lifecycle_json",
+            "source_ids_json",
+            "evidence_grade",
+            "reviewed_on",
+            "safety_sensitive",
+            "notes_json",
+        ),
+        "category_id, ordinal, component_id",
+    ),
+    "rules": (
+        (
+            "category_id",
+            "rule_id",
+            "revision",
+            "text",
+            "source_ids_json",
+            "evidence_grade",
+            "reviewed_on",
+        ),
+        "category_id, rule_id",
+    ),
 }
 
 
@@ -269,6 +321,7 @@ def _validate_rule(value: Any, known_sources: set[str], filename: str, path: str
     _required_fields(rule, _RULE_FIELDS, filename, path)
     return {
         "rule_id": _string(rule["rule_id"], filename, f"{path}.rule_id"),
+        "revision": _string(rule["revision"], filename, f"{path}.revision"),
         "text": _string(rule["text"], filename, f"{path}.text"),
         "source_ids": _source_ids(rule["source_ids"], known_sources, filename, f"{path}.source_ids", required=True),
         "evidence_grade": _string(rule["evidence_grade"], filename, f"{path}.evidence_grade"),
@@ -350,21 +403,53 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         );
         CREATE TABLE rules (
             category_id TEXT NOT NULL REFERENCES categories(category_id), rule_id TEXT NOT NULL,
-            text TEXT NOT NULL, source_ids_json TEXT NOT NULL, evidence_grade TEXT NOT NULL,
+            revision TEXT NOT NULL, text TEXT NOT NULL, source_ids_json TEXT NOT NULL, evidence_grade TEXT NOT NULL,
             reviewed_on TEXT NOT NULL, PRIMARY KEY (category_id, rule_id)
         );
     """)
 
 
+def _database_content_sha256(connection: sqlite3.Connection) -> str:
+    """Hash the stable logical release content, independent of SQLite file bytes."""
+    metadata = {
+        row["key"] if isinstance(row, sqlite3.Row) else row[0]:
+        row["value"] if isinstance(row, sqlite3.Row) else row[1]
+        for row in connection.execute(
+            "SELECT key, value FROM metadata WHERE key IN ('schema_version', 'version')"
+        )
+    }
+    tables: dict[str, list[dict[str, Any]]] = {}
+    for table, (columns, ordering) in _LOGICAL_TABLES.items():
+        query = f"SELECT {', '.join(columns)} FROM {table} ORDER BY {ordering}"
+        rows = connection.execute(query).fetchall()
+        tables[table] = [
+            {
+                column: row[column] if isinstance(row, sqlite3.Row) else row[index]
+                for index, column in enumerate(columns)
+            }
+            for row in rows
+        ]
+    canonical = _json({"metadata": metadata, "tables": tables})
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _write_database(
-    path: Path, manifest: ReferenceManifest, sources: list[dict[str, Any]], categories: list[dict[str, Any]]
-) -> None:
+    path: Path, version: str, sources: list[dict[str, Any]], categories: list[dict[str, Any]]
+) -> str:
     with closing(sqlite3.connect(path)) as connection:
         connection.execute("PRAGMA foreign_keys = ON")
         _create_schema(connection)
         connection.executemany(
             "INSERT INTO metadata(key, value) VALUES (?, ?)",
-            [("schema_version", str(manifest.schema_version)), ("version", manifest.version), ("content_sha256", manifest.content_sha256)],
+            [("schema_version", str(SCHEMA_VERSION)), ("version", version)],
         )
         connection.executemany(
             "INSERT INTO sources VALUES (:source_id, :title, :publisher, :url, :reviewed_on, :evidence_grade)", sources
@@ -373,7 +458,7 @@ def _write_database(
         for category in categories:
             connection.execute(
                 "INSERT INTO categories VALUES (?, ?, ?, ?, ?)",
-                (category["category_id"], category["display_name"], manifest.version, category["handling_note"], _json(category["source_ids"])),
+                (category["category_id"], category["display_name"], version, category["handling_note"], _json(category["source_ids"])),
             )
             for ordinal, component in enumerate(category["components"]):
                 if component["component_id"] not in seen_components:
@@ -388,13 +473,19 @@ def _write_database(
                 )
             for rule in category["rules"]:
                 connection.execute(
-                    "INSERT INTO rules VALUES (?, ?, ?, ?, ?, ?)",
-                    (category["category_id"], rule["rule_id"], rule["text"], _json(rule["source_ids"]), rule["evidence_grade"], rule["reviewed_on"]),
+                    "INSERT INTO rules VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (category["category_id"], rule["rule_id"], rule["revision"], rule["text"], _json(rule["source_ids"]), rule["evidence_grade"], rule["reviewed_on"]),
                 )
+        content_sha256 = _database_content_sha256(connection)
+        connection.execute(
+            "INSERT INTO metadata(key, value) VALUES ('content_sha256', ?)",
+            (content_sha256,),
+        )
         connection.commit()
         integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
         if integrity != "ok":
             raise RuntimeError(f"SQLite integrity check failed: {integrity}")
+    return content_sha256
 
 
 def _fsync_path(path: Path) -> None:
@@ -414,15 +505,14 @@ def compile_reference(source_dir: Path, destination: Path) -> ReferenceManifest:
     if component_document.get("version") != source_document.get("version"):
         _fail("device_components.yaml", "version", "must match sources.yaml version")
     categories = _validate_components_document(component_document, {source["source_id"] for source in sources})
-    canonical = _json({"sources": sources, "categories": categories})
-    manifest = ReferenceManifest(SCHEMA_VERSION, component_document["version"], hashlib.sha256(canonical.encode()).hexdigest())
-
     destination.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
     os.close(descriptor)
     temporary = Path(temporary_name)
     try:
-        _write_database(temporary, manifest, sources, categories)
+        content_sha256 = _write_database(
+            temporary, component_document["version"], sources, categories
+        )
         _fsync_path(temporary)
         os.replace(temporary, destination)
         try:
@@ -437,13 +527,23 @@ def compile_reference(source_dir: Path, destination: Path) -> ReferenceManifest:
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
-    return manifest
+    return ReferenceManifest(
+        SCHEMA_VERSION, component_document["version"], content_sha256
+    )
 
 
 class ReferenceStore:
     """Query a compiled component release without permitting mutations."""
 
-    def __init__(self, database_path: Path):
+    def __init__(
+        self,
+        database_path: Path,
+        *,
+        expected_sha256: str | None = None,
+        expected_content_sha256: str | None = None,
+        expected_schema_version: int | None = None,
+        expected_version: str | None = None,
+    ):
         try:
             path = Path(database_path).resolve()
         except (OSError, RuntimeError, TypeError) as exc:
@@ -451,6 +551,9 @@ class ReferenceStore:
         self._lock = threading.RLock()
         connection = None
         try:
+            initial_sha256 = _sha256_file(path)
+            if expected_sha256 is not None and initial_sha256 != expected_sha256:
+                raise ValueError("reference database file hash does not match release")
             connection = sqlite3.connect(
                 f"{path.as_uri()}?mode=ro", uri=True, check_same_thread=False
             )
@@ -458,6 +561,21 @@ class ReferenceStore:
             connection.execute("PRAGMA query_only = ON")
             self._connection = connection
             self._manifest = self._validate_startup()
+            if (
+                expected_content_sha256 is not None
+                and self._manifest.content_sha256 != expected_content_sha256
+            ):
+                raise ValueError("reference database content hash does not match release")
+            if (
+                expected_schema_version is not None
+                and self._manifest.schema_version != expected_schema_version
+            ):
+                raise ValueError("reference database schema does not match release")
+            if expected_version is not None and self._manifest.version != expected_version:
+                raise ValueError("reference database version does not match release")
+            final_sha256 = _sha256_file(path)
+            if final_sha256 != initial_sha256:
+                raise ValueError("reference database changed during startup")
         except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
             if connection is not None:
                 connection.close()
@@ -570,6 +688,9 @@ class ReferenceStore:
                         f"reference database {table}.{column} has invalid data"
                     )
 
+        if _database_content_sha256(self._connection) != content_sha256:
+            raise ValueError("reference database logical content hash does not match")
+
         return ReferenceManifest(SCHEMA_VERSION, version, content_sha256)
 
     def _metadata(self, key: str) -> str:
@@ -617,7 +738,7 @@ class ReferenceStore:
             (category_id,),
             ).fetchall()
             rules = self._connection.execute(
-                "SELECT rule_id, text, source_ids_json, evidence_grade, reviewed_on FROM rules WHERE category_id = ? ORDER BY rule_id", (category_id,)
+                "SELECT rule_id, revision, text, source_ids_json, evidence_grade, reviewed_on FROM rules WHERE category_id = ? ORDER BY rule_id", (category_id,)
             ).fetchall()
         return {
             **category,
@@ -631,7 +752,8 @@ class ReferenceStore:
             ],
             "rules": [
                 {"rule_id": row["rule_id"], "text": row["text"], "source_ids": json.loads(row["source_ids_json"]),
-                 "evidence_grade": row["evidence_grade"], "reviewed_on": row["reviewed_on"]}
+                 "evidence_grade": row["evidence_grade"], "reviewed_on": row["reviewed_on"],
+                 "revision": row["revision"]}
                 for row in rules
             ],
         }

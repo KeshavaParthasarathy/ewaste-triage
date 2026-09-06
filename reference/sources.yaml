@@ -1,5 +1,5 @@
-schema_version: 1
-version: "1.0.0"
+schema_version: 2
+version: "2.0.0"
 sources:
   - source_id: epa_used_li_ion_2026
     title: Used Lithium-Ion Batteries

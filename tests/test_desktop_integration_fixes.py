@@ -10,7 +10,12 @@ from PIL import Image
 
 import pytest
 
-from desktop.main import build_desktop_app, build_recovery_app, run
+from desktop.main import (
+    ReferenceDataStartupError,
+    build_desktop_app,
+    build_recovery_app,
+    run,
+)
 from desktop.paths import AppPaths
 from server.history import HistoryStore
 
@@ -243,6 +248,114 @@ def test_reference_store_closes_when_later_app_assembly_fails(monkeypatch, tmp_p
         build_desktop_app(paths)
 
     assert closed == [True]
+
+
+def test_strict_packaged_assembly_anchors_reference_to_release_manifest(
+    monkeypatch, tmp_path
+):
+    resources = tmp_path / "resources"
+    reference_dir = resources / "reference"
+    release_dir = resources / "release"
+    reference_dir.mkdir(parents=True)
+    release_dir.mkdir(parents=True)
+    database = reference_dir / "components.sqlite"
+    database.write_bytes(b"component bytes")
+    database_sha = hashlib.sha256(database.read_bytes()).hexdigest()
+    release_manifest = {
+        "schema_version": 1,
+        "app_version": "1.2.3",
+        "model": {},
+        "components": {
+            "sha256": database_sha,
+            "content_sha256": "b" * 64,
+            "schema_version": 2,
+            "version": "2.0.0",
+        },
+        "target": {},
+        "created_at": "2026-09-06T12:00:00+00:00",
+        "parity": {},
+    }
+    manifest_path = release_dir / "release-manifest.json"
+    manifest_path.write_text(json.dumps(release_manifest, sort_keys=True))
+    (resources / "build-metadata.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "app_version": "1.2.3",
+                "source_revision": "a" * 40,
+                "release_manifest_sha256": hashlib.sha256(
+                    manifest_path.read_bytes()
+                ).hexdigest(),
+            }
+        )
+    )
+    paths = AppPaths(
+        resources_dir=resources,
+        static_dir=resources / "server/static",
+        model_bundle_dir=resources / "models/production",
+        reference_dir=reference_dir,
+        data_dir=tmp_path / "support",
+        history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+    calls = []
+
+    class OwnedReference:
+        def close(self):
+            pass
+
+    def open_reference(path, **expectations):
+        calls.append((path, expectations))
+        return OwnedReference()
+
+    monkeypatch.setattr("desktop.main.OnnxClassifier", lambda _path: FakeClassifier())
+    monkeypatch.setattr("desktop.main.ReferenceStore", open_reference)
+
+    app = build_desktop_app(paths, require_release_integrity=True)
+
+    assert calls == [
+        (
+            database,
+            {
+                "expected_sha256": database_sha,
+                "expected_content_sha256": "b" * 64,
+                "expected_schema_version": 2,
+                "expected_version": "2.0.0",
+            },
+        )
+    ]
+    app.extensions["close_reference_store"]()
+
+
+def test_strict_packaged_assembly_rejects_manifest_not_anchored_by_build_metadata(
+    monkeypatch, tmp_path
+):
+    resources = tmp_path / "resources"
+    (resources / "release").mkdir(parents=True)
+    (resources / "release/release-manifest.json").write_text("{}")
+    (resources / "build-metadata.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "app_version": "1.2.3",
+                "source_revision": "a" * 40,
+                "release_manifest_sha256": "0" * 64,
+            }
+        )
+    )
+    paths = AppPaths(
+        resources_dir=resources,
+        static_dir=resources / "server/static",
+        model_bundle_dir=resources / "models/production",
+        reference_dir=resources / "reference",
+        data_dir=tmp_path / "support",
+        history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+    monkeypatch.setattr("desktop.main.OnnxClassifier", lambda _path: FakeClassifier())
+
+    with pytest.raises(ReferenceDataStartupError, match="unavailable or incompatible"):
+        build_desktop_app(paths, require_release_integrity=True)
 
 
 def test_recovery_diagnostics_are_supplied_from_runtime_metadata():

@@ -20,10 +20,10 @@ from server.reference_db import ReferenceStore, compile_reference
 
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVED_VERSION = "1.0.0"
-APPROVED_SCHEMA_VERSION = 1
+APPROVED_VERSION = "2.0.0"
+APPROVED_SCHEMA_VERSION = 2
 APPROVED_CONTENT_SHA256 = (
-    "45c84012168d6d0d3868954855b7b2d6a64eee235b8b23846bc7dc10a0f0131f"
+    "5729aefdd8573bdd10ae472b3231ddb6ff1db4c24b197bad4a37785a83efaa31"
 )
 APPROVED_PRESENCE_LABELS = {"standard", "common", "optional", "unknown"}
 HANDLING_NOTE = (
@@ -41,6 +41,7 @@ CONDITIONAL_BATTERY_RULE = (
     BATTERY_SOURCE,
     "primary_guidance",
     REVIEW_DATE,
+    "1.0.0",
 )
 STANDARD_BATTERY_RULE = (
     "li_ion_no_household_trash",
@@ -49,6 +50,7 @@ STANDARD_BATTERY_RULE = (
     BATTERY_SOURCE,
     "primary_guidance",
     REVIEW_DATE,
+    "1.0.0",
 )
 
 # Component tuples pin, in order: ID, display name, presence, lifecycle, source IDs,
@@ -161,6 +163,7 @@ def _rule_contract(rule: dict) -> tuple:
         tuple(rule["source_ids"]),
         rule["evidence_grade"],
         rule["reviewed_on"],
+        rule["revision"],
     )
 
 
@@ -255,7 +258,7 @@ def test_every_released_claim_is_traceable_and_honest(tmp_path):
     )
     assert unknown.percent_used is None
     assert unknown.confidence is Confidence.UNAVAILABLE
-    assert supported.percent_used == Range(25, 50)
+    assert supported.percent_used is None
 
 
 def test_approved_digest_is_pinned_and_changes_when_reference_content_changes(tmp_path):
@@ -303,8 +306,8 @@ def test_release_summary_and_content_checksum_are_exact_and_deterministic(tmp_pa
 
     expected_lines = [
         "component reference release summary",
-        "database version: 1.0.0",
-        "schema version: 1",
+        "database version: 2.0.0",
+        "schema version: 2",
         "categories: 5",
         "- 0301_computer_mouse: Computer mouse",
         "- 0301_keyboard: Keyboard",

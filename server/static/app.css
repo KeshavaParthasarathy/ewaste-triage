@@ -1214,7 +1214,8 @@ html[data-state="review"] .confidence-track span {
 }
 
 .assessment-form select,
-.assessment-form input {
+.assessment-form input,
+.assessment-form textarea {
   width: 100%;
   min-width: 0;
   min-height: 37px;
@@ -1234,7 +1235,8 @@ html[data-state="review"] .confidence-track span {
 }
 
 .assessment-form select:hover:not(:disabled),
-.assessment-form input:hover {
+.assessment-form input:hover,
+.assessment-form textarea:hover {
   border-color: var(--accent);
 }
 
@@ -1301,6 +1303,41 @@ html[data-state="review"] .confidence-track span {
 
 .known-issues > p {
   margin-top: 3px;
+}
+
+.known-issue-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 12px;
+  margin-top: 12px;
+}
+
+.known-issue-checks label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.assessment-form .known-issue-checks input {
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
+}
+
+.known-issue-notes,
+.known-issue-notes > span {
+  display: block;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.known-issue-notes textarea {
+  display: block;
+  resize: vertical;
 }
 
 .assessment-evidence dl,
@@ -2238,6 +2275,7 @@ html[data-state="review"] .confidence-track span {
 
   .range-inputs,
   .known-issue-fields,
+  .known-issue-checks,
   .component-range-inputs,
   .component-override-controls {
     grid-template-columns: 1fr;

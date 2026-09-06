@@ -1,6 +1,7 @@
 import copy
 import json
 import math
+import sqlite3
 import urllib.request
 
 from PIL import Image
@@ -104,6 +105,51 @@ def test_assessment_is_gated_by_category_acceptance_then_immutable(tmp_path):
     assert client.put(f"/api/v1/history/{scan_id}/confirmation", json={"accepted_class_name": "0303_laptop"}).status_code == 409
 
 
+def test_initial_assessment_computation_failure_leaves_no_empty_record(tmp_path):
+    client, store, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+    client.application.config["LIFECYCLE_ASSESSOR"] = lambda *_: (_ for _ in ()).throw(
+        RuntimeError("calculation failed")
+    )
+
+    with pytest.raises(RuntimeError, match="calculation failed"):
+        client.get(f"/api/v1/scans/{scan_id}/assessment")
+
+    assert store.get_assessment(scan_id) is None
+
+
+def test_repairable_legacy_empty_assessment_is_never_exposed(tmp_path):
+    client, store, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+    template = MutableReference().snapshot("0306_mobile_phone")
+    legacy = {
+        "scan_id": scan_id,
+        "category_id": "0306_mobile_phone",
+        "template_version": "1.0.0",
+        "template": template,
+        "inputs": {},
+        "component_overrides": {},
+        "components": [],
+    }
+    with sqlite3.connect(store.database_path) as connection:
+        connection.execute(
+            "INSERT INTO assessments VALUES (?, ?, ?, ?, ?)",
+            (scan_id, "0306_mobile_phone", "1.0.0", json.dumps(legacy), "legacy"),
+        )
+
+    response = client.get(f"/api/v1/scans/{scan_id}/assessment")
+
+    assert response.status_code == 200
+    assert response.json["components"]
+    assert store.get_assessment(scan_id)["components"]
+
+
 def test_canonical_reference_category_outside_model_topk_can_be_confirmed(tmp_path):
     root = Path(__file__).resolve().parents[1]
     database = tmp_path / "components.sqlite"
@@ -171,6 +217,96 @@ def test_assessment_payload_and_scan_errors_are_strict(tmp_path):
     assert valid.json["inputs"]["usage"] == "heavy"
     assert valid.json["components"][0]["result"]["percent_used"] == {"minimum": 33, "maximum": 75}
     assert valid.json["component_overrides"] == {"battery": {"presence_label": "standard"}}
+
+
+def test_known_issues_are_closed_bounded_persisted_and_drive_safety(tmp_path):
+    client, _, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+    known_issues = {
+        "overheating": True,
+        "odor": False,
+        "swelling_or_battery_damage": False,
+        "recall": False,
+        "notes": " Gets hot while charging. ",
+    }
+
+    saved = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"known_issues": known_issues},
+    )
+    reopened = client.get(f"/api/v1/scans/{scan_id}/assessment")
+    extra = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"known_issues": {**known_issues, "other": True}},
+    )
+    too_long = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"known_issues": {**known_issues, "notes": "x" * 501}},
+    )
+
+    assert saved.status_code == 200
+    assert saved.json["inputs"]["known_issues"] == {
+        **known_issues,
+        "notes": "Gets hot while charging.",
+    }
+    assert reopened.json == saved.json
+    result = saved.json["components"][0]["result"]
+    assert result["recommendation"] == "specialist_handling"
+    assert result["policy_revision"] == "1.0.0"
+    assert any(item["kind"] == "user_known_issue" for item in result["evidence"])
+    assert extra.status_code == 400
+    assert too_long.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "known_issues",
+    (
+        [],
+        {"overheating": 1},
+        {"odor": "yes"},
+        {"swelling_or_battery_damage": None},
+        {"recall": []},
+        {"notes": 7},
+    ),
+)
+def test_known_issue_types_are_strict_json_values(tmp_path, known_issues):
+    client, _, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+
+    response = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"known_issues": known_issues},
+    )
+
+    assert response.status_code == 400
+    assert response.is_json
+
+
+def test_known_issue_note_bound_counts_unicode_code_points(tmp_path):
+    client, _, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+
+    accepted = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"known_issues": {"notes": "😀" * 500}},
+    )
+    rejected = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"known_issues": {"notes": "😀" * 501}},
+    )
+
+    assert accepted.status_code == 200
+    assert accepted.json["inputs"]["known_issues"]["notes"] == "😀" * 500
+    assert rejected.status_code == 422
 
 
 @pytest.mark.parametrize(
@@ -409,7 +545,8 @@ def test_real_compiled_reference_works_over_threaded_http(tmp_path):
         with urllib.request.urlopen(request) as response:
             assessment = json.load(response)
         battery = next(item for item in assessment["components"] if item["component_id"] == "lithium_ion_battery")
-        assert battery["result"]["percent_used"] == {"minimum": 25, "maximum": 50}
+        assert battery["result"]["percent_used"] is None
+        assert "total lifecycle" in " ".join(battery["result"]["reasons"]).lower()
         assert battery["result"]["recommendation"] != "specialist_handling"
     finally:
         server.shutdown()

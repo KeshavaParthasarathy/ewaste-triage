@@ -162,6 +162,19 @@ def test_assessment_form_exposes_supported_item_and_component_inputs():
         "assessment-operational",
     ):
         assert controls[control_id][0] == "select"
+    for control_id in (
+        "assessment-issue-overheating",
+        "assessment-issue-odor",
+        "assessment-issue-swelling",
+        "assessment-issue-recall",
+    ):
+        tag, attrs = controls[control_id]
+        assert tag == "input"
+        assert attrs["type"] == "checkbox"
+    notes_tag, notes_attrs = controls["assessment-issue-notes"]
+    assert notes_tag == "textarea"
+    assert notes_attrs["maxlength"] == "500"
+    assert controls["assessment-safety-list"][1]["aria-live"] == "polite"
     assert controls["save-assessment"][0] == "button"
     feedback_tag, feedback_attrs = controls["assessment-save-feedback"]
     assert feedback_tag == "p"
@@ -201,12 +214,15 @@ def test_phone_width_header_has_a_dedicated_overflow_guard():
     assert ".nav-item" in compact
 
 
-def test_assessment_payload_uses_only_task3_fields_and_authorized_overrides():
+def test_assessment_payload_uses_closed_known_issues_and_authorized_overrides():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);
 const payload = UI.assessmentPayloadFromValues({
   age_min: '24', age_max: '36', cycle_min: '200', cycle_max: '400',
   usage: 'heavy', condition: 'visible_wear', operational: 'intermittent',
+  issue_overheating: 'true', issue_odor: undefined,
+  issue_swelling_or_battery_damage: 'on', issue_recall: false,
+  issue_notes: ' Fan clicks after ten minutes. ',
   'component.lithium_ion_battery.presence': 'standard',
   'component.lithium_ion_battery.condition': 'damaged',
   'component.lithium_ion_battery.lifecycle_metric': 'cycles',
@@ -223,6 +239,13 @@ process.stdout.write(JSON.stringify(payload));
         "usage": "heavy",
         "condition": "visible_wear",
         "operational": "intermittent",
+        "known_issues": {
+            "overheating": True,
+            "odor": False,
+            "swelling_or_battery_damage": True,
+            "recall": False,
+            "notes": "Fan clicks after ten minutes.",
+        },
         "component_overrides": {
             "lithium_ion_battery": {
                 "presence_label": "standard",
@@ -231,6 +254,34 @@ process.stdout.write(JSON.stringify(payload));
             }
         },
     }
+
+
+def test_known_issue_notes_are_bounded_before_submit():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+try {
+  UI.assessmentPayloadFromValues({issue_notes: 'x'.repeat(501)});
+  process.stdout.write(JSON.stringify({error: null}));
+} catch (error) {
+  process.stdout.write(JSON.stringify({error: error.message}));
+}
+""")
+
+    assert "500" in result["error"]
+
+
+def test_known_issue_notes_bound_counts_unicode_code_points():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+function attempt(note) {
+  try { return {notes: UI.assessmentPayloadFromValues({issue_notes: note}).known_issues.notes}; }
+  catch (error) { return {error: error.message}; }
+}
+process.stdout.write(JSON.stringify({accepted: attempt('😀'.repeat(500)), rejected: attempt('😀'.repeat(501))}));
+""")
+
+    assert result["accepted"]["notes"] == "😀" * 500
+    assert "500" in result["rejected"]["error"]
 
 
 def test_lifecycle_payload_supports_capacity_and_clears_disabled_dependents():
@@ -504,42 +555,117 @@ const presentation = UI.buildAssessmentPresentation({
   template: {
     category_id: '0306_mobile_phone', display_name: 'Mobile phone',
     handling_note: 'Potential context only.',
-    rules: [{text: 'Use a battery collection option.', source_ids: ['epa-battery'], reviewed_on: '2026-09-05'}]
+    rules: [{text: 'Use a battery collection option.', source_ids: ['epa-battery'], reviewed_on: '2026-09-05', revision: '1.0.0'}]
   },
-  inputs: {age_months: {minimum: 24, maximum: 36}, cycle_count: {minimum: 200, maximum: 400}},
+  inputs: {age_months: {minimum: 24, maximum: 36}, cycle_count: {minimum: 200, maximum: 400},
+           known_issues: {overheating: true, odor: false, swelling_or_battery_damage: false, recall: false,
+                          notes: 'Gets hot while charging.'}},
   components: [
     {
       component_id: 'battery', display_name: 'Battery', presence_label: 'standard', safety_sensitive: true,
       lifecycle: {metric: 'cycles_to_capacity', minimum: 800, maximum: 800, capacity_percent: 80,
                   source_ids: ['eu-phone']},
       source_ids: ['eu-phone'], evidence_grade: 'regulatory_minimum', reviewed_on: '2026-09-05',
-      result: {percent_used: {minimum: 25, maximum: 50}, confidence: 'moderate', recommendation: 'diagnostic_test',
-               reasons: ['Test before reuse.'], evidence: [{kind: 'cycle_count', detail: 'User-reported cycles: 200–400.', source_ids: []}]}
+      result: {percent_used: null, confidence: 'unavailable', recommendation: 'unknown',
+               reasons: ['The sourced cycle endpoint is 80% capacity; it is not a total lifecycle endpoint.'],
+               evidence: [{kind: 'cycle_count', detail: 'User-reported cycles: 200–400.', source_ids: []}]}
     },
     {
       component_id: 'camera', display_name: 'Camera', presence_label: 'common', lifecycle: null,
       result: {percent_used: null, confidence: 'unavailable', recommendation: 'unknown',
                reasons: ['No supported lifecycle reference is available for this component.'], evidence: []}
+    },
+    {
+      component_id: 'display', display_name: 'Display', presence_label: 'standard', lifecycle: {metric: 'years', minimum: 4, maximum: 6,
+                  source_ids: ['display-study']}, source_ids: ['display-study'], evidence_grade: 'primary_study', reviewed_on: '2026-09-05',
+      result: {percent_used: {minimum: 33, maximum: 75}, confidence: 'moderate', recommendation: 'likely_reusable',
+               reasons: ['Working status supports likely reuse.'], evidence: []}
     }
   ]
 });
 process.stdout.write(JSON.stringify(presentation));
 """)
 
-    assert result["overall_range"] == "25–50% used"
-    assert result["components"][0]["range"] == "25–50% used"
+    assert result["overall_range"] == "33–75% used"
+    assert result["components"][0]["range"] == "Unknown"
     assert result["components"][0]["reference_range"] == "800 cycles to 80% capacity"
     assert result["components"][0]["source_label"] == "eu-phone · regulatory minimum · reviewed 2026-09-05"
     assert result["components"][1]["range"] == "Unknown"
     assert "reviewed component lifecycle reference" in result["components"][1]["missing_guidance"]
-    assert result["safety"][0]["source_label"] == "epa-battery · reviewed 2026-09-05"
+    assert result["safety"][0]["source_label"] == (
+        "epa-battery · reviewed 2026-09-05 · rule revision 1.0.0"
+    )
+    assert result["components"][2]["range"] == "33–75% used"
     assert result["input_evidence"] == [
         {"label": "Age", "value": "24–36 months"},
         {"label": "Cycles", "value": "200–400 cycles"},
         {"label": "Usage", "value": "Unknown"},
         {"label": "Visible condition", "value": "Unknown"},
         {"label": "Operating state", "value": "Unknown"},
+        {"label": "Known issues (user reported)", "value": "Overheating"},
+        {
+            "label": "Issue notes (user reported)",
+            "value": "Gets hot while charging.",
+        },
     ]
+
+
+def test_dom_rehydrates_known_issues_and_renders_hostile_notes_as_text():
+    result = _run_ui_contract(FAKE_DOM + r"""
+const UI = require(process.argv[1]);
+const document = new FakeDocument();
+const view = UI.createDomView(document);
+const note = '<img src=x onerror=alert(1)> battery smells odd';
+const assessment = {
+  scan_id: 'issue-scan', category_id: '0306_mobile_phone', template_version: '2.0.0',
+  template: {category_id: '0306_mobile_phone', display_name: 'Mobile phone', template_version: '2.0.0',
+             components: [], rules: []},
+  inputs: {age_months: null, cycle_count: null, usage: 'unknown', condition: 'unknown', operational: 'working',
+           known_issues: {overheating: false, odor: true, swelling_or_battery_damage: false, recall: false, notes: note}},
+  component_overrides: {}, components: []
+};
+view.renderAssessment({assessment, categories: [{category_id: '0306_mobile_phone', display_name: 'Mobile phone'}], context: {}});
+const evidence = walk(document.getElementById('assessment-evidence-list')).map(node => node.textContent).filter(Boolean);
+process.stdout.write(JSON.stringify({
+  odor: document.getElementById('assessment-issue-odor').checked,
+  overheating: document.getElementById('assessment-issue-overheating').checked,
+  note: document.getElementById('assessment-issue-notes').value,
+  evidence
+}));
+""")
+
+    assert result["odor"] is True
+    assert result["overheating"] is False
+    assert result["note"] == "<img src=x onerror=alert(1)> battery smells odd"
+    assert any(result["note"] in text for text in result["evidence"])
+
+
+def test_dom_safety_escalation_is_an_accessible_alert_before_components():
+    result = _run_ui_contract(FAKE_DOM + r"""
+const UI = require(process.argv[1]);
+const document = new FakeDocument();
+const view = UI.createDomView(document);
+const component = {
+  component_id: 'battery', display_name: 'Battery', presence_label: 'standard',
+  safety_sensitive: true, lifecycle: null, source_ids: ['battery-source'],
+  evidence_grade: 'guidance', reviewed_on: '2026-09-05',
+  result: {percent_used: null, confidence: 'unavailable', recommendation: 'specialist_handling',
+           reasons: ['User-reported overheating needs specialist handling.'], evidence: []}
+};
+const assessment = {
+  category_id: '0306_mobile_phone', template_version: '2.0.0',
+  template: {category_id: '0306_mobile_phone', display_name: 'Mobile phone', template_version: '2.0.0',
+             components: [component], rules: []},
+  inputs: {}, component_overrides: {}, components: [component]
+};
+view.renderAssessment({assessment, categories: [{category_id: '0306_mobile_phone', display_name: 'Mobile phone'}], context: {}});
+const alerts = walk(document.getElementById('assessment-safety-list')).filter(node => node.attributes.role === 'alert');
+process.stdout.write(JSON.stringify({count: alerts.length, label: alerts[0] && alerts[0].attributes['aria-label'], text: alerts[0] && walk(alerts[0]).map(node => node.textContent).join(' ')}));
+""")
+
+    assert result["count"] == 1
+    assert result["label"] == "Safety escalation"
+    assert "overheating" in result["text"].lower()
 
 
 def test_safety_escalation_keeps_immutable_provenance_separate_from_override():
@@ -751,7 +877,7 @@ const UI = require(process.argv[1]);
 const busy = [], requests = [];
 let assessmentGets = 0;
 let confirmationCount = 0;
-let resolveFirst, resolveSecond;
+let resolveFirst;
 const categories = [{category_id: '0306_mobile_phone', display_name: 'Mobile phone'}];
 const template = {category_id: '0306_mobile_phone', display_name: 'Mobile phone', template_version: '1.0.0', components: [], rules: []};
 const saved = {scan_id: 'race-scan', category_id: '0306_mobile_phone', template_version: '1.0.0', template,
@@ -778,7 +904,6 @@ const fetchImpl = (url, options = {}) => {
   if (url === '/api/v1/history/race-scan/confirmation') {
     confirmationCount += 1;
     if (confirmationCount === 1) return new Promise(resolve => { resolveFirst = () => resolve({ok: true, json: async () => confirmationRecord}); });
-    if (confirmationCount === 2) return new Promise(resolve => { resolveSecond = () => resolve({ok: true, json: async () => confirmationRecord}); });
     return Promise.resolve({ok: true, json: async () => confirmationRecord});
   }
   if (url === '/api/v1/scans/race-scan/assessment' && options.method === 'PUT') return Promise.resolve({ok: true, json: async () => saved});
@@ -799,13 +924,7 @@ const controller = UI.createController({view, fetchImpl, formDataFactory: () => 
   const firstSaved = await first;
   const blockedAfterStale = await controller.saveAssessment({});
 
-  let secondSaved = false;
-  if (resolveSecond) {
-    resolveSecond();
-    secondSaved = await second;
-  } else {
-    secondSaved = await second;
-  }
+  const secondSaved = await second;
   const laterSaved = await controller.saveAssessment({});
   process.stdout.write(JSON.stringify({reopened, firstSaved, secondSaved, blockedBeforeStale, blockedAfterStale, laterSaved, confirmationCount, busy, requests}));
 })();
@@ -817,7 +936,7 @@ const controller = UI.createController({view, fetchImpl, formDataFactory: () => 
     assert result["blockedBeforeStale"] is False
     assert result["blockedAfterStale"] is False
     assert result["laterSaved"] is True
-    assert result["confirmationCount"] == 3
+    assert result["confirmationCount"] == 2
     # Reopening cancels the first token, then each later owner releases only itself.
     assert result["busy"] == [True, False, True, False, True, False]
 

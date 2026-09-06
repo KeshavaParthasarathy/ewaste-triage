@@ -219,12 +219,21 @@ class HistoryStore:
             ).fetchone()
         return json.loads(row["assessment_json"]) if row is not None else None
 
-    def create_assessment(self, scan_id: str, template: Mapping) -> dict | None:
+    def create_assessment(
+        self,
+        scan_id: str,
+        template: Mapping,
+        inputs: Mapping,
+        component_overrides: Mapping,
+        components: list[dict],
+    ) -> dict | None:
         """Persist an immutable category-template snapshot once a category is confirmed."""
         category_id = template.get("category_id")
         template_version = template.get("template_version")
         if not isinstance(category_id, str) or not isinstance(template_version, str):
             raise ValueError("template requires category_id and template_version")
+        if not isinstance(components, list) or not components:
+            raise ValueError("assessment components must not be empty")
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -244,14 +253,59 @@ class HistoryStore:
                     "category_id": category_id,
                     "template_version": template_version,
                     "template": dict(template),
-                    "inputs": {},
-                    "component_overrides": {},
-                    "components": [],
+                    "inputs": dict(inputs),
+                    "component_overrides": dict(component_overrides),
+                    "components": components,
                 }
                 updated_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
                 connection.execute(
                     "INSERT INTO assessments(scan_id, category_id, template_version, assessment_json, updated_at) VALUES (?, ?, ?, ?, ?)",
                     (scan_id, category_id, template_version, self._canonical_json(assessment), updated_at),
+                )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+        return assessment
+
+    def repair_incomplete_assessment(
+        self,
+        scan_id: str,
+        expected_assessment: Mapping,
+        inputs: Mapping,
+        component_overrides: Mapping,
+        components: list[dict],
+    ) -> dict | None:
+        """Atomically complete a legacy empty assessment without replacing its template."""
+        if not isinstance(components, list) or not components:
+            raise ValueError("assessment components must not be empty")
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = connection.execute(
+                    "SELECT assessment_json FROM assessments WHERE scan_id = ?",
+                    (scan_id,),
+                ).fetchone()
+                if row is None:
+                    connection.rollback()
+                    return None
+                assessment = json.loads(row["assessment_json"])
+                if assessment.get("components"):
+                    connection.rollback()
+                    return assessment
+                if assessment != dict(expected_assessment):
+                    raise AssessmentConflictError(
+                        "incomplete assessment changed before repair"
+                    )
+                assessment["inputs"] = dict(inputs)
+                assessment["component_overrides"] = dict(component_overrides)
+                assessment["components"] = components
+                updated_at = datetime.now(timezone.utc).isoformat(
+                    timespec="microseconds"
+                )
+                connection.execute(
+                    "UPDATE assessments SET assessment_json = ?, updated_at = ? WHERE scan_id = ?",
+                    (self._canonical_json(assessment), updated_at, scan_id),
                 )
                 connection.commit()
             except BaseException:
@@ -278,6 +332,8 @@ class HistoryStore:
                 assessment["inputs"] = dict(inputs)
                 assessment["component_overrides"] = dict(component_overrides)
                 if components is not None:
+                    if not isinstance(components, list) or not components:
+                        raise ValueError("assessment components must not be empty")
                     assessment["components"] = components
                 updated_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
                 connection.execute(

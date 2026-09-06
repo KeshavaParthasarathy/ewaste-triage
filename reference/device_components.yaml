@@ -1,5 +1,5 @@
-schema_version: 1
-version: "1.0.0"
+schema_version: 2
+version: "2.0.0"
 categories:
   - category_id: 0301_computer_mouse
     display_name: Computer mouse
@@ -36,6 +36,7 @@ categories:
         reviewed_on: "2026-09-05"
     rules:
       - rule_id: li_ion_no_household_trash
+        revision: "1.0.0"
         text: >-
           If a lithium-ion battery is present, do not place it in household trash or
           municipal recycling; use an appropriate battery collection option.
@@ -74,6 +75,7 @@ categories:
         reviewed_on: "2026-09-05"
     rules:
       - rule_id: li_ion_no_household_trash
+        revision: "1.0.0"
         text: >-
           If a lithium-ion battery is present, do not place it in household trash or
           municipal recycling; use an appropriate battery collection option.
@@ -124,6 +126,7 @@ categories:
         reviewed_on: "2026-09-05"
     rules:
       - rule_id: li_ion_no_household_trash
+        revision: "1.0.0"
         text: >-
           Do not place the lithium-ion battery in household trash or municipal recycling;
           use an appropriate battery collection option.
@@ -173,6 +176,7 @@ categories:
         safety_sensitive: true
     rules:
       - rule_id: li_ion_no_household_trash
+        revision: "1.0.0"
         text: >-
           Do not place the lithium-ion battery in household trash or municipal recycling;
           use an appropriate battery collection option.
@@ -214,6 +218,7 @@ categories:
         reviewed_on: "2026-09-05"
     rules:
       - rule_id: li_ion_no_household_trash
+        revision: "1.0.0"
         text: >-
           If a lithium-ion battery is present, do not place it in household trash or
           municipal recycling; use an appropriate battery collection option.

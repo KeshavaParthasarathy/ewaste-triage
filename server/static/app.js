@@ -22,6 +22,12 @@
     specialist_handling: "Use specialist handling",
     unknown: "More evidence needed"
   };
+  const KNOWN_ISSUE_LABELS = {
+    overheating: "Overheating",
+    odor: "Unusual odor",
+    swelling_or_battery_damage: "Swelling or battery damage",
+    recall: "Known recall"
+  };
 
   function isSupportedImage(file) {
     if (!file || !file.name) return false;
@@ -75,12 +81,26 @@
   }
 
   function assessmentPayloadFromValues(values) {
+    const issueChecked = value => value === true || value === "true" ||
+      value === "on" || value === "1";
+    const issueNotes = values.issue_notes === undefined || values.issue_notes === null ?
+      "" : String(values.issue_notes).trim();
+    if (Array.from(issueNotes).length > 500) {
+      throw new Error("Known-issue notes must be 500 characters or fewer.");
+    }
     const payload = {
       age_months: rangeFromValues(values.age_min, values.age_max, "Age"),
       cycle_count: rangeFromValues(values.cycle_min, values.cycle_max, "Cycle count"),
       usage: values.usage || "unknown",
       condition: values.condition || "unknown",
       operational: values.operational || "unknown",
+      known_issues: {
+        overheating: issueChecked(values.issue_overheating),
+        odor: issueChecked(values.issue_odor),
+        swelling_or_battery_damage: issueChecked(values.issue_swelling_or_battery_damage),
+        recall: issueChecked(values.issue_recall),
+        notes: issueNotes || null
+      },
       component_overrides: {}
     };
     const componentFields = {};
@@ -124,11 +144,12 @@
     return `${range}${unit.startsWith("%") ? "" : " "}${unit}`;
   }
 
-  function sourceLabel(sourceIds, grade, reviewedOn) {
+  function sourceLabel(sourceIds, grade, reviewedOn, revision) {
     const parts = [];
     if (Array.isArray(sourceIds) && sourceIds.length) parts.push(sourceIds.join(", "));
     if (grade) parts.push(String(grade).replace(/_/g, " "));
     if (reviewedOn) parts.push(`reviewed ${reviewedOn}`);
+    if (revision) parts.push(`rule revision ${revision}`);
     return parts.join(" · ") || "No reviewed source attached";
   }
 
@@ -205,7 +226,9 @@
     } : null;
     const safety = (Array.isArray(template.rules) ? template.rules : []).map(rule => ({
       text: rule.text,
-      source_label: sourceLabel(rule.source_ids, rule.evidence_grade, rule.reviewed_on),
+      source_label: sourceLabel(
+        rule.source_ids, rule.evidence_grade, rule.reviewed_on, rule.revision
+      ),
       priority: "rule"
     }));
     for (const component of components) {
@@ -224,6 +247,26 @@
         priority: "context"
       });
     }
+    const knownIssues = inputs.known_issues || {};
+    const knownIssueLabels = Object.entries(KNOWN_ISSUE_LABELS)
+      .filter(([name]) => knownIssues[name] === true)
+      .map(([, label]) => label);
+    const inputEvidence = [
+      {label: "Age", value: rangeWithUnit(inputs.age_months, "months")},
+      {label: "Cycles", value: rangeWithUnit(inputs.cycle_count, "cycles")},
+      {label: "Usage", value: readableValue(inputs.usage)},
+      {label: "Visible condition", value: readableValue(inputs.condition)},
+      {label: "Operating state", value: readableValue(inputs.operational)},
+      {
+        label: "Known issues (user reported)",
+        value: knownIssueLabels.length ? knownIssueLabels.join(", ") : "None reported"
+      }
+    ];
+    if (knownIssues.notes) {
+      inputEvidence.push({
+        label: "Issue notes (user reported)", value: String(knownIssues.notes)
+      });
+    }
     return {
       overall_range: rangeWithUnit(overall, "% used"),
       overall_maximum: overall ? overall.maximum : 0,
@@ -232,16 +275,20 @@
         "No component range is supported yet. Review the missing-input guidance below.",
       safety,
       components,
-      input_evidence: [
-        {label: "Age", value: rangeWithUnit(inputs.age_months, "months")},
-        {label: "Cycles", value: rangeWithUnit(inputs.cycle_count, "cycles")},
-        {label: "Usage", value: readableValue(inputs.usage)},
-        {label: "Visible condition", value: readableValue(inputs.condition)},
-        {label: "Operating state", value: readableValue(inputs.operational)}
-      ],
+      input_evidence: inputEvidence,
       template_version: assessment.template_version || template.template_version || "Unknown",
       category_name: template.display_name || formatCategory(assessment.category_id),
       handling_note: template.handling_note || ""
+    };
+  }
+
+  function historyPresentation(record) {
+    const prediction = record && record.prediction ? record.prediction : {};
+    const confirmation = record && record.confirmation ? record.confirmation : {};
+    const confirmedCategory = confirmation.accepted_class_name || prediction.class_name;
+    return {
+      category: formatCategory(confirmedCategory),
+      model_evidence: `Original model: ${formatCategory(prediction.class_name)} · ${percent(prediction.confidence)} confidence`
     };
   }
 
@@ -268,6 +315,7 @@
     let phonePollTimer = null;
     let phoneActive = false;
     let phoneStartRequest = null;
+    const confirmationWriters = new Map();
 
     function cancelAssessmentSave() {
       if (assessmentSaveToken === null) return;
@@ -326,6 +374,106 @@
 
     async function api(url, init) {
       return responseJson(await fetchImpl(url, init));
+    }
+
+    function confirmationWriter(scanId) {
+      if (!confirmationWriters.has(scanId)) {
+        confirmationWriters.set(scanId, {
+          scanId,
+          inFlight: null,
+          inFlightPromise: null,
+          pending: null,
+          latestCategory: null,
+          idleWaiters: []
+        });
+      }
+      return confirmationWriters.get(scanId);
+    }
+
+    function drainConfirmationWriter(writer) {
+      if (writer.inFlight || !writer.pending) return;
+      const entry = writer.pending;
+      writer.pending = null;
+      writer.inFlight = entry;
+      writer.inFlightPromise = api(`/api/v1/history/${encodeURIComponent(writer.scanId)}/confirmation`, {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({accepted_class_name: entry.categoryId})
+      }).then(record => {
+        if (
+          !writer.pending &&
+          writer.latestCategory === entry.categoryId &&
+          activeResult &&
+          entry.generation === generation &&
+          activeResult.scan_id === writer.scanId &&
+          activeResult.confirmed_class_name === entry.categoryId
+        ) {
+          consumeConfirmationRecord(record, entry.categoryId);
+          if (typeof view.renderCorrection === "function") {
+            view.renderCorrection(activeResult, false);
+          }
+        }
+        entry.waiters.forEach(waiter => waiter.resolve(record));
+      }).catch(error => {
+        entry.waiters.forEach(waiter => waiter.reject(error));
+        if (
+          !writer.pending &&
+          writer.latestCategory === entry.categoryId &&
+          entry.generation === generation &&
+          activeResult &&
+          activeResult.scan_id === writer.scanId &&
+          activeResult.confirmed_class_name === entry.categoryId &&
+          typeof view.renderHistoryError === "function"
+        ) {
+          view.renderHistoryError(`The category change was not saved: ${error.message}`);
+        }
+      }).finally(() => {
+        writer.inFlight = null;
+        writer.inFlightPromise = null;
+        drainConfirmationWriter(writer);
+        if (!writer.inFlight && !writer.pending) {
+          writer.idleWaiters.splice(0).forEach(resolve => resolve());
+        }
+      });
+    }
+
+    function persistConfirmation(scanId, categoryId) {
+      const writer = confirmationWriter(scanId);
+      writer.latestCategory = categoryId;
+      return new Promise((resolve, reject) => {
+        const waiter = {resolve, reject};
+        if (writer.inFlight && writer.inFlight.categoryId === categoryId) {
+          writer.inFlight.generation = generation;
+          if (writer.pending && writer.pending.categoryId !== categoryId) {
+            writer.pending.waiters.forEach(item => item.resolve(false));
+            writer.pending = null;
+          }
+          writer.inFlight.waiters.push(waiter);
+          return;
+        }
+        if (writer.pending && writer.pending.categoryId === categoryId) {
+          writer.pending.generation = generation;
+          writer.pending.waiters.push(waiter);
+        } else {
+          if (writer.pending) {
+            writer.pending.waiters.forEach(item => item.resolve(false));
+          }
+          writer.pending = {categoryId, generation, waiters: [waiter]};
+        }
+        drainConfirmationWriter(writer);
+      });
+    }
+
+    function cancelConfirmationWrites(scanId) {
+      const writer = confirmationWriters.get(scanId);
+      if (!writer) return Promise.resolve();
+      writer.latestCategory = null;
+      if (writer.pending) {
+        writer.pending.waiters.forEach(item => item.resolve(false));
+        writer.pending = null;
+      }
+      if (!writer.inFlight) return Promise.resolve();
+      return new Promise(resolve => writer.idleWaiters.push(resolve));
     }
 
     async function loadExplanation(scanId, expectedGeneration = generation) {
@@ -549,6 +697,7 @@
       historyGeneration += 1;
       view.markHistoryDeleting(scanId);
       try {
+        await cancelConfirmationWrites(scanId);
         await api(`/api/v1/history/${encodeURIComponent(scanId)}`, {method: "DELETE"});
         await loadHistory();
         return true;
@@ -590,6 +739,9 @@
     async function commitClear() {
       historyGeneration += 1;
       try {
+        await Promise.all(
+          Array.from(confirmationWriters.keys()).map(cancelConfirmationWrites)
+        );
         await api("/api/v1/history", {method: "DELETE"});
         await loadHistory();
         return true;
@@ -723,11 +875,8 @@
       if (typeof view.setAssessmentBusy === "function") view.setAssessmentBusy(true);
       if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-loading");
       try {
-        const confirmationRecord = await api(`/api/v1/history/${encodeURIComponent(scanId)}/confirmation`, {
-          method: "PUT",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({accepted_class_name: categoryId})
-        });
+        const confirmationRecord = await persistConfirmation(scanId, categoryId);
+        if (!confirmationRecord) return false;
         if (requestedGeneration !== assessmentGeneration) return false;
         consumeConfirmationRecord(confirmationRecord, categoryId);
         if (typeof view.renderCorrection === "function") {
@@ -816,18 +965,9 @@
         confirmation_source: activeResult.confirmation_source
       });
       if (activeResult.scan_id) {
-        void api(
-          `/api/v1/history/${encodeURIComponent(activeResult.scan_id)}/confirmation`,
-          {
-            method: "PUT",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({accepted_class_name: selected.class_name})
-          }
-        ).catch(error => {
-          if (typeof view.renderHistoryError === "function") {
-            view.renderHistoryError(`The category change was not saved: ${error.message}`);
-          }
-        });
+        void persistConfirmation(
+          activeResult.scan_id, selected.class_name
+        ).catch(() => {});
       }
       return true;
     }
@@ -1166,14 +1306,15 @@
       }
       records.forEach((record, index) => {
         const prediction = record.prediction || {};
+        const presentation = historyPresentation(record);
         const item = element(document, "li", "history-item");
         item.dataset.scanId = record.scan_id;
         item.style.animationDelay = `${Math.min(index * 35, 105)}ms`;
         item.append(element(document, "span", "history-glyph", "⌁"));
         const copy = element(document, "span", "history-copy");
         copy.append(
-          element(document, "strong", "", formatCategory(prediction.class_name)),
-          element(document, "small", "", `${percent(prediction.confidence)} confidence · ${new Date(record.created_at).toLocaleString()}`)
+          element(document, "strong", "", presentation.category),
+          element(document, "small", "", `${presentation.model_evidence} · ${new Date(record.created_at).toLocaleString()}`)
         );
         const review = element(document, "button", "history-action", "Review");
         review.type = "button";
@@ -1247,6 +1388,10 @@
       }
       presentation.safety.forEach(item => {
         const callout = element(document, "article", `safety-callout safety-${item.priority}`);
+        if (item.priority === "escalation") {
+          callout.setAttribute("role", "alert");
+          callout.setAttribute("aria-label", "Safety escalation");
+        }
         callout.append(
           element(document, "span", "safety-symbol", item.priority === "escalation" ? "!" : "i"),
           element(document, "p", "", item.text)
@@ -1414,6 +1559,16 @@
       document.getElementById("assessment-usage").value = inputs.usage || "unknown";
       document.getElementById("assessment-condition").value = inputs.condition || "unknown";
       document.getElementById("assessment-operational").value = inputs.operational || "unknown";
+      const knownIssues = inputs.known_issues || {};
+      for (const [id, name] of [
+        ["assessment-issue-overheating", "overheating"],
+        ["assessment-issue-odor", "odor"],
+        ["assessment-issue-swelling", "swelling_or_battery_damage"],
+        ["assessment-issue-recall", "recall"]
+      ]) {
+        document.getElementById(id).checked = knownIssues[name] === true;
+      }
+      document.getElementById("assessment-issue-notes").value = knownIssues.notes || "";
       document.getElementById("assessment-overall-range").textContent = presentation.overall_range;
       document.getElementById("assessment-overall-detail").textContent = presentation.overall_detail;
       document.getElementById("assessment-meter-fill").style.setProperty("--assessment-range", String(Math.min(100, presentation.overall_maximum) / 100));
@@ -1428,7 +1583,20 @@
         category_id: template.category_id,
         template_version: template.template_version,
         template,
-        inputs: inputs || {age_months: null, cycle_count: null, usage: "unknown", condition: "unknown", operational: "unknown"},
+        inputs: inputs || {
+          age_months: null,
+          cycle_count: null,
+          usage: "unknown",
+          condition: "unknown",
+          operational: "unknown",
+          known_issues: {
+            overheating: false,
+            odor: false,
+            swelling_or_battery_damage: false,
+            recall: false,
+            notes: null
+          }
+        },
         component_overrides: {},
         components: (template.components || []).map(component => ({
           ...component,
@@ -1676,6 +1844,7 @@
     createController,
     createDomView,
     formatCategory,
+    historyPresentation,
     isSupportedImage
   };
   if (typeof module !== "undefined" && module.exports) module.exports = exported;

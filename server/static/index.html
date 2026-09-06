@@ -254,6 +254,17 @@
                           </select>
                         </label>
                       </div>
+                      <div class="known-issue-checks" aria-describedby="known-issues-help">
+                        <label><input id="assessment-issue-overheating" name="issue_overheating" type="checkbox" value="true"> <span>Overheating</span></label>
+                        <label><input id="assessment-issue-odor" name="issue_odor" type="checkbox" value="true"> <span>Unusual odor</span></label>
+                        <label><input id="assessment-issue-swelling" name="issue_swelling_or_battery_damage" type="checkbox" value="true"> <span>Swelling or battery damage</span></label>
+                        <label><input id="assessment-issue-recall" name="issue_recall" type="checkbox" value="true"> <span>Known recall</span></label>
+                      </div>
+                      <p class="field-help" id="known-issues-help">Reported safety issues trigger specialist guidance for safety-sensitive components.</p>
+                      <label class="known-issue-notes" for="assessment-issue-notes">
+                        <span>Other observed issue (optional)</span>
+                        <textarea id="assessment-issue-notes" name="issue_notes" maxlength="500" rows="3"></textarea>
+                      </label>
                     </fieldset>
                   </div>
                 </section>
@@ -296,7 +307,7 @@
                       <h2 id="safety-title">Handling guidance</h2>
                     </div>
                   </div>
-                  <div id="assessment-safety-list">
+                  <div id="assessment-safety-list" aria-live="polite" aria-atomic="false">
                     <p>Safety guidance appears here before reuse recommendations.</p>
                   </div>
                 </section>

@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 from server.imaging import SUPPORTED_PREPROCESSING_VERSION
 from server.model_bundle import ModelBundleError, load_model_bundle
+from server.reference_db import ReferenceStartupError, ReferenceStore
 
 
 RELEASE_SCHEMA = ROOT / "packaging" / "release-manifest.schema.json"
@@ -287,6 +288,21 @@ def validate_release_stage(
             raise BundleVerificationError(
                 f"{label} checksum mismatch: expected {expected}, got {actual}"
             )
+
+    component_contract = manifest["components"]
+    try:
+        with ReferenceStore(
+            release_dir / "components.sqlite",
+            expected_sha256=component_contract["sha256"],
+            expected_content_sha256=component_contract["content_sha256"],
+            expected_schema_version=component_contract["schema_version"],
+            expected_version=component_contract["version"],
+        ):
+            pass
+    except ReferenceStartupError as error:
+        raise BundleVerificationError(
+            "component database failed release integrity validation"
+        ) from error
 
     parity = _read_json(release_dir / "parity-report.json", "parity-report.json")
     if not _json_equal(parity, manifest["parity"]):
