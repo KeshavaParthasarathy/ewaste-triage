@@ -466,7 +466,8 @@ function scanSnapshot() {
     category: document.getElementById('result-category').textContent,
     label: document.getElementById('category-label').textContent,
     badge: document.getElementById('result-badge').textContent,
-    note: document.getElementById('selection-note').textContent
+    note: document.getElementById('selection-note').textContent,
+    liveStatus: document.getElementById('live-status').textContent
   };
 }
 (async () => {
@@ -476,6 +477,7 @@ function scanSnapshot() {
   view.showSection('scan');
   const afterBack = scanSnapshot();
   controller.openHistory(confirmationRecord);
+  await new Promise(resolve => setTimeout(resolve, 0));
   const afterHistory = scanSnapshot();
   process.stdout.write(JSON.stringify({savedResult, afterBack, afterHistory}));
 })();
@@ -489,6 +491,9 @@ function scanSnapshot() {
         assert snapshot["badge"] == "User correction"
         assert "0%" not in snapshot["note"]
         assert "not among the model alternatives displayed" in snapshot["note"]
+    assert result["afterHistory"]["liveStatus"] == (
+        "Headphones opened as a user-confirmed category."
+    )
 
 
 def test_assessment_presentation_keeps_ranges_units_unknowns_and_provenance_honest():

@@ -877,7 +877,7 @@
           "This result was not saved, so model influence is unavailable.";
       renderAlternatives(result);
       renderValuation(result);
-      if (result.confirmation_source === "user") renderCorrection(result);
+      if (result.confirmation_source === "user") renderCorrection(result, false);
     }
 
     function renderCorrection(correction, shouldAnnounce = true) {
@@ -923,12 +923,17 @@
         document.getElementById("error-message").textContent = payload.message ||
           "Choose a supported image and try again.";
       }
+      const confirmedResultMessage = payload.confirmation_source === "user" ?
+        `${formatCategory(payload.confirmed_class_name)} opened as a user-confirmed category.` :
+        `Classification complete: ${formatCategory(payload.class_name)}.`;
       const messages = {
         empty: "Ready for a device photo.",
         decoding: "Preparing the selected photo.",
         classifying: "Classifying the device locally.",
-        result: `Classification complete: ${formatCategory(payload.class_name)}.`,
-        review: "Classification complete with low confidence. Review the leading categories.",
+        result: confirmedResultMessage,
+        review: payload.confirmation_source === "user" ?
+          confirmedResultMessage :
+          "Classification complete with low confidence. Review the leading categories.",
         error: payload.message || "The scan could not be completed."
       };
       announce(messages[state] || "");
