@@ -29,7 +29,9 @@ def _canonical_lan_host(host: str) -> str:
         address = ipaddress.ip_address(host)
     except ValueError as exc:
         raise ValueError("host must be a safe LAN IP literal") from exc
-    if address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified:
+    if address.is_loopback:
+        raise ValueError("host must be a safe LAN IP literal")
+    if address.is_link_local or address.is_multicast or address.is_unspecified:
         raise ValueError("host must be a safe LAN IP literal")
     if address in _DOCUMENTATION_IPV6_NETWORK:
         raise ValueError("host must be a safe LAN IP literal")
@@ -63,7 +65,13 @@ class PhoneSession:
 class PhoneSessionManager:
     """Maintain exactly one inactivity-expiring phone capture capability."""
 
-    def __init__(self, *, now=time.monotonic, ttl_seconds: float = 600) -> None:
+    def __init__(
+        self,
+        *,
+        now=time.monotonic,
+        ttl_seconds: float = 600,
+        allow_loopback: bool = False,
+    ) -> None:
         if (
             isinstance(ttl_seconds, bool)
             or not isinstance(ttl_seconds, Real)
@@ -71,13 +79,19 @@ class PhoneSessionManager:
             or ttl_seconds <= 0
         ):
             raise ValueError("ttl_seconds must be a finite positive real value")
+        if not isinstance(allow_loopback, bool):
+            raise ValueError("allow_loopback must be a boolean")
         self._now = now
         self._ttl_seconds = ttl_seconds
+        self._allow_loopback = allow_loopback
         self._lock = threading.RLock()
         self._session: PhoneSession | None = None
 
     def start(self, host: str, port: int) -> PhoneSession:
-        host = _canonical_lan_host(host)
+        if self._allow_loopback and host == "127.0.0.1":
+            host = "127.0.0.1"
+        else:
+            host = _canonical_lan_host(host)
         if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
             raise ValueError("port must be an integer between 1 and 65535")
         with self._lock:

@@ -17,6 +17,7 @@ import scripts.export_onnx as export_module
 import server.inference as inference_module
 from scripts.export_onnx import ParityError, export_checkpoint
 from server.classifier import Classifier
+from server.desktop_app import create_desktop_app
 from server.inference import OnnxClassifier
 from server.model_bundle import ModelBundleError, load_model_bundle
 
@@ -153,6 +154,29 @@ def test_exported_onnx_matches_pytorch_top1(tiny_checkpoint, reference_images, t
             "low_confidence",
             "topk",
         }
+
+
+def test_validated_onnx_manifest_is_available_to_desktop_health(tmp_path):
+    bundle = write_metadata_test_bundle(tmp_path / "bundle")
+    classifier = OnnxClassifier(bundle)
+    app = create_desktop_app(classifier=classifier, static_dir=tmp_path / "static")
+    app.config["TESTING"] = True
+    try:
+        response = app.test_client().get("/health")
+    finally:
+        app.extensions["close_phone_capture"]()
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "model_loaded": True,
+        "arch": "test_tiny",
+        "n_classes": 3,
+        "classes": [
+            "0301_computer_mouse",
+            "0306_mobile_phone",
+            "0401_small_consumer",
+        ],
+    }
 
 
 def test_export_writes_fixed_opset17_graph_and_loadable_manifest(

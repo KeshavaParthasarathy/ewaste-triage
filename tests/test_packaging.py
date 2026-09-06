@@ -724,3 +724,34 @@ def test_app_and_build_dependencies_are_pinned_without_onnx_runtime_downgrade():
     } <= requirements
     assert {"psutil==7.0.0", "qrcode==8.2", "pywebview==6.2.1"} <= app_requirements
     assert not {"torch==2.13.0", "torchvision==0.28.0"} & app_requirements
+
+
+def test_packaged_runtime_requirements_install_a_yaml_reader(tmp_path):
+    runtime_site = tmp_path / "runtime-site"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-deps",
+            "--target",
+            str(runtime_site),
+            "-r",
+            str(ROOT / "requirements-app.txt"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", "import yaml; print(yaml.__version__)"],
+        env=os.environ | {"PYTHONPATH": str(runtime_site)},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "6.0.3"

@@ -3,11 +3,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import sys
 
 
 APP_NAME = "E-Waste Triage"
+_TEST_MODE_ENV = "EWASTE_TEST_MODE"
+_TEST_SUPPORT_ENV = "EWASTE_TEST_APP_SUPPORT_DIR"
+
+
+def test_mode_enabled() -> bool:
+    """Return whether the explicit packaged-smoke mode is enabled."""
+    return os.environ.get(_TEST_MODE_ENV) == "1"
+
+
+def _test_support_dir() -> Path:
+    value = os.environ.get(_TEST_SUPPORT_ENV)
+    if not value:
+        raise ValueError(f"{_TEST_SUPPORT_ENV} must be an absolute path in test mode")
+    path = Path(value)
+    if not path.is_absolute():
+        raise ValueError(f"{_TEST_SUPPORT_ENV} must be an absolute path in test mode")
+    return path
 
 
 @dataclass(frozen=True)
@@ -54,7 +72,11 @@ class AppPaths:
         else:
             resources_dir = Path(__file__).resolve().parents[1]
 
-        data_dir = Path.home() / "Library" / "Application Support" / APP_NAME
+        data_dir = (
+            _test_support_dir()
+            if test_mode_enabled()
+            else Path.home() / "Library" / "Application Support" / APP_NAME
+        )
         return cls(
             resources_dir=resources_dir,
             static_dir=resources_dir / "server" / "static",

@@ -74,6 +74,16 @@ class OnnxClassifier:
                 f"{len(self.manifest.classes)} classes"
             )
 
+    @property
+    def arch(self) -> str:
+        """Expose the architecture validated by the release manifest."""
+        return self.manifest.architecture
+
+    @property
+    def classes(self) -> tuple[str, ...]:
+        """Expose the canonical classes validated by the release manifest."""
+        return self.manifest.classes
+
     def probabilities(self, image: Image.Image) -> np.ndarray:
         return self.probabilities_preprocessed(preprocess_image(image))
 

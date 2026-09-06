@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
-import sys
-import os
-import json
-import re
 import hashlib
+import json
+import os
+import re
+import signal
+import sys
+import tempfile
+import threading
+from pathlib import Path
 
 try:
     import webview
 except ImportError:  # Keep module imports usable for service-only tests and tooling.
     webview = None
 
-from desktop.paths import AppPaths
+from desktop.paths import AppPaths, test_mode_enabled
 from desktop.server_thread import ServerThread
 from server.history import HistoryStore
 from server.inference import OnnxClassifier
 from server.model_bundle import ModelBundleError
+from server.phone_sessions import PhoneSessionManager
 from server.reference_db import ReferenceStartupError, ReferenceStore
 from flask import Flask
 from onnxruntime.capi import onnxruntime_pybind11_state as ort_state
@@ -155,6 +160,51 @@ def _packaged_component_expectations(paths: AppPaths) -> dict[str, object]:
     }
 
 
+def _test_readiness_path() -> Path:
+    value = os.environ.get("EWASTE_TEST_READY_FILE")
+    if not value:
+        raise ValueError("EWASTE_TEST_READY_FILE must be an absolute path in test mode")
+    path = Path(value)
+    if not path.is_absolute():
+        raise ValueError("EWASTE_TEST_READY_FILE must be an absolute path in test mode")
+    return path
+
+
+def _publish_test_readiness(path: Path, url: str) -> None:
+    """Atomically publish the one-field handshake for the smoke harness."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            delete=False,
+        ) as temporary:
+            temporary_name = temporary.name
+            json.dump({"url": url}, temporary, separators=(",", ":"))
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_name, path)
+        temporary_name = None
+    finally:
+        if temporary_name is not None:
+            try:
+                Path(temporary_name).unlink()
+            except FileNotFoundError:
+                pass
+
+
+def _remove_test_readiness(path: Path | None) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
 def build_desktop_app(
     paths: AppPaths, *, require_release_integrity: bool = False
 ):
@@ -177,11 +227,18 @@ def build_desktop_app(
 
     assembled = False
     try:
+        phone_options = {}
+        if test_mode_enabled():
+            phone_options = {
+                "phone_sessions": PhoneSessionManager(allow_loopback=True),
+                "lan_address_provider": lambda: "127.0.0.1",
+            }
         app = create_desktop_app(
             classifier=classifier,
             history_store=HistoryStore(paths.history_database_path, paths.history_media_dir),
             static_dir=paths.static_dir,
             reference_store=references,
+            **phone_options,
         )
         app.extensions["close_reference_store"] = references.close
         assembled = True
@@ -226,13 +283,20 @@ def build_reference_recovery_app(*, app_version: str, reference_diagnostic: str)
     return app
 
 
-def run(*, webview_module=webview, paths: AppPaths | None = None) -> int:
+def run(
+    *,
+    webview_module=webview,
+    paths: AppPaths | None = None,
+    shutdown_event: threading.Event | None = None,
+) -> int:
     """Start the private service, then host it in one native app window."""
-    if webview_module is None:
+    test_mode = test_mode_enabled()
+    if not test_mode and webview_module is None:
         raise RuntimeError("pywebview is required to launch the desktop application")
 
     frozen = bool(getattr(sys, "frozen", False))
     paths = paths or AppPaths.for_runtime(frozen)
+    readiness_path = _test_readiness_path() if test_mode else None
     try:
         app = (
             build_desktop_app(paths, require_release_integrity=True)
@@ -251,14 +315,31 @@ def run(*, webview_module=webview, paths: AppPaths | None = None) -> int:
         )
     server = None
     completed = False
+    previous_signal_handlers = {}
     try:
         server = ServerThread(app)
         url = server.start_and_wait()
-        webview_module.create_window("E-Waste Triage", url, min_size=(760, 620))
-        webview_module.start(debug=False)
+        if test_mode:
+            event = shutdown_event or threading.Event()
+            if threading.current_thread() is threading.main_thread():
+                def request_shutdown(_signum, _frame):
+                    event.set()
+
+                for handled_signal in (signal.SIGTERM, signal.SIGINT):
+                    previous_signal_handlers[handled_signal] = signal.signal(
+                        handled_signal, request_shutdown
+                    )
+            _publish_test_readiness(readiness_path, url)
+            event.wait()
+        else:
+            webview_module.create_window("E-Waste Triage", url, min_size=(760, 620))
+            webview_module.start(debug=False)
         completed = True
         return 0
     finally:
+        for handled_signal, handler in previous_signal_handlers.items():
+            signal.signal(handled_signal, handler)
+        _remove_test_readiness(readiness_path)
         cleanup_error = None
         if server is not None:
             cleanup_error = _capture_cleanup_failure(
