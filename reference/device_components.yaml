@@ -1,0 +1,210 @@
+schema_version: 1
+version: "1.0.0"
+categories:
+  - category_id: 0301_computer_mouse
+    display_name: Computer mouse
+    handling_note: >-
+      Potential substance context only: electronics may require appropriate end-of-life
+      handling under EPA and RoHS guidance. This category-level note is not a claim that
+      a photographed item contains a specific substance.
+    source_ids: [epa_electronics_management_2026, eu_rohs_current]
+    components:
+      - component_id: enclosure
+        display_name: Enclosure
+        presence_label: standard
+      - component_id: pcb_controller
+        display_name: PCB controller
+        presence_label: standard
+      - component_id: optical_sensor
+        display_name: Optical sensor
+        presence_label: standard
+      - component_id: switches
+        display_name: Switches
+        presence_label: standard
+      - component_id: scroll_wheel
+        display_name: Scroll wheel
+        presence_label: standard
+      - component_id: cable_or_wireless_module
+        display_name: Cable or wireless module
+        presence_label: standard
+      - component_id: removable_or_rechargeable_battery
+        display_name: Removable or rechargeable battery
+        presence_label: optional
+        safety_sensitive: true
+    rules:
+      - rule_id: li_ion_no_household_trash
+        text: >-
+          If a lithium-ion battery is present, do not place it in household trash or
+          municipal recycling; use an appropriate battery collection option.
+        source_ids: [epa_used_li_ion_2026]
+        evidence_grade: primary_guidance
+        reviewed_on: "2026-09-05"
+  - category_id: 0301_keyboard
+    display_name: Keyboard
+    handling_note: >-
+      Potential substance context only: electronics may require appropriate end-of-life
+      handling under EPA and RoHS guidance. This category-level note is not a claim that
+      a photographed item contains a specific substance.
+    source_ids: [epa_electronics_management_2026, eu_rohs_current]
+    components:
+      - component_id: enclosure
+        display_name: Enclosure
+        presence_label: standard
+      - component_id: keycaps
+        display_name: Keycaps
+        presence_label: standard
+      - component_id: key_switches
+        display_name: Key switches
+        presence_label: standard
+      - component_id: pcb_controller
+        display_name: PCB controller
+        presence_label: standard
+      - component_id: cable_or_wireless_module
+        display_name: Cable or wireless module
+        presence_label: standard
+      - component_id: removable_or_rechargeable_battery
+        display_name: Removable or rechargeable battery
+        presence_label: optional
+        safety_sensitive: true
+    rules:
+      - rule_id: li_ion_no_household_trash
+        text: >-
+          If a lithium-ion battery is present, do not place it in household trash or
+          municipal recycling; use an appropriate battery collection option.
+        source_ids: [epa_used_li_ion_2026]
+        evidence_grade: primary_guidance
+        reviewed_on: "2026-09-05"
+  - category_id: 0303_laptop
+    display_name: Laptop
+    handling_note: >-
+      Potential substance context only: electronics may require appropriate end-of-life
+      handling under EPA and RoHS guidance. This category-level note is not a claim that
+      a photographed item contains a specific substance.
+    source_ids: [epa_electronics_management_2026, eu_rohs_current]
+    components:
+      - component_id: enclosure
+        display_name: Enclosure
+        presence_label: standard
+      - component_id: display_assembly
+        display_name: Display assembly
+        presence_label: standard
+      - component_id: keyboard_trackpad
+        display_name: Keyboard and trackpad
+        presence_label: standard
+      - component_id: logic_board
+        display_name: Logic board
+        presence_label: standard
+      - component_id: memory
+        display_name: Memory
+        presence_label: standard
+      - component_id: storage
+        display_name: Storage
+        presence_label: standard
+      - component_id: cooling_assembly
+        display_name: Cooling assembly
+        presence_label: standard
+      - component_id: speakers
+        display_name: Speakers
+        presence_label: standard
+      - component_id: power_adapter
+        display_name: Power adapter
+        presence_label: standard
+      - component_id: lithium_ion_battery
+        display_name: Lithium-ion battery
+        presence_label: standard
+        safety_sensitive: true
+    rules:
+      - rule_id: li_ion_no_household_trash
+        text: >-
+          Do not place the lithium-ion battery in household trash or municipal recycling;
+          use an appropriate battery collection option.
+        source_ids: [epa_used_li_ion_2026]
+        evidence_grade: primary_guidance
+        reviewed_on: "2026-09-05"
+  - category_id: 0306_mobile_phone
+    display_name: Mobile phone
+    handling_note: >-
+      Potential substance context only: electronics may require appropriate end-of-life
+      handling under EPA and RoHS guidance. This category-level note is not a claim that
+      a photographed item contains a specific substance.
+    source_ids: [epa_electronics_management_2026, eu_rohs_current]
+    components:
+      - component_id: enclosure
+        display_name: Enclosure
+        presence_label: standard
+      - component_id: display_assembly
+        display_name: Display assembly
+        presence_label: standard
+      - component_id: logic_board
+        display_name: Logic board
+        presence_label: standard
+      - component_id: storage
+        display_name: Storage
+        presence_label: standard
+      - component_id: camera_modules
+        display_name: Camera modules
+        presence_label: standard
+      - component_id: speakers_microphones
+        display_name: Speakers and microphones
+        presence_label: standard
+      - component_id: vibration_motor
+        display_name: Vibration motor
+        presence_label: standard
+      - component_id: lithium_ion_battery
+        display_name: Lithium-ion battery
+        presence_label: standard
+        lifecycle:
+          metric: cycles_to_capacity
+          minimum: 800
+          maximum: 800
+          capacity_percent: 80
+        source_ids: [eu_phone_ecodesign_2023_1670]
+        evidence_grade: regulatory_minimum
+        reviewed_on: "2026-09-05"
+        safety_sensitive: true
+    rules:
+      - rule_id: li_ion_no_household_trash
+        text: >-
+          Do not place the lithium-ion battery in household trash or municipal recycling;
+          use an appropriate battery collection option.
+        source_ids: [epa_used_li_ion_2026]
+        evidence_grade: primary_guidance
+        reviewed_on: "2026-09-05"
+  - category_id: 0401_headphones
+    display_name: Headphones
+    handling_note: >-
+      Potential substance context only: electronics may require appropriate end-of-life
+      handling under EPA and RoHS guidance. This category-level note is not a claim that
+      a photographed item contains a specific substance.
+    source_ids: [epa_electronics_management_2026, eu_rohs_current]
+    components:
+      - component_id: enclosure_headband
+        display_name: Enclosure and headband
+        presence_label: standard
+      - component_id: ear_cushions
+        display_name: Ear cushions
+        presence_label: standard
+      - component_id: audio_drivers
+        display_name: Audio drivers
+        presence_label: standard
+      - component_id: pcb_controls
+        display_name: PCB controls
+        presence_label: standard
+      - component_id: cable_or_wireless_module
+        display_name: Cable or wireless module
+        presence_label: standard
+      - component_id: charging_case
+        display_name: Charging case
+        presence_label: common
+      - component_id: lithium_ion_battery
+        display_name: Lithium-ion battery
+        presence_label: optional
+        safety_sensitive: true
+    rules:
+      - rule_id: li_ion_no_household_trash
+        text: >-
+          If a lithium-ion battery is present, do not place it in household trash or
+          municipal recycling; use an appropriate battery collection option.
+        source_ids: [epa_used_li_ion_2026]
+        evidence_grade: primary_guidance
+        reviewed_on: "2026-09-05"

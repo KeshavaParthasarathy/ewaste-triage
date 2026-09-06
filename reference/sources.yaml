@@ -1,0 +1,33 @@
+schema_version: 1
+version: "1.0.0"
+sources:
+  - source_id: epa_used_li_ion_2026
+    title: Used Lithium-Ion Batteries
+    publisher: United States Environmental Protection Agency
+    url: https://www.epa.gov/recycle/used-lithium-ion-batteries
+    reviewed_on: "2026-09-05"
+    evidence_grade: primary_guidance
+  - source_id: epa_electronics_management_2026
+    title: Electronics Donation and Recycling
+    publisher: United States Environmental Protection Agency
+    url: https://www.epa.gov/electronics-batteries-management
+    reviewed_on: "2026-09-05"
+    evidence_grade: primary_guidance
+  - source_id: eu_rohs_current
+    title: RoHS Directive
+    publisher: European Commission
+    url: https://environment.ec.europa.eu/topics/waste-and-recycling/rohs-directive_en
+    reviewed_on: "2026-09-05"
+    evidence_grade: regulatory
+  - source_id: eu_phone_ecodesign_2023_1670
+    title: Commission Regulation (EU) 2023/1670
+    publisher: EUR-Lex
+    url: https://eur-lex.europa.eu/legal-content/EN/LSU/?uri=CELEX:32023R1670
+    reviewed_on: "2026-09-05"
+    evidence_grade: regulatory_minimum
+  - source_id: apple_mac_battery_cycles_2026
+    title: Determine battery cycle count for Mac laptops
+    publisher: Apple Support
+    url: https://support.apple.com/en-au/102888
+    reviewed_on: "2026-09-05"
+    evidence_grade: manufacturer_documentation
