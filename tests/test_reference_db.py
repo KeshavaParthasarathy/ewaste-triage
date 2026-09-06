@@ -152,6 +152,35 @@ def test_invalid_referenced_source_identifies_record_path(tmp_path):
         compile_reference(tmp_path, tmp_path / "bad.sqlite")
 
 
+def test_safety_sensitive_component_requires_auditable_provenance(tmp_path):
+    fixture = copy_reference_fixture(tmp_path)
+    component = fixture["categories"][0]["components"][-1]
+    component.pop("source_ids", None)
+    component.pop("evidence_grade", None)
+    component.pop("reviewed_on", None)
+    write_component_fixture(tmp_path, fixture)
+
+    with pytest.raises(
+        ReferenceValidationError,
+        match=r"device_components\.yaml.*categories\[0\]\.components\[6\].*source_ids",
+    ):
+        compile_reference(tmp_path, tmp_path / "bad.sqlite")
+
+
+@pytest.mark.parametrize(("field", "value"), (("minimum", float("nan")), ("maximum", float("inf"))))
+def test_lifecycle_rejects_nonfinite_numbers_with_record_path(tmp_path, field, value):
+    fixture = copy_reference_fixture(tmp_path)
+    component = fixture["categories"][3]["components"][-1]
+    component["lifecycle"][field] = value
+    write_component_fixture(tmp_path, fixture)
+
+    with pytest.raises(
+        ReferenceValidationError,
+        match=rf"device_components\.yaml.*categories\[3\]\.components\[7\]\.lifecycle\.{field}.*finite",
+    ):
+        compile_reference(tmp_path, tmp_path / "bad.sqlite")
+
+
 def test_failed_validation_does_not_replace_existing_database(tmp_path):
     destination = tmp_path / "components.sqlite"
     original = compile_reference(ROOT / "reference", destination)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import math
 import os
 import sqlite3
 import tempfile
@@ -162,7 +163,17 @@ def _validate_component(
     if presence_label not in _PRESENCE_LABELS:
         _fail(filename, f"{path}.presence_label", "must be standard, common, optional, or unknown")
     lifecycle = component.get("lifecycle")
-    source_ids = _source_ids(component.get("source_ids"), known_sources, filename, f"{path}.source_ids", required=lifecycle is not None)
+    safety_sensitive = component.get("safety_sensitive", False)
+    if type(safety_sensitive) is not bool:
+        _fail(filename, f"{path}.safety_sensitive", "must be boolean")
+    provenance_required = lifecycle is not None or safety_sensitive
+    source_ids = _source_ids(
+        component.get("source_ids"),
+        known_sources,
+        filename,
+        f"{path}.source_ids",
+        required=provenance_required,
+    )
     evidence_grade = component.get("evidence_grade")
     reviewed_on = component.get("reviewed_on")
     if lifecycle is not None:
@@ -172,23 +183,28 @@ def _validate_component(
         _required_fields(lifecycle, {"metric", "minimum", "maximum"}, filename, f"{path}.lifecycle")
         metric = _string(lifecycle["metric"], filename, f"{path}.lifecycle.metric")
         minimum, maximum = lifecycle["minimum"], lifecycle["maximum"]
-        if type(minimum) not in (int, float) or type(maximum) not in (int, float) or minimum <= 0 or maximum < minimum:
+        for field, number in (("minimum", minimum), ("maximum", maximum)):
+            if type(number) not in (int, float) or not math.isfinite(number):
+                _fail(filename, f"{path}.lifecycle.{field}", "must be a finite number")
+        if minimum <= 0 or maximum < minimum:
             _fail(filename, f"{path}.lifecycle", "minimum and maximum must be positive ordered numbers")
         lifecycle = {"metric": metric, "minimum": minimum, "maximum": maximum}
         if "capacity_percent" in component.get("lifecycle", {}):
             capacity_percent = component["lifecycle"]["capacity_percent"]
-            if type(capacity_percent) not in (int, float) or not 0 < capacity_percent <= 100:
+            if (
+                type(capacity_percent) not in (int, float)
+                or not math.isfinite(capacity_percent)
+                or not 0 < capacity_percent <= 100
+            ):
                 _fail(filename, f"{path}.lifecycle.capacity_percent", "must be a percentage from 1 through 100")
             lifecycle["capacity_percent"] = capacity_percent
+    if provenance_required:
         evidence_grade = _string(evidence_grade, filename, f"{path}.evidence_grade")
         reviewed_on = _string(reviewed_on, filename, f"{path}.reviewed_on")
     elif evidence_grade is not None or reviewed_on is not None:
         _fail(filename, path, "evidence_grade and reviewed_on require a non-null lifecycle")
     notes = component.get("notes", [])
     notes = [_string(note, filename, f"{path}.notes[{index}]") for index, note in enumerate(_list(notes, filename, f"{path}.notes"))]
-    safety_sensitive = component.get("safety_sensitive", False)
-    if type(safety_sensitive) is not bool:
-        _fail(filename, f"{path}.safety_sensitive", "must be boolean")
     return {
         "component_id": component_id,
         "display_name": display_name,

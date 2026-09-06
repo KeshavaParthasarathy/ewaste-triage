@@ -31,6 +31,9 @@ categories:
         display_name: Removable or rechargeable battery
         presence_label: optional
         safety_sensitive: true
+        source_ids: [epa_used_li_ion_2026]
+        evidence_grade: primary_guidance
+        reviewed_on: "2026-09-05"
     rules:
       - rule_id: li_ion_no_household_trash
         text: >-
@@ -66,6 +69,9 @@ categories:
         display_name: Removable or rechargeable battery
         presence_label: optional
         safety_sensitive: true
+        source_ids: [epa_used_li_ion_2026]
+        evidence_grade: primary_guidance
+        reviewed_on: "2026-09-05"
     rules:
       - rule_id: li_ion_no_household_trash
         text: >-
@@ -113,6 +119,9 @@ categories:
         display_name: Lithium-ion battery
         presence_label: standard
         safety_sensitive: true
+        source_ids: [epa_used_li_ion_2026]
+        evidence_grade: primary_guidance
+        reviewed_on: "2026-09-05"
     rules:
       - rule_id: li_ion_no_household_trash
         text: >-
@@ -200,6 +209,9 @@ categories:
         display_name: Lithium-ion battery
         presence_label: optional
         safety_sensitive: true
+        source_ids: [epa_used_li_ion_2026]
+        evidence_grade: primary_guidance
+        reviewed_on: "2026-09-05"
     rules:
       - rule_id: li_ion_no_household_trash
         text: >-
