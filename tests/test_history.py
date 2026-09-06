@@ -36,22 +36,31 @@ def test_assessment_snapshot_is_versioned_and_survives_store_reopen(tmp_path):
     }
 
     initial_components = [{"component_id": "battery", "result": {"confidence": "unavailable"}}]
-    created = store.create_assessment(
-        scan_id, template, {"usage": "unknown"}, {}, initial_components
+    created, was_created = store.create_assessment(
+        scan_id,
+        template,
+        {"usage": "unknown"},
+        {},
+        initial_components,
+        return_created=True,
     )
     updated = store.update_assessment(scan_id, {"usage": "heavy"}, {})
     reopened = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media").get_assessment(scan_id)
 
     assert created["template_version"] == "1.0.0"
+    assert was_created is True
     assert updated["inputs"] == {"usage": "heavy"}
     assert reopened == updated
-    assert store.create_assessment(
+    existing, was_created_again = store.create_assessment(
         scan_id,
         {**template, "template_version": "2.0.0"},
         {"usage": "unknown"},
         {},
         initial_components,
-    ) == updated
+        return_created=True,
+    )
+    assert existing == updated
+    assert was_created_again is False
 
 
 def test_initial_assessment_rejects_empty_derived_components_without_writing(tmp_path):

@@ -226,8 +226,13 @@ class HistoryStore:
         inputs: Mapping,
         component_overrides: Mapping,
         components: list[dict],
-    ) -> dict | None:
+        *,
+        return_created: bool = False,
+    ) -> dict | None | tuple[dict | None, bool]:
         """Persist an immutable category-template snapshot once a category is confirmed."""
+        def outcome(value, created):
+            return (value, created) if return_created else value
+
         category_id = template.get("category_id")
         template_version = template.get("template_version")
         if not isinstance(category_id, str) or not isinstance(template_version, str):
@@ -239,7 +244,7 @@ class HistoryStore:
             try:
                 scan = connection.execute("SELECT confirmation_json FROM scans WHERE scan_id = ?", (scan_id,)).fetchone()
                 if scan is None:
-                    return None
+                    return outcome(None, False)
                 confirmation = json.loads(scan["confirmation_json"]) if scan["confirmation_json"] else None
                 if confirmation is None or confirmation.get("accepted_class_name") != category_id:
                     raise AssessmentConflictError("confirmed category changed before snapshot creation")
@@ -247,7 +252,7 @@ class HistoryStore:
                     "SELECT assessment_json FROM assessments WHERE scan_id = ?", (scan_id,)
                 ).fetchone()
                 if existing is not None:
-                    return json.loads(existing["assessment_json"])
+                    return outcome(json.loads(existing["assessment_json"]), False)
                 assessment = {
                     "scan_id": scan_id,
                     "category_id": category_id,
@@ -266,7 +271,7 @@ class HistoryStore:
             except BaseException:
                 connection.rollback()
                 raise
-        return assessment
+        return outcome(assessment, True)
 
     def repair_incomplete_assessment(
         self,

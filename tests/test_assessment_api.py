@@ -9,6 +9,7 @@ import pytest
 
 from server.desktop_app import create_desktop_app
 from server.history import HistoryStore
+from server.lifecycle import assess_component
 from server.reference_db import ReferenceStore, compile_reference
 from desktop.server_thread import ServerThread
 from pathlib import Path
@@ -117,6 +118,53 @@ def test_initial_assessment_computation_failure_leaves_no_empty_record(tmp_path)
 
     with pytest.raises(RuntimeError, match="calculation failed"):
         client.get(f"/api/v1/scans/{scan_id}/assessment")
+
+    assert store.get_assessment(scan_id) is None
+
+
+def test_first_assessment_update_computes_once_and_returns_the_atomic_creation(tmp_path):
+    client, store, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+    calls = 0
+
+    def assessor(component, inputs):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("assessment was recomputed after creation")
+        return assess_component(component, inputs)
+
+    client.application.config["LIFECYCLE_ASSESSOR"] = assessor
+
+    response = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"usage": "heavy"},
+    )
+
+    assert response.status_code == 200
+    assert calls == 1
+    assert response.json == store.get_assessment(scan_id)
+    assert response.json["inputs"]["usage"] == "heavy"
+
+
+def test_first_assessment_update_computation_failure_leaves_no_record(tmp_path):
+    client, store, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+    client.application.config["LIFECYCLE_ASSESSOR"] = lambda *_: (
+        _ for _ in ()
+    ).throw(RuntimeError("calculation failed"))
+
+    with pytest.raises(RuntimeError, match="calculation failed"):
+        client.put(
+            f"/api/v1/scans/{scan_id}/assessment",
+            json={"usage": "heavy"},
+        )
 
     assert store.get_assessment(scan_id) is None
 

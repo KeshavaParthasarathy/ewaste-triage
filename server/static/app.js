@@ -390,11 +390,6 @@
       return withModelEvidence(merged);
     }
 
-    function consumeConfirmationRecord(record, requestedCategoryId) {
-      activeResult = confirmationResult(record, requestedCategoryId);
-      return activeResult;
-    }
-
     async function api(url, init) {
       return responseJson(await fetchImpl(url, init));
     }
@@ -455,32 +450,33 @@
         if (
           isLatestWrite &&
           activeResult &&
-          entry.generation === generation &&
-          activeResult.scan_id === writer.scanId &&
-          activeResult.confirmed_class_name === entry.categoryId
+          activeResult.scan_id === writer.scanId
         ) {
           activeResult = {...writer.committedResult};
           renderCommittedConfirmation(activeResult);
         }
         entry.waiters.forEach(waiter => waiter.resolve(isLatestWrite ? record : false));
       }).catch(error => {
-        entry.waiters.forEach(waiter => waiter.reject(error));
-        if (
+        const isLatestWrite =
           !writer.pending &&
-          writer.latestCategory === entry.categoryId &&
-          entry.generation === generation &&
+          writer.latestCategory === entry.categoryId;
+        entry.waiters.forEach(waiter => {
+          if (isLatestWrite) waiter.reject(error);
+          else waiter.resolve(false);
+        });
+        if (
+          isLatestWrite &&
+          entry.renderIntent &&
           activeResult &&
           activeResult.scan_id === writer.scanId &&
-          activeResult.confirmed_class_name === entry.categoryId &&
           writer.committedResult
         ) {
           activeResult = {...writer.committedResult};
           renderCommittedConfirmation(activeResult);
         }
         if (
-          !writer.pending &&
-          writer.latestCategory === entry.categoryId &&
-          entry.generation === generation &&
+          isLatestWrite &&
+          entry.renderIntent &&
           activeResult &&
           activeResult.scan_id === writer.scanId &&
           typeof view.renderHistoryError === "function"
@@ -497,7 +493,7 @@
       });
     }
 
-    function persistConfirmation(scanId, categoryId) {
+    function persistConfirmation(scanId, categoryId, renderIntent = false) {
       const writer = seedConfirmationWriter(
         scanId,
         activeResult && activeResult.scan_id === scanId ? activeResult : null
@@ -506,7 +502,7 @@
       return new Promise((resolve, reject) => {
         const waiter = {resolve, reject};
         if (writer.inFlight && writer.inFlight.categoryId === categoryId) {
-          writer.inFlight.generation = generation;
+          writer.inFlight.renderIntent ||= renderIntent;
           if (writer.pending && writer.pending.categoryId !== categoryId) {
             writer.pending.waiters.forEach(item => item.resolve(false));
             writer.pending = null;
@@ -515,13 +511,13 @@
           return;
         }
         if (writer.pending && writer.pending.categoryId === categoryId) {
-          writer.pending.generation = generation;
+          writer.pending.renderIntent ||= renderIntent;
           writer.pending.waiters.push(waiter);
         } else {
           if (writer.pending) {
             writer.pending.waiters.forEach(item => item.resolve(false));
           }
-          writer.pending = {categoryId, generation, waiters: [waiter]};
+          writer.pending = {categoryId, renderIntent, waiters: [waiter]};
         }
         drainConfirmationWriter(writer);
       });
@@ -941,10 +937,11 @@
         const confirmationRecord = await persistConfirmation(scanId, categoryId);
         if (!confirmationRecord) return false;
         if (requestedGeneration !== assessmentGeneration) return false;
-        consumeConfirmationRecord(confirmationRecord, categoryId);
-        if (typeof view.renderCorrection === "function") {
-          view.renderCorrection(activeResult, false);
-        }
+        if (
+          !activeResult ||
+          activeResult.scan_id !== scanId ||
+          activeResult.confirmed_class_name !== categoryId
+        ) return false;
         context = getAssessmentContext();
         const assessment = await api(`/api/v1/scans/${encodeURIComponent(scanId)}/assessment`, {
           method: "PUT",
@@ -995,9 +992,11 @@
         }, confirmedClassName) : undefined,
         confirmation_source: confirmation.source
       });
-      activeResult = modelResult;
       const writer = confirmationWriter(record.scan_id);
-      if (!writer.inFlight && !writer.pending) {
+      if (writer.committedResult) {
+        activeResult = {...writer.committedResult};
+      } else {
+        activeResult = modelResult;
         writer.committedResult = {...activeResult};
       }
       view.showSection("scan");
@@ -1036,7 +1035,7 @@
       });
       if (activeResult.scan_id) {
         void persistConfirmation(
-          activeResult.scan_id, selected.class_name
+          activeResult.scan_id, selected.class_name, true
         ).catch(() => {});
       }
       return true;
