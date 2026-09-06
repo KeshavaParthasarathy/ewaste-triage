@@ -62,10 +62,14 @@ Every non-null lifecycle and every safety-sensitive component must carry `source
 Category handling notes must cite registered sources and remain potential-substance
 context; they must never claim that a photographed item contains a specific substance.
 
-Use `lifecycle: null` when evidence does not support a generic range. Null is a deliberate
-release decision, not missing clerical work: the assessment must return **Unknown** and
-name the item-specific input or supported reference needed to improve it. Never infer a
-lifecycle, internal condition, or safety clearance from classifier confidence.
+When evidence does not support a generic range, either omit the `lifecycle` field or set
+it explicitly to `null`. The compiler treats both forms identically: each becomes SQL
+`NULL` and a `None`/JSON `null` lifecycle in the compiled snapshot. The current YAML omits
+the field for unsupported lifecycles. Null is a deliberate release decision, not missing
+clerical work: the assessment must return **Unknown** and name the item-specific input or
+supported reference needed to improve it. Never use an empty mapping as a null marker,
+and never infer lifecycle, internal condition, or safety clearance from classifier
+confidence.
 
 Review safety copy separately from reuse copy. A safety escalation must appear before
 reuse guidance and cannot be cleared by an exterior photo or a high-confidence category
