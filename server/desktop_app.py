@@ -383,14 +383,32 @@ def create_desktop_app(
         store = app.config["HISTORY_STORE"]
         if not isinstance(accepted, str) or store is None:
             return jsonify({"error": "accepted category was not offered by the model"}), 400
+        refs = reference()
+        known_category_ids = None
+        if refs is not None:
+            try:
+                known_category_ids = {
+                    category["category_id"] for category in refs.list_categories()
+                }
+            except (sqlite3.Error, ValueError, RuntimeError, KeyError, TypeError):
+                return assessment_error("component reference data is unavailable", 503)
         try:
-            record = store.set_confirmation(scan_id, accepted)
+            record = store.set_confirmation(
+                scan_id,
+                accepted,
+                known_category_ids=known_category_ids,
+            )
         except AssessmentConflictError:
             return jsonify({"error": "an existing assessment keeps its confirmed category"}), 409
         if record is None:
             return jsonify({"error": "scan not found"}), 404
         if record is False:
-            return jsonify({"error": "accepted category was not offered by the model"}), 400
+            message = (
+                "accepted category is not available in component references"
+                if known_category_ids is not None
+                else "accepted category was not offered by the model"
+            )
+            return jsonify({"error": message}), 400
         return jsonify(record)
 
     @app.delete("/api/v1/history/<scan_id>")

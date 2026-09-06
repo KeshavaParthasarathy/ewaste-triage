@@ -172,8 +172,18 @@ class HistoryStore:
             ).fetchone()
         return self._record(row) if row is not None else None
 
-    def set_confirmation(self, scan_id: str, accepted_class_name: str):
-        """Store a user choice separately from the immutable model prediction."""
+    def set_confirmation(
+        self,
+        scan_id: str,
+        accepted_class_name: str,
+        *,
+        known_category_ids: set[str] | None = None,
+    ):
+        """Store a validated user choice separately from immutable model evidence.
+
+        Callers with a component reference store pass its canonical category IDs.
+        Older callers without references retain the narrower model-top-k contract.
+        """
         confirmation = {"accepted_class_name": accepted_class_name, "source": "user"}
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -181,15 +191,19 @@ class HistoryStore:
             if row is None:
                 connection.rollback()
                 return None
-            prediction = json.loads(row["prediction_json"])
-            offered = {item.get("class_name") for item in prediction.get("topk", [])}
-            if accepted_class_name not in offered:
-                connection.rollback()
-                return False
             assessment = connection.execute("SELECT category_id FROM assessments WHERE scan_id = ?", (scan_id,)).fetchone()
             if assessment is not None and assessment["category_id"] != accepted_class_name:
                 connection.rollback()
                 raise AssessmentConflictError("assessment category is immutable")
+            prediction = json.loads(row["prediction_json"])
+            allowed = known_category_ids
+            if allowed is None:
+                allowed = {
+                    item.get("class_name") for item in prediction.get("topk", [])
+                }
+            if accepted_class_name not in allowed:
+                connection.rollback()
+                return False
             connection.execute("UPDATE scans SET confirmation_json = ? WHERE scan_id = ?", (json.dumps(confirmation, separators=(",", ":"), sort_keys=True), scan_id))
             connection.commit()
         return self.get_scan(scan_id)

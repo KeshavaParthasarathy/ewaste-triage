@@ -85,8 +85,9 @@
     };
     const componentFields = {};
     for (const [name, rawValue] of Object.entries(values)) {
-      const match = /^component\.([^.]+)\.(presence|condition|lifecycle_metric|lifecycle_min|lifecycle_max)$/.exec(name);
-      if (!match || rawValue === "" || rawValue === undefined || rawValue === null) continue;
+      const match = /^component\.([^.]+)\.(presence|condition|lifecycle_metric|lifecycle_min|lifecycle_max|lifecycle_capacity)$/.exec(name);
+      if (!match || rawValue === undefined || rawValue === null) continue;
+      if (rawValue === "" && match[2] !== "lifecycle_metric") continue;
       if (!componentFields[match[1]]) componentFields[match[1]] = {};
       componentFields[match[1]][match[2]] = rawValue;
     }
@@ -94,11 +95,23 @@
       const override = {};
       if (fields.presence) override.presence_label = fields.presence;
       if (fields.condition) override.condition = fields.condition;
-      if (fields.lifecycle_metric || fields.lifecycle_min || fields.lifecycle_max) {
-        if (!fields.lifecycle_metric) throw new Error("Choose years or cycles for the component lifecycle reference.");
+      if (fields.lifecycle_metric) {
+        if (!["years", "cycles", "cycles_to_capacity"].includes(fields.lifecycle_metric)) {
+          throw new Error("Choose years, cycles, or cycles to capacity for the component lifecycle reference.");
+        }
         const range = rangeFromValues(fields.lifecycle_min, fields.lifecycle_max, "Component lifecycle");
         if (range === null) throw new Error("Enter a component lifecycle range.");
         override.lifecycle = {metric: fields.lifecycle_metric, ...range};
+        if (fields.lifecycle_metric === "cycles_to_capacity") {
+          if (fields.lifecycle_capacity === undefined || fields.lifecycle_capacity === "") {
+            throw new Error("Enter the capacity percentage for cycles to capacity.");
+          }
+          const capacity = Number(fields.lifecycle_capacity);
+          if (!Number.isInteger(capacity) || capacity < 1 || capacity > 100) {
+            throw new Error("Capacity percentage must be an integer from 1 to 100.");
+          }
+          override.lifecycle.capacity_percent = capacity;
+        }
       }
       if (Object.keys(override).length) payload.component_overrides[componentId] = override;
     }
@@ -145,10 +158,23 @@
       const lifecycleOwnsSources = lifecycle && Object.prototype.hasOwnProperty.call(lifecycle, "source_ids");
       const lifecycleOwnsGrade = lifecycle && Object.prototype.hasOwnProperty.call(lifecycle, "evidence_grade");
       const lifecycleOwnsReview = lifecycle && Object.prototype.hasOwnProperty.call(lifecycle, "reviewed_on");
-      const lifecycleSources = lifecycleOwnsSources ? lifecycle.source_ids : component.source_ids;
-      const lifecycleGrade = lifecycleOwnsGrade ? lifecycle.evidence_grade : component.evidence_grade;
-      const lifecycleReview = lifecycleOwnsReview ? lifecycle.reviewed_on : component.reviewed_on;
+      const lifecycleSources = !lifecycle ? [] :
+        lifecycleOwnsSources ? lifecycle.source_ids : component.source_ids;
+      const lifecycleGrade = !lifecycle ? null :
+        lifecycleOwnsGrade ? lifecycle.evidence_grade : component.evidence_grade;
+      const lifecycleReview = !lifecycle ? null :
+        lifecycleOwnsReview ? lifecycle.reviewed_on : component.reviewed_on;
       const hasReviewedReference = lifecycle && Array.isArray(lifecycleSources) && lifecycleSources.length;
+      const lifecycleSourceLabel = sourceLabel(
+        lifecycleSources,
+        lifecycleGrade,
+        lifecycleReview
+      );
+      const safetySourceLabel = sourceLabel(
+        component.source_ids,
+        component.evidence_grade,
+        component.reviewed_on
+      );
       let missingGuidance = "";
       if (!result.percent_used && !hasReviewedReference) {
         missingGuidance = "Needs a reviewed component lifecycle reference or supported diagnostic; age or usage alone cannot improve this value.";
@@ -165,7 +191,9 @@
         reasons: Array.isArray(result.reasons) ? result.reasons : [],
         evidence: Array.isArray(result.evidence) ? result.evidence : [],
         missing_guidance: missingGuidance,
-        source_label: sourceLabel(lifecycleSources, lifecycleGrade, lifecycleReview)
+        source_label: lifecycleSourceLabel,
+        lifecycle_source_label: lifecycleSourceLabel,
+        safety_source_label: safetySourceLabel
       };
     });
     const supportedRanges = components
@@ -184,7 +212,7 @@
       if (component.safety_sensitive && component.result && component.result.recommendation === "specialist_handling") {
         safety.unshift({
           text: `${component.display_name}: ${component.reasons.join(" ")}`,
-          source_label: component.source_label,
+          source_label: component.safety_source_label,
           priority: "escalation"
         });
       }
@@ -233,8 +261,14 @@
     let historyGeneration = 0;
     let pendingHistoryAction = null;
     let assessmentGeneration = 0;
-    let assessmentSavePending = false;
+    let assessmentSaveToken = null;
     let activeAssessment = null;
+
+    function cancelAssessmentSave() {
+      if (assessmentSaveToken === null) return;
+      assessmentSaveToken = null;
+      if (typeof view.setAssessmentBusy === "function") view.setAssessmentBusy(false);
+    }
 
     function withModelEvidence(result) {
       const modelClassName = result.model_class_name || result.class_name;
@@ -249,6 +283,40 @@
           modelConfidence : result.confirmed_confidence,
         confirmation_source: result.confirmation_source || "model"
       };
+    }
+
+    function selectedModelScore(result, categoryId) {
+      if (!categoryId) return null;
+      const selected = (Array.isArray(result.topk) ? result.topk : []).find(
+        item => item.class_name === categoryId
+      );
+      if (selected && selected.confidence !== undefined) return selected.confidence;
+      if (categoryId === result.model_class_name) return result.model_confidence;
+      return null;
+    }
+
+    function consumeConfirmationRecord(record, requestedCategoryId) {
+      const prediction = record && record.prediction ? record.prediction : {};
+      const confirmation = record && record.confirmation ? record.confirmation : {};
+      const current = activeResult || {};
+      const modelClassName = prediction.class_name || current.model_class_name || current.class_name;
+      const modelConfidence = prediction.confidence === undefined ?
+        current.model_confidence : prediction.confidence;
+      const merged = {
+        ...current,
+        ...prediction,
+        scan_id: (record && record.scan_id) || current.scan_id || null,
+        model_class_name: modelClassName,
+        model_confidence: modelConfidence,
+        confirmed_class_name: confirmation.accepted_class_name || requestedCategoryId || current.confirmed_class_name,
+        confirmation_source: confirmation.source || "user"
+      };
+      merged.confirmed_confidence = selectedModelScore(
+        merged,
+        merged.confirmed_class_name
+      );
+      activeResult = withModelEvidence(merged);
+      return activeResult;
     }
 
     async function api(url, init) {
@@ -295,10 +363,7 @@
       generation += 1;
       assessmentGeneration += 1;
       activeAssessment = null;
-      if (assessmentSavePending) {
-        assessmentSavePending = false;
-        if (typeof view.setAssessmentBusy === "function") view.setAssessmentBusy(false);
-      }
+      cancelAssessmentSave();
       activeScanId = null;
       if (activeAnalysisGeneration !== null) {
         activeAnalysisGeneration = null;
@@ -419,6 +484,7 @@
     async function openAssessment() {
       if (typeof view.showSection === "function") view.showSection("assessment");
       const context = getAssessmentContext();
+      cancelAssessmentSave();
       const requestedGeneration = ++assessmentGeneration;
       activeAssessment = null;
       if (!context || !context.scan_id) {
@@ -466,9 +532,13 @@
         draftInputs = typeof view.readAssessmentForm === "function" ? view.readAssessmentForm() : null;
         if (draftInputs) draftInputs = {...draftInputs, component_overrides: {}};
       } catch (error) {
-        if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-error", error.message);
+        if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-editing");
+        if (typeof view.showAssessmentFormError === "function") {
+          view.showAssessmentFormError(error.message);
+        }
         return false;
       }
+      cancelAssessmentSave();
       const requestedGeneration = ++assessmentGeneration;
       if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-loading");
       try {
@@ -489,26 +559,49 @@
       if (activeAssessment && typeof view.setAssessmentState === "function") {
         view.setAssessmentState("assessment-editing");
       }
+      if (typeof view.clearAssessmentFormError === "function") {
+        view.clearAssessmentFormError();
+      }
     }
 
     async function saveAssessment(form) {
-      if (assessmentSavePending || !activeAssessment) return false;
-      const context = activeAssessment.context;
+      if (assessmentSaveToken !== null || !activeAssessment) return false;
+      let context = activeAssessment.context;
       const scanId = context && context.scan_id;
       if (!scanId) return false;
+      let payload;
+      let categoryId;
+      try {
+        payload = view.readAssessmentForm(form);
+        categoryId = view.getAssessmentCategory(form);
+        const categories = Array.isArray(activeAssessment.categories) ? activeAssessment.categories : [];
+        if (!categoryId || !categories.some(category => category.category_id === categoryId)) {
+          throw new Error("Choose an available reference category.");
+        }
+      } catch (error) {
+        if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-editing");
+        if (typeof view.showAssessmentFormError === "function") {
+          view.showAssessmentFormError(error.message);
+        }
+        return false;
+      }
       const requestedGeneration = ++assessmentGeneration;
-      assessmentSavePending = true;
+      const saveToken = {};
+      assessmentSaveToken = saveToken;
+      if (typeof view.clearAssessmentFormError === "function") {
+        view.clearAssessmentFormError();
+      }
       if (typeof view.setAssessmentBusy === "function") view.setAssessmentBusy(true);
       if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-loading");
       try {
-        const payload = view.readAssessmentForm(form);
-        const categoryId = view.getAssessmentCategory(form);
-        await api(`/api/v1/history/${encodeURIComponent(scanId)}/confirmation`, {
+        const confirmationRecord = await api(`/api/v1/history/${encodeURIComponent(scanId)}/confirmation`, {
           method: "PUT",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({accepted_class_name: categoryId})
         });
         if (requestedGeneration !== assessmentGeneration) return false;
+        consumeConfirmationRecord(confirmationRecord, categoryId);
+        context = getAssessmentContext();
         const assessment = await api(`/api/v1/scans/${encodeURIComponent(scanId)}/assessment`, {
           method: "PUT",
           headers: {"Content-Type": "application/json"},
@@ -519,7 +612,7 @@
           mode: "existing",
           categories: activeAssessment.categories,
           assessment,
-          context: {...context, confirmed_class_name: assessment.category_id}
+          context
         };
         if (typeof view.renderAssessment === "function") view.renderAssessment(activeAssessment);
         if (typeof view.setAssessmentState === "function") {
@@ -527,12 +620,15 @@
         }
         return true;
       } catch (error) {
-        if (requestedGeneration !== assessmentGeneration) return false;
-        if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-error", error.message);
+        if (requestedGeneration !== assessmentGeneration || assessmentSaveToken !== saveToken) return false;
+        if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-editing");
+        if (typeof view.showAssessmentFormError === "function") {
+          view.showAssessmentFormError(error.message);
+        }
         return false;
       } finally {
-        if (requestedGeneration === assessmentGeneration) {
-          assessmentSavePending = false;
+        if (assessmentSaveToken === saveToken) {
+          assessmentSaveToken = null;
           if (typeof view.setAssessmentBusy === "function") view.setAssessmentBusy(false);
         }
       }
@@ -542,13 +638,20 @@
       invalidateAnalysis();
       const prediction = record.prediction || {};
       const confirmation = record.confirmation || {};
-      activeResult = withModelEvidence({
+      const confirmedClassName = confirmation.accepted_class_name;
+      const modelResult = withModelEvidence({
         ...prediction,
         scan_id: record.scan_id,
         from_history: true,
-        confirmed_class_name: confirmation.accepted_class_name,
+        confirmed_class_name: confirmedClassName,
+        confirmed_confidence: confirmedClassName ? selectedModelScore({
+          ...prediction,
+          model_class_name: prediction.class_name,
+          model_confidence: prediction.confidence
+        }, confirmedClassName) : undefined,
         confirmation_source: confirmation.source
       });
+      activeResult = modelResult;
       view.showSection("scan");
       view.clearPreview("The source image is unavailable for this history record.");
       view.transition(prediction.low_confidence ? "review" : "result", activeResult);
@@ -662,6 +765,7 @@
     const historyUndoButton = document.getElementById("history-undo-button");
     const assessmentFrame = document.getElementById("assessment-frame");
     const assessmentForm = document.getElementById("assessment-form");
+    const assessmentSaveFeedback = document.getElementById("assessment-save-feedback");
     const assessmentCategory = document.getElementById("assessment-category");
     const assessmentComponents = document.getElementById("assessment-components");
     const assessmentSafetyList = document.getElementById("assessment-safety-list");
@@ -950,12 +1054,16 @@
       const lifecycle = override.lifecycle || {};
       const fieldset = element(document, "fieldset", "component-lifecycle-override");
       fieldset.append(element(document, "legend", "", "Documented item lifecycle reference"));
-      fieldset.append(labeledSelect("Unit", `component.${componentId}.lifecycle_metric`, [
+      const metricControl = labeledSelect("Unit", `component.${componentId}.lifecycle_metric`, [
         {value: "", label: "No item override"},
         {value: "years", label: "Years"},
-        {value: "cycles", label: "Cycles"}
-      ], lifecycle.metric || ""));
+        {value: "cycles", label: "Cycles"},
+        {value: "cycles_to_capacity", label: "Cycles to capacity"}
+      ], lifecycle.metric || "");
+      const metric = metricControl.querySelector("select");
+      fieldset.append(metricControl);
       const range = element(document, "div", "component-range-inputs");
+      const rangeInputs = [];
       for (const [suffix, labelText, value] of [
         ["min", "From", lifecycle.minimum], ["max", "To", lifecycle.maximum]
       ]) {
@@ -970,7 +1078,36 @@
         input.value = value === undefined ? "" : String(value);
         label.append(input);
         range.append(label);
+        rangeInputs.push(input);
       }
+      const capacityLabel = element(document, "label", "component-control");
+      capacityLabel.append(element(document, "span", "", "Capacity threshold"));
+      const capacity = element(document, "input");
+      capacity.type = "number";
+      capacity.inputMode = "numeric";
+      capacity.min = "1";
+      capacity.max = "100";
+      capacity.step = "1";
+      capacity.name = `component.${componentId}.lifecycle_capacity`;
+      capacity.value = lifecycle.capacity_percent === undefined ? "" : String(lifecycle.capacity_percent);
+      capacity.setAttribute("aria-label", "Capacity threshold percent");
+      capacityLabel.append(capacity);
+      range.append(capacityLabel);
+
+      function syncLifecycleFields(clearInapplicable) {
+        const hasLifecycle = Boolean(metric.value);
+        const usesCapacity = metric.value === "cycles_to_capacity";
+        for (const input of rangeInputs) {
+          input.disabled = !hasLifecycle;
+          input.max = metric.value === "years" ? "100" : "1000000";
+          if (clearInapplicable && !hasLifecycle) input.value = "";
+        }
+        capacity.disabled = !usesCapacity;
+        if (clearInapplicable && !usesCapacity) capacity.value = "";
+      }
+
+      metric.addEventListener("change", () => syncLifecycleFields(true));
+      syncLifecycleFields(false);
       fieldset.append(range);
       fieldset.append(element(document, "p", "field-help", "Item-provided lifecycle references remain unverified and do not create a sourced health estimate."));
       return fieldset;
@@ -1000,7 +1137,7 @@
           element(document, "strong", "", component.recommendation_label)
         );
         const reason = element(document, "p", "component-reason", component.missing_guidance || component.reasons.join(" "));
-        const reference = element(document, "p", "component-reference", `${component.reference_range} · ${component.source_label}`);
+        const reference = element(document, "p", "component-reference", `${component.reference_range} · ${component.lifecycle_source_label}`);
 
         const evidence = element(document, "ul", "component-evidence");
         for (const item of component.evidence) {
@@ -1037,6 +1174,7 @@
     }
 
     function populateAssessment({assessment, categories, context, locked}) {
+      clearAssessmentFormError();
       const presentation = buildAssessmentPresentation(assessment);
       const categoryId = assessment.category_id || assessment.template.category_id;
       setSelectOptions(assessmentCategory, categories.map(category => ({
@@ -1112,6 +1250,17 @@
       assessmentFrame.setAttribute("aria-busy", String(value));
     }
 
+    function clearAssessmentFormError() {
+      assessmentSaveFeedback.hidden = true;
+      assessmentSaveFeedback.textContent = "";
+    }
+
+    function showAssessmentFormError(message) {
+      assessmentSaveFeedback.textContent = message || "The assessment could not be saved. Review your entries and try again.";
+      assessmentSaveFeedback.hidden = false;
+      assessmentSaveFeedback.focus();
+    }
+
     function setAssessmentState(state, message) {
       assessmentFrame.dataset.assessmentState = state;
       assessmentFrame.setAttribute("aria-busy", String(state === "assessment-loading"));
@@ -1158,6 +1307,7 @@
     return {
       getMass: () => "",
       markHistoryDeleting,
+      clearAssessmentFormError,
       clearHistoryUndo,
       clearPreview,
       getAssessmentCategory: () => assessmentCategory.value,
@@ -1173,6 +1323,7 @@
       setAssessmentBusy,
       setAssessmentState,
       showPreview,
+      showAssessmentFormError,
       showHistoryUndo,
       showSection,
       setAlternativeHandler(handler) { alternativeHandler = handler; },

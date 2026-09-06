@@ -37,11 +37,87 @@ def _page():
 def _run_ui_contract(script):
     completed = subprocess.run(
         ["node", "-e", script, str(JS)],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout)
+
+
+FAKE_DOM = r"""
+class FakeNode {
+  constructor(tag = 'div', id = '') {
+    this.tagName = String(tag).toUpperCase();
+    this.id = id;
+    this.children = [];
+    this.attributes = {};
+    this.dataset = {};
+    this.listeners = {};
+    this.style = {values: {}, setProperty: (name, value) => { this.style.values[name] = value; }};
+    this.className = '';
+    this.value = '';
+    this.name = '';
+    this.hidden = false;
+    this.disabled = false;
+    this.textContent = '';
+    this.focused = false;
+  }
+  append(...nodes) { this.children.push(...nodes); }
+  replaceChildren(...nodes) { this.children = [...nodes]; }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return this.attributes[name]; }
+  removeAttribute(name) { delete this.attributes[name]; }
+  addEventListener(type, handler) {
+    if (!this.listeners[type]) this.listeners[type] = [];
+    this.listeners[type].push(handler);
+  }
+  dispatch(type) {
+    for (const handler of this.listeners[type] || []) handler({target: this});
+  }
+  focus() { this.focused = true; }
+  matches(selector) {
+    if (selector.startsWith('.')) return this.className.split(/\s+/).includes(selector.slice(1));
+    return this.tagName.toLowerCase() === selector.toLowerCase();
+  }
+  querySelectorAll(selector) {
+    const found = [];
+    const visit = node => {
+      for (const child of node.children || []) {
+        if (child.matches && child.matches(selector)) found.push(child);
+        visit(child);
+      }
+    };
+    visit(this);
+    return found;
+  }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+}
+class FakeDocument {
+  constructor() {
+    this.nodes = new Map();
+    this.documentElement = new FakeNode('html', 'html');
+    this.imageStage = new FakeNode('div');
+    this.imageStage.className = 'image-stage';
+  }
+  createElement(tag) { return new FakeNode(tag); }
+  getElementById(id) {
+    if (!this.nodes.has(id)) this.nodes.set(id, new FakeNode('div', id));
+    return this.nodes.get(id);
+  }
+  querySelector(selector) { return selector === '.image-stage' ? this.imageStage : null; }
+  querySelectorAll() { return []; }
+}
+function walk(root) {
+  const found = [];
+  const visit = node => {
+    found.push(node);
+    for (const child of node.children || []) visit(child);
+  };
+  visit(root);
+  return found;
+}
+"""
 
 
 def test_assessment_ui_labels_estimates_and_evidence():
@@ -87,6 +163,11 @@ def test_assessment_form_exposes_supported_item_and_component_inputs():
     ):
         assert controls[control_id][0] == "select"
     assert controls["save-assessment"][0] == "button"
+    feedback_tag, feedback_attrs = controls["assessment-save-feedback"]
+    assert feedback_tag == "p"
+    assert feedback_attrs["role"] == "alert"
+    assert feedback_attrs["tabindex"] == "-1"
+    assert "hidden" in feedback_attrs
     assert controls["assessment-components"][1]["aria-live"] == "off"
 
 
@@ -110,6 +191,14 @@ def test_assessment_motion_has_responsive_reduced_motion_fallback_and_bounded_re
     assert "@media (max-width: 760px)" in css
     assert "prefers-reduced-motion: reduce" in css
     assert "transition: all" not in css
+
+
+def test_phone_width_header_has_a_dedicated_overflow_guard():
+    css = CSS.read_text()
+    compact = css.split("@media (max-width: 380px)", 1)[1]
+    assert ".brand > span:last-child" in compact
+    assert ".sidebar" in compact
+    assert ".nav-item" in compact
 
 
 def test_assessment_payload_uses_only_task3_fields_and_authorized_overrides():
@@ -142,6 +231,151 @@ process.stdout.write(JSON.stringify(payload));
             }
         },
     }
+
+
+def test_lifecycle_payload_supports_capacity_and_clears_disabled_dependents():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+function attempt(values) {
+  try { return {payload: UI.assessmentPayloadFromValues(values)}; }
+  catch (error) { return {error: error.message}; }
+}
+const base = {usage: 'unknown', condition: 'unknown', operational: 'unknown'};
+const capacity = attempt({...base,
+  'component.battery.lifecycle_metric': 'cycles_to_capacity',
+  'component.battery.lifecycle_min': '700',
+  'component.battery.lifecycle_max': '900',
+  'component.battery.lifecycle_capacity': '80'
+});
+const cleared = attempt({...base,
+  'component.battery.presence': 'standard',
+  'component.battery.lifecycle_metric': '',
+  'component.battery.lifecycle_min': '700',
+  'component.battery.lifecycle_max': '900',
+  'component.battery.lifecycle_capacity': '80'
+});
+const missingCapacity = attempt({...base,
+  'component.battery.lifecycle_metric': 'cycles_to_capacity',
+  'component.battery.lifecycle_min': '700',
+  'component.battery.lifecycle_max': '900'
+});
+const invalidCapacity = attempt({...base,
+  'component.battery.lifecycle_metric': 'cycles_to_capacity',
+  'component.battery.lifecycle_min': '700',
+  'component.battery.lifecycle_max': '900',
+  'component.battery.lifecycle_capacity': '101'
+});
+const yearsIgnoreCapacity = attempt({...base,
+  'component.battery.lifecycle_metric': 'years',
+  'component.battery.lifecycle_min': '4',
+  'component.battery.lifecycle_max': '6',
+  'component.battery.lifecycle_capacity': '80'
+});
+process.stdout.write(JSON.stringify({capacity, cleared, missingCapacity, invalidCapacity, yearsIgnoreCapacity}));
+""")
+
+    assert result["capacity"]["payload"]["component_overrides"] == {
+        "battery": {
+            "lifecycle": {
+                "metric": "cycles_to_capacity",
+                "minimum": 700,
+                "maximum": 900,
+                "capacity_percent": 80,
+            }
+        }
+    }
+    assert result["cleared"]["payload"]["component_overrides"] == {
+        "battery": {"presence_label": "standard"}
+    }
+    assert "capacity" in result["missingCapacity"]["error"].lower()
+    assert "1 to 100" in result["invalidCapacity"]["error"]
+    assert result["yearsIgnoreCapacity"]["payload"]["component_overrides"] == {
+        "battery": {
+            "lifecycle": {"metric": "years", "minimum": 4, "maximum": 6}
+        }
+    }
+
+
+def test_existing_capacity_lifecycle_override_round_trips_through_dom_and_can_clear():
+    result = _run_ui_contract(FAKE_DOM + r"""
+const UI = require(process.argv[1]);
+const document = new FakeDocument();
+const view = UI.createDomView(document);
+const lifecycle = {metric: 'cycles_to_capacity', minimum: 700, maximum: 900, capacity_percent: 80};
+const component = {
+  component_id: 'battery', display_name: 'Battery', presence_label: 'standard', safety_sensitive: true,
+  lifecycle: {...lifecycle, source_ids: [], evidence_grade: 'user_provided_unverified', reviewed_on: null},
+  source_ids: ['immutable-safety-source'], evidence_grade: 'regulatory', reviewed_on: '2026-09-05',
+  result: {percent_used: null, confidence: 'unavailable', recommendation: 'unknown', reasons: ['More facts are needed.'], evidence: []}
+};
+const assessment = {
+  scan_id: 'scan-capacity', category_id: '0306_mobile_phone', template_version: '1.0.0',
+  template: {category_id: '0306_mobile_phone', display_name: 'Mobile phone', template_version: '1.0.0', components: [component], rules: []},
+  inputs: {age_months: null, cycle_count: null, usage: 'unknown', condition: 'unknown', operational: 'unknown'},
+  component_overrides: {battery: {lifecycle}}, components: [component]
+};
+view.renderAssessment({
+  assessment,
+  categories: [{category_id: '0306_mobile_phone', display_name: 'Mobile phone'}],
+  context: {model_evidence: {class_name: '0306_mobile_phone', confidence: .91}, confirmation: {source: 'user'}},
+});
+const nodes = walk(document.getElementById('assessment-components'));
+const named = name => nodes.find(node => node.name === name);
+const metric = named('component.battery.lifecycle_metric');
+const minimum = named('component.battery.lifecycle_min');
+const maximum = named('component.battery.lifecycle_max');
+const capacity = named('component.battery.lifecycle_capacity');
+const enabledValues = () => Object.fromEntries(
+  [metric, minimum, maximum, capacity]
+    .filter(node => node && !node.disabled)
+    .map(node => [node.name, node.value])
+);
+const before = {
+  metricOptions: metric.children.map(option => option.value),
+  values: [metric.value, minimum.value, maximum.value, capacity && capacity.value],
+  disabled: [minimum.disabled, maximum.disabled, capacity && capacity.disabled],
+  payload: UI.assessmentPayloadFromValues(enabledValues()).component_overrides
+};
+metric.value = '';
+metric.dispatch('change');
+const afterClear = {
+  values: [minimum.value, maximum.value, capacity && capacity.value],
+  disabled: [minimum.disabled, maximum.disabled, capacity && capacity.disabled],
+  payload: UI.assessmentPayloadFromValues(enabledValues()).component_overrides
+};
+view.showAssessmentFormError('Could not save these facts.');
+const feedback = document.getElementById('assessment-save-feedback');
+const evidenceText = walk(document.getElementById('assessment-evidence-list')).map(node => node.textContent).filter(Boolean);
+process.stdout.write(JSON.stringify({before, afterClear, evidenceText, feedback: {text: feedback.textContent, hidden: feedback.hidden, focused: feedback.focused}}));
+""")
+
+    assert result["before"] == {
+        "metricOptions": ["", "years", "cycles", "cycles_to_capacity"],
+        "values": ["cycles_to_capacity", "700", "900", "80"],
+        "disabled": [False, False, False],
+        "payload": {
+            "battery": {
+                "lifecycle": {
+                    "metric": "cycles_to_capacity",
+                    "minimum": 700,
+                    "maximum": 900,
+                    "capacity_percent": 80,
+                }
+            }
+        },
+    }
+    assert result["afterClear"] == {
+        "values": ["", "", ""],
+        "disabled": [True, True, True],
+        "payload": {},
+    }
+    assert result["feedback"] == {
+        "text": "Could not save these facts.",
+        "hidden": False,
+        "focused": True,
+    }
+    assert "User confirmed or corrected" in result["evidenceText"]
+    assert "Awaiting user confirmation" not in result["evidenceText"]
 
 
 def test_assessment_presentation_keeps_ranges_units_unknowns_and_provenance_honest():
@@ -188,6 +422,46 @@ process.stdout.write(JSON.stringify(presentation));
         {"label": "Visible condition", "value": "Unknown"},
         {"label": "Operating state", "value": "Unknown"},
     ]
+
+
+def test_safety_escalation_keeps_immutable_provenance_separate_from_override():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const presentation = UI.buildAssessmentPresentation({
+  category_id: '0306_mobile_phone', template_version: '1.0.0',
+  template: {category_id: '0306_mobile_phone', display_name: 'Mobile phone', rules: []},
+  inputs: {},
+  components: [{
+    component_id: 'battery', display_name: 'Battery', presence_label: 'standard', safety_sensitive: true,
+    source_ids: ['immutable-battery-safety'], evidence_grade: 'regulatory', reviewed_on: '2026-09-05',
+    lifecycle: {metric: 'years', minimum: 2, maximum: 3, source_ids: [], evidence_grade: 'user_provided_unverified', reviewed_on: null},
+    result: {percent_used: null, confidence: 'unavailable', recommendation: 'specialist_handling',
+             reasons: ['Stop handling and use a specialist.'], evidence: []}
+  }]
+});
+const withoutLifecycle = UI.buildAssessmentPresentation({
+  category_id: '0401_headphones', template_version: '1.0.0',
+  template: {category_id: '0401_headphones', display_name: 'Headphones', rules: []},
+  inputs: {},
+  components: [{
+    component_id: 'battery', display_name: 'Battery', presence_label: 'optional', safety_sensitive: true,
+    source_ids: ['immutable-battery-safety'], evidence_grade: 'regulatory', reviewed_on: '2026-09-05',
+    lifecycle: null,
+    result: {percent_used: null, confidence: 'unavailable', recommendation: 'unknown', reasons: [], evidence: []}
+  }]
+});
+process.stdout.write(JSON.stringify({presentation, withoutLifecycle}));
+""")
+
+    component = result["presentation"]["components"][0]
+    assert component["lifecycle_source_label"] == "user provided unverified"
+    assert component["safety_source_label"] == (
+        "immutable-battery-safety · regulatory · reviewed 2026-09-05"
+    )
+    assert result["presentation"]["safety"][0]["source_label"] == component["safety_source_label"]
+    no_lifecycle = result["withoutLifecycle"]["components"][0]
+    assert no_lifecycle["lifecycle_source_label"] == "No reviewed source attached"
+    assert no_lifecycle["safety_source_label"] == component["safety_source_label"]
 
 
 def test_controller_loads_draft_then_confirms_and_saves_without_unhandled_promises():
@@ -247,6 +521,267 @@ const controller = UI.createController({view, fetchImpl, formDataFactory: () => 
     methods = [(url, method) for url, method, _ in result["requests"]]
     assert ("/api/v1/history/scan-7/confirmation", "PUT") in methods
     assert methods.count(("/api/v1/scans/scan-7/assessment", "PUT")) == 1
+
+
+def test_save_validation_and_api_errors_preserve_the_editable_form_for_retry():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const states = [], busy = [], errors = [], clears = [], requests = [], renders = [];
+const form = {marker: 'same-form', note: 'unsaved headphones facts'};
+let phase = 'parse-error';
+let confirmationAttempts = 0;
+const categories = [
+  {category_id: '0306_mobile_phone', display_name: 'Mobile phone'},
+  {category_id: '0401_headphones', display_name: 'Headphones'}
+];
+const template = {category_id: '0306_mobile_phone', display_name: 'Mobile phone', template_version: '1.0.0', components: [], rules: []};
+const saved = {scan_id: 'scan-errors', category_id: '0401_headphones', template_version: '1.0.0', template: {...template, category_id: '0401_headphones', display_name: 'Headphones'},
+               inputs: {usage: 'heavy', condition: 'visible_wear', operational: 'working', age_months: null, cycle_count: null},
+               component_overrides: {}, components: []};
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {}, renderHistory() {}, markHistoryDeleting() {},
+  showSection() {}, clearPreview() {},
+  setAssessmentState(state, message) { states.push([state, message || null]); },
+  setAssessmentBusy(value) { busy.push(value); },
+  showAssessmentFormError(message) { errors.push(message); },
+  clearAssessmentFormError() { clears.push(true); },
+  renderAssessmentDraft() {},
+  renderAssessment(value) { renders.push(value); },
+  readAssessmentForm(receivedForm) {
+    if (receivedForm !== form) throw new Error('form identity was lost');
+    if (phase === 'parse-error') throw new Error('Age must be a non-negative range with the lower value first.');
+    return {age_months: null, cycle_count: null, usage: 'heavy', condition: 'visible_wear', operational: 'working', component_overrides: {}};
+  },
+  getAssessmentCategory(receivedForm) {
+    if (receivedForm !== form) throw new Error('form identity was lost');
+    return '0401_headphones';
+  }
+};
+const fetchImpl = async (url, options = {}) => {
+  requests.push([url, options.method || 'GET']);
+  if (url === '/api/v1/reference/categories') return {ok: true, json: async () => categories};
+  if (url === '/api/v1/scans/scan-errors/assessment' && !options.method) return {ok: false, status: 409, json: async () => ({error: 'confirm category'})};
+  if (url === '/api/v1/reference/categories/0306_mobile_phone') return {ok: true, json: async () => template};
+  if (url === '/api/v1/history/scan-errors/confirmation') {
+    confirmationAttempts += 1;
+    if (confirmationAttempts === 1) return {ok: false, status: 503, json: async () => ({error: 'disk is temporarily unavailable'})};
+    return {ok: true, json: async () => ({
+      prediction: {class_name: '0306_mobile_phone', confidence: .91, topk: [{class_name: '0306_mobile_phone', confidence: .91}]},
+      confirmation: {accepted_class_name: '0401_headphones', source: 'user'}
+    })};
+  }
+  if (url === '/api/v1/scans/scan-errors/assessment' && options.method === 'PUT') return {ok: true, json: async () => saved};
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => ''});
+(async () => {
+  controller.openHistory({scan_id: 'scan-errors', prediction: {class_name: '0306_mobile_phone', confidence: .91, topk: [{class_name: '0306_mobile_phone', confidence: .91}]}});
+  await controller.openAssessment();
+  states.length = 0; busy.length = 0; requests.length = 0; errors.length = 0; clears.length = 0; renders.length = 0;
+
+  const parseSaved = await controller.saveAssessment(form);
+  const afterParse = {states: [...states], busy: [...busy], requests: [...requests], errors: [...errors], renders: renders.length};
+
+  phase = 'api-error'; states.length = 0; busy.length = 0; requests.length = 0; errors.length = 0; clears.length = 0;
+  const apiSaved = await controller.saveAssessment(form);
+  const afterApi = {states: [...states], busy: [...busy], requests: [...requests], errors: [...errors], renders: renders.length, note: form.note};
+
+  phase = 'success'; states.length = 0; busy.length = 0; requests.length = 0; errors.length = 0; clears.length = 0;
+  const retrySaved = await controller.saveAssessment(form);
+  const afterRetry = {states: [...states], busy: [...busy], requests: [...requests], errors: [...errors], renders: renders.length, note: form.note};
+  process.stdout.write(JSON.stringify({parseSaved, apiSaved, retrySaved, afterParse, afterApi, afterRetry}));
+})();
+""")
+
+    assert result["parseSaved"] is False
+    assert result["afterParse"] == {
+        "states": [["assessment-editing", None]],
+        "busy": [],
+        "requests": [],
+        "errors": ["Age must be a non-negative range with the lower value first."],
+        "renders": 0,
+    }
+    assert result["apiSaved"] is False
+    assert result["afterApi"] == {
+        "states": [
+            ["assessment-loading", None],
+            ["assessment-editing", None],
+        ],
+        "busy": [True, False],
+        "requests": [["/api/v1/history/scan-errors/confirmation", "PUT"]],
+        "errors": ["disk is temporarily unavailable"],
+        "renders": 0,
+        "note": "unsaved headphones facts",
+    }
+    assert result["retrySaved"] is True
+    assert result["afterRetry"]["states"] == [
+        ["assessment-loading", None],
+        ["assessment-ready", "Headphones assessment updated."],
+    ]
+    assert result["afterRetry"]["busy"] == [True, False]
+    assert result["afterRetry"]["requests"] == [
+        ["/api/v1/history/scan-errors/confirmation", "PUT"],
+        ["/api/v1/scans/scan-errors/assessment", "PUT"],
+    ]
+    assert result["afterRetry"]["renders"] == 1
+    assert result["afterRetry"]["note"] == "unsaved headphones facts"
+
+
+def test_reopening_same_assessment_does_not_leak_or_steal_save_ownership():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const busy = [], requests = [];
+let assessmentGets = 0;
+let confirmationCount = 0;
+let resolveFirst, resolveSecond;
+const categories = [{category_id: '0306_mobile_phone', display_name: 'Mobile phone'}];
+const template = {category_id: '0306_mobile_phone', display_name: 'Mobile phone', template_version: '1.0.0', components: [], rules: []};
+const saved = {scan_id: 'race-scan', category_id: '0306_mobile_phone', template_version: '1.0.0', template,
+               inputs: {usage: 'unknown', condition: 'unknown', operational: 'working', age_months: null, cycle_count: null}, component_overrides: {}, components: []};
+const confirmationRecord = {prediction: {class_name: '0306_mobile_phone', confidence: .91, topk: [{class_name: '0306_mobile_phone', confidence: .91}]},
+                            confirmation: {accepted_class_name: '0306_mobile_phone', source: 'user'}};
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {}, renderHistory() {}, markHistoryDeleting() {},
+  showSection() {}, clearPreview() {}, setAssessmentState() {},
+  setAssessmentBusy(value) { busy.push(value); },
+  clearAssessmentFormError() {}, showAssessmentFormError() {}, renderAssessmentDraft() {}, renderAssessment() {},
+  readAssessmentForm() { return {age_months: null, cycle_count: null, usage: 'unknown', condition: 'unknown', operational: 'working', component_overrides: {}}; },
+  getAssessmentCategory() { return '0306_mobile_phone'; }
+};
+const fetchImpl = (url, options = {}) => {
+  requests.push([url, options.method || 'GET']);
+  if (url === '/api/v1/reference/categories') return Promise.resolve({ok: true, json: async () => categories});
+  if (url === '/api/v1/scans/race-scan/assessment' && !options.method) {
+    assessmentGets += 1;
+    if (assessmentGets === 1) return Promise.resolve({ok: false, status: 409, json: async () => ({error: 'confirm category'})});
+    return Promise.resolve({ok: true, json: async () => saved});
+  }
+  if (url === '/api/v1/reference/categories/0306_mobile_phone') return Promise.resolve({ok: true, json: async () => template});
+  if (url === '/api/v1/history/race-scan/confirmation') {
+    confirmationCount += 1;
+    if (confirmationCount === 1) return new Promise(resolve => { resolveFirst = () => resolve({ok: true, json: async () => confirmationRecord}); });
+    if (confirmationCount === 2) return new Promise(resolve => { resolveSecond = () => resolve({ok: true, json: async () => confirmationRecord}); });
+    return Promise.resolve({ok: true, json: async () => confirmationRecord});
+  }
+  if (url === '/api/v1/scans/race-scan/assessment' && options.method === 'PUT') return Promise.resolve({ok: true, json: async () => saved});
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => ''});
+(async () => {
+  controller.openHistory({scan_id: 'race-scan', prediction: confirmationRecord.prediction});
+  await controller.openAssessment();
+  const first = controller.saveAssessment({});
+  await new Promise(resolve => setImmediate(resolve));
+  const reopened = await controller.openAssessment();
+  const second = controller.saveAssessment({});
+  await new Promise(resolve => setImmediate(resolve));
+  const blockedBeforeStale = await controller.saveAssessment({});
+
+  if (resolveFirst) resolveFirst();
+  const firstSaved = await first;
+  const blockedAfterStale = await controller.saveAssessment({});
+
+  let secondSaved = false;
+  if (resolveSecond) {
+    resolveSecond();
+    secondSaved = await second;
+  } else {
+    secondSaved = await second;
+  }
+  const laterSaved = await controller.saveAssessment({});
+  process.stdout.write(JSON.stringify({reopened, firstSaved, secondSaved, blockedBeforeStale, blockedAfterStale, laterSaved, confirmationCount, busy, requests}));
+})();
+""")
+
+    assert result["reopened"] is True
+    assert result["firstSaved"] is False
+    assert result["secondSaved"] is True
+    assert result["blockedBeforeStale"] is False
+    assert result["blockedAfterStale"] is False
+    assert result["laterSaved"] is True
+    assert result["confirmationCount"] == 3
+    # Reopening cancels the first token, then each later owner releases only itself.
+    assert result["busy"] == [True, False, True, False, True, False]
+
+
+def test_fourth_reference_category_confirmation_updates_evidence_and_survives_reopen():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const renderedContexts = [], requests = [];
+let assessmentGets = 0;
+const categories = [
+  {category_id: '0306_mobile_phone', display_name: 'Mobile phone'},
+  {category_id: '0303_laptop', display_name: 'Laptop'},
+  {category_id: '0301_computer_mouse', display_name: 'Computer mouse'},
+  {category_id: '0401_headphones', display_name: 'Headphones'}
+];
+const phoneTemplate = {category_id: '0306_mobile_phone', display_name: 'Mobile phone', template_version: '1.0.0', components: [], rules: []};
+const headphonesTemplate = {category_id: '0401_headphones', display_name: 'Headphones', template_version: '1.0.0', components: [], rules: []};
+const prediction = {
+  class_name: '0306_mobile_phone', confidence: .91,
+  topk: [
+    {class_name: '0306_mobile_phone', confidence: .91},
+    {class_name: '0303_laptop', confidence: .06},
+    {class_name: '0301_computer_mouse', confidence: .03}
+  ]
+};
+const confirmationRecord = {
+  scan_id: 'scan-fourth', prediction,
+  confirmation: {accepted_class_name: '0401_headphones', source: 'user'}
+};
+const saved = {scan_id: 'scan-fourth', category_id: '0401_headphones', template_version: '1.0.0', template: headphonesTemplate,
+               inputs: {usage: 'unknown', condition: 'unknown', operational: 'unknown', age_months: null, cycle_count: null}, component_overrides: {}, components: []};
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {}, renderHistory() {}, markHistoryDeleting() {},
+  showSection() {}, clearPreview() {}, setAssessmentState() {}, setAssessmentBusy() {},
+  clearAssessmentFormError() {}, showAssessmentFormError() {}, renderAssessmentDraft() {},
+  renderAssessment(value) { renderedContexts.push(JSON.parse(JSON.stringify(value.context))); },
+  readAssessmentForm() { return saved.inputs; },
+  getAssessmentCategory() { return '0401_headphones'; }
+};
+const fetchImpl = async (url, options = {}) => {
+  requests.push([url, options.method || 'GET']);
+  if (url === '/api/v1/reference/categories') return {ok: true, json: async () => categories};
+  if (url === '/api/v1/scans/scan-fourth/assessment' && !options.method) {
+    assessmentGets += 1;
+    if (assessmentGets === 1) return {ok: false, status: 409, json: async () => ({error: 'confirm category'})};
+    return {ok: true, json: async () => saved};
+  }
+  if (url === '/api/v1/reference/categories/0306_mobile_phone') return {ok: true, json: async () => phoneTemplate};
+  if (url === '/api/v1/history/scan-fourth/confirmation') return {ok: true, json: async () => confirmationRecord};
+  if (url === '/api/v1/scans/scan-fourth/assessment' && options.method === 'PUT') return {ok: true, json: async () => saved};
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => ''});
+(async () => {
+  controller.openHistory({scan_id: 'scan-fourth', prediction});
+  await controller.openAssessment();
+  const savedResult = await controller.saveAssessment({});
+  const immediate = controller.getAssessmentContext();
+  const reopened = await controller.openAssessment();
+  const afterReopen = controller.getAssessmentContext();
+  process.stdout.write(JSON.stringify({savedResult, reopened, immediate, afterReopen, renderedContexts, requests}));
+})();
+""")
+
+    expected_context = {
+        "scan_id": "scan-fourth",
+        "confirmed_class_name": "0401_headphones",
+        "model_evidence": {
+            "class_name": "0306_mobile_phone",
+            "confidence": 0.91,
+        },
+        "confirmation": {
+            "source": "user",
+            "selected_model_score": None,
+        },
+    }
+    assert result["savedResult"] is True
+    assert result["reopened"] is True
+    assert result["immediate"] == expected_context
+    assert result["afterReopen"] == expected_context
+    assert result["renderedContexts"] == [expected_context, expected_context]
+    assert ["/api/v1/history/scan-fourth/confirmation", "PUT"] in result["requests"]
 
 
 def test_stale_assessment_response_cannot_replace_a_newer_scan_and_errors_are_final():

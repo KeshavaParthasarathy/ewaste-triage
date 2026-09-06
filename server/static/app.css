@@ -1271,6 +1271,10 @@ html[data-state="review"] .confidence-track span {
   gap: 9px;
 }
 
+.component-range-inputs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .range-inputs label > span:first-child,
 .known-issue-fields label > span,
 .component-control > span {
@@ -1339,6 +1343,21 @@ html[data-state="review"] .confidence-track span {
   justify-content: space-between;
   gap: 16px;
   padding: 4px 2px 0;
+}
+
+.assessment-save-feedback {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--line));
+  border-radius: 10px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 11px;
+}
+
+.assessment-save-feedback:focus {
+  outline: 3px solid color-mix(in srgb, var(--danger) 28%, transparent);
+  outline-offset: 2px;
 }
 
 .assessment-save-row > p {
@@ -1781,6 +1800,7 @@ html[data-state="review"] .confidence-track span {
 
   .range-inputs,
   .known-issue-fields,
+  .component-range-inputs,
   .component-override-controls {
     grid-template-columns: 1fr;
   }
@@ -1795,6 +1815,26 @@ html[data-state="review"] .confidence-track span {
 
   .history-item .history-action:first-of-type {
     grid-column: 2;
+  }
+}
+
+@media (max-width: 380px) {
+  .sidebar {
+    padding-inline: 10px;
+  }
+
+  .brand > span:last-child {
+    display: none;
+  }
+
+  .primary-nav {
+    gap: 2px;
+  }
+
+  .nav-item {
+    gap: 0;
+    padding-inline: 6px;
+    font-size: 12px;
   }
 }
 

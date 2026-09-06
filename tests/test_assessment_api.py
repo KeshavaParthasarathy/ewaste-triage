@@ -104,6 +104,51 @@ def test_assessment_is_gated_by_category_acceptance_then_immutable(tmp_path):
     assert client.put(f"/api/v1/history/{scan_id}/confirmation", json={"accepted_class_name": "0303_laptop"}).status_code == 409
 
 
+def test_canonical_reference_category_outside_model_topk_can_be_confirmed(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    database = tmp_path / "components.sqlite"
+    compile_reference(root / "reference", database)
+    references = ReferenceStore(database)
+    history = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media")
+    scan_id = history.add_scan(
+        PREDICTION,
+        Image.new("RGB", (10, 10)),
+        retain_original=False,
+        original=None,
+    )
+    app = create_desktop_app(
+        classifier=FakeClassifier(),
+        history_store=history,
+        reference_store=references,
+    )
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    invalid = client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "9999_not_a_reference"},
+    )
+    response = client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0301_keyboard"},
+    )
+
+    assert invalid.status_code == 400
+    assert invalid.json == {
+        "error": "accepted category is not available in component references"
+    }
+    assert response.status_code == 200
+    assert response.json["confirmation"] == {
+        "accepted_class_name": "0301_keyboard",
+        "source": "user",
+    }
+    assert response.json["prediction"] == PREDICTION
+    assessment = client.get(f"/api/v1/scans/{scan_id}/assessment")
+    assert assessment.status_code == 200
+    assert assessment.json["category_id"] == "0301_keyboard"
+    references.close()
+
+
 def test_assessment_payload_and_scan_errors_are_strict(tmp_path):
     client, _, _, scan_id = make_client(tmp_path)
     client.put(f"/api/v1/history/{scan_id}/confirmation", json={"accepted_class_name": "0306_mobile_phone"})
@@ -269,6 +314,39 @@ def test_server_tagged_unverified_lifecycle_override_can_be_saved_unchanged(tmp_
     assert second.status_code == 200
     assert second.json["component_overrides"] == first.json["component_overrides"]
     assert second.json["components"] == first.json["components"]
+
+
+def test_cycles_to_capacity_override_round_trips_and_can_be_cleared(tmp_path):
+    client, _, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+    override = {
+        "metric": "cycles_to_capacity",
+        "minimum": 700,
+        "maximum": 900,
+        "capacity_percent": 80,
+    }
+
+    first = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={"component_overrides": {"battery": {"lifecycle": override}}},
+    )
+    reopened = client.get(f"/api/v1/scans/{scan_id}/assessment")
+    cleared = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json={**first.json["inputs"], "component_overrides": {}},
+    )
+
+    assert first.status_code == 200
+    assert first.json["component_overrides"] == {
+        "battery": {"lifecycle": override}
+    }
+    assert reopened.json == first.json
+    assert cleared.status_code == 200
+    assert cleared.json["component_overrides"] == {}
+    assert cleared.json["components"][0]["lifecycle"]["metric"] == "years"
 
 
 @pytest.mark.parametrize(
