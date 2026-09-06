@@ -410,36 +410,68 @@ const document = {
   querySelector() { return node(); }, querySelectorAll() { return []; }, createElement() { return node(); },
   addEventListener(name, handler) { documentHandlers[name] = handler; }
 };
-global.fetch = async url => ({ok: true, status: 200, json: async () => url === "/api/v1/history" ? [] : ({
-  app_version: "<img src=x onerror=1>", source_revision: "a".repeat(40), model_sha256: "b".repeat(64),
-  component_database_sha256: "c".repeat(64), component_database_version: "2.0.0"
-})});
+global.fetch = async url => {
+  if (url === "/api/v1/history") return {ok: true, status: 200, json: async () => []};
+  if (url === "/api/v1/reference/categories") return {ok: true, status: 200, json: async () => [
+    {category_id: "0306_mobile_phone", display_name: "Mobile phone"}
+  ]};
+  if (url === "/api/v1/scans/assessment-scan/assessment") return {
+    ok: false, status: 409, json: async () => ({error: "confirm category"})
+  };
+  if (url === "/api/v1/reference/categories/0306_mobile_phone") return {ok: true, status: 200, json: async () => ({
+    category_id: "0306_mobile_phone", display_name: "Mobile phone", template_version: "2.0.0",
+    components: [], rules: [], handling_note: ""
+  })};
+  return {ok: true, status: 200, json: async () => ({
+    app_version: "<img src=x onerror=1>", source_revision: "a".repeat(40), model_sha256: "b".repeat(64),
+    component_database_sha256: "c".repeat(64), component_database_version: "2.0.0"
+  })};
+};
 global.FormData = class { entries() { return []; } append() {} };
 global.URL = {createObjectURL: () => "blob:none", revokeObjectURL() {}};
 global.requestAnimationFrame = callback => callback();
 global.confirm = () => false;
 const controller = UI.bootstrap(document);
 const opener = document.getElementById("open-release-about");
-document.documentElement.dataset.state = "result";
-document.getElementById("phone-dialog").dataset.phoneState = "ready";
-documentHandlers.click({target: opener, preventDefault() {}});
-setImmediate(() => {
+controller.openHistory({
+  scan_id: "assessment-scan",
+  prediction: {class_name: "0306_mobile_phone", confidence: .91, low_confidence: false, topk: []},
+  confirmation: {accepted_class_name: "0306_mobile_phone", source: "user"}
+});
+controller.openAssessment().then(() => {
+  document.getElementById("assessment-age-min").value = "24";
+  document.getElementById("assessment-issue-notes").value = "draft stays editable";
+  controller.markAssessmentEditing();
+  document.getElementById("phone-dialog").dataset.phoneState = "ready";
+  documentHandlers.click({target: opener, preventDefault() {}});
+  setImmediate(() => {
   const dialog = document.getElementById("release-about-dialog");
   const literal = document.getElementById("release-app-version").textContent;
-  const preserved = [document.documentElement.dataset.state, document.getElementById("phone-dialog").dataset.phoneState];
+  const preserved = [
+    document.getElementById("assessment-view").hidden,
+    document.getElementById("assessment-frame").dataset.assessmentState,
+    document.getElementById("assessment-age-min").value,
+    document.getElementById("assessment-issue-notes").value,
+    document.getElementById("phone-dialog").dataset.phoneState
+  ];
+  documentHandlers.click({target: document.getElementById("release-about-close-secondary"), preventDefault() {}});
+  const buttonFocus = opener.focused;
+  dialog.showModal();
   dialog.handlers.click({target: dialog});
   const backdropFocus = opener.focused;
   dialog.showModal();
   dialog.handlers.keydown({key: "Escape", preventDefault() {}});
-  process.stdout.write(JSON.stringify({literal, preserved, backdropFocus, escapeFocus: opener.focused, open: dialog.open, controller: Boolean(controller)}));
+  process.stdout.write(JSON.stringify({literal, preserved, buttonFocus, backdropFocus, escapeFocus: opener.focused, open: dialog.open, controller: Boolean(controller)}));
+  });
 });
 """)
 
     assert result == {
         "literal": "<img src=x onerror=1>",
-        "preserved": ["result", "ready"],
-        "backdropFocus": 1,
-        "escapeFocus": 2,
+        "preserved": [False, "assessment-editing", "24", "draft stays editable", "ready"],
+        "buttonFocus": 1,
+        "backdropFocus": 2,
+        "escapeFocus": 3,
         "open": False,
         "controller": True,
     }
