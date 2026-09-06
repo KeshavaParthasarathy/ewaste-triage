@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import os
 
 try:
     import webview
@@ -13,15 +14,27 @@ from desktop.paths import AppPaths
 from desktop.server_thread import ServerThread
 from server.history import HistoryStore
 from server.inference import OnnxClassifier
+from server.model_bundle import ModelBundleError
 from flask import Flask
+
+
+APP_VERSION = os.environ.get("EWASTE_TRIAGE_VERSION", "development")
+
+
+class ModelStartupError(RuntimeError):
+    """An expected failure while loading the packaged inference asset."""
 
 
 def build_desktop_app(paths: AppPaths):
     """Assemble the local Flask service from immutable resources and local data."""
     from server.desktop_app import create_desktop_app
 
+    try:
+        classifier = OnnxClassifier(paths.model_bundle_dir)
+    except (ModelBundleError, OSError, RuntimeError) as exc:
+        raise ModelStartupError("unavailable") from exc
     return create_desktop_app(
-        classifier=OnnxClassifier(paths.model_bundle_dir),
+        classifier=classifier,
         history_store=HistoryStore(
             paths.history_database_path,
             paths.history_media_dir,
@@ -30,7 +43,7 @@ def build_desktop_app(paths: AppPaths):
     )
 
 
-def build_recovery_app():
+def build_recovery_app(*, app_version: str, model_diagnostic: str):
     app = Flask(__name__)
 
     @app.get("/")
@@ -39,7 +52,7 @@ def build_recovery_app():
             "<!doctype html><title>E-Waste Triage recovery</title>"
             "<main><h1>Unable to start E-Waste Triage</h1>"
             "<p>The included model could not be loaded. Reinstall the app or contact support.</p>"
-            "<p>App version: development · Model bundle: unavailable</p></main>"
+            f"<p>App version: {app_version} · Model bundle: {model_diagnostic}</p></main>"
         )
 
     return app
@@ -53,8 +66,11 @@ def run(*, webview_module=webview, paths: AppPaths | None = None) -> int:
     paths = paths or AppPaths.for_runtime(getattr(sys, "frozen", False))
     try:
         app = build_desktop_app(paths)
-    except Exception:
-        app = build_recovery_app()
+    except ModelStartupError as exc:
+        app = build_recovery_app(
+            app_version=APP_VERSION,
+            model_diagnostic=str(exc),
+        )
     server = ServerThread(app)
     url = server.start_and_wait()
     try:

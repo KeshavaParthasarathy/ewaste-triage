@@ -26,7 +26,7 @@ def create_desktop_app(
 ):
     """Build the user product without collection or valuation dependencies."""
     static_dir = Path(static_dir or Path(__file__).parent / "static")
-    app = Flask(__name__, static_folder=str(static_dir))
+    app = Flask(__name__, static_folder=None)
     app.config.update(
         CLASSIFIER=classifier,
         HISTORY_STORE=history_store,
@@ -58,7 +58,13 @@ def create_desktop_app(
 
     @app.get("/")
     def home():
-        return send_from_directory(app.static_folder, "index.html")
+        return send_from_directory(static_dir, "index.html")
+
+    @app.get("/static/<filename>")
+    def product_static(filename):
+        if filename not in {"app.css", "app.js"}:
+            return "", 404
+        return send_from_directory(static_dir, filename)
 
     @app.get("/health")
     def health():

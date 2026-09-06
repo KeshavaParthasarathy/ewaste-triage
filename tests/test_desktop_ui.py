@@ -583,3 +583,29 @@ const controller = UI.createController({view, fetchImpl, formDataFactory: () => 
 
     assert result["renders"] == [["new"]]
     assert ["/api/v1/history/scan-1/confirmation", "PUT"] in result["requests"]
+
+
+def test_history_delete_invalidates_an_inflight_list_before_commit():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+let stale;
+const renders = [];
+const view = {transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {}, markHistoryDeleting() {}, renderHistory(rows) { renders.push(rows.map(row => row.scan_id)); }};
+let getCount = 0;
+const fetchImpl = (url, options = {}) => {
+  if (url === '/api/v1/history' && !options.method && getCount++ === 0) return new Promise(resolve => { stale = resolve; });
+  if (url === '/api/v1/history') return Promise.resolve({ok: true, json: async () => []});
+  if (url === '/api/v1/history/old') return Promise.resolve({ok: true, json: async () => ({deleted: true})});
+};
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => '', undoDelay: 0});
+(async () => {
+  const delayed = controller.loadHistory();
+  await new Promise(resolve => setImmediate(resolve));
+  await controller.deleteHistory('old');
+  stale({ok: true, json: async () => [{scan_id: 'old'}]});
+  await delayed;
+  process.stdout.write(JSON.stringify({renders}));
+})();
+""")
+
+    assert result["renders"] == [[]]

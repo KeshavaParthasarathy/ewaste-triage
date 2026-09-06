@@ -6,7 +6,9 @@ from urllib.request import urlopen
 
 from PIL import Image
 
-from desktop.main import run
+import pytest
+
+from desktop.main import build_recovery_app, run
 from desktop.paths import AppPaths
 from server.history import HistoryStore
 
@@ -90,6 +92,10 @@ def test_product_factory_excludes_collection_and_ingest_routes(tmp_path):
     assert client.get("/collect").status_code == 404
     assert client.post("/ingest").status_code == 404
     assert client.get("/collection-classes").status_code == 404
+    assert client.get("/static/collect.html").status_code == 404
+    assert client.get("/static/app.css").status_code == 200
+    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/").status_code == 200
     assert client.get("/health").json["model_loaded"] is True
 
 
@@ -156,3 +162,25 @@ def test_invalid_model_bundle_opens_a_safe_recovery_window(tmp_path):
     assert "Unable to start E-Waste Triage" in webview.page
     assert "Model bundle: unavailable" in webview.page
     assert "Traceback" not in webview.page
+
+
+def test_unexpected_desktop_initialization_error_is_not_mislabeled_as_recovery(
+    monkeypatch, tmp_path
+):
+    paths = AppPaths(
+        resources_dir=tmp_path / "resources", static_dir=tmp_path / "static",
+        model_bundle_dir=tmp_path / "model", reference_dir=tmp_path / "reference",
+        data_dir=tmp_path / "support", history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+    monkeypatch.setattr("desktop.main.build_desktop_app", lambda paths: (_ for _ in ()).throw(PermissionError("denied")))
+
+    with pytest.raises(PermissionError, match="denied"):
+        run(webview_module=FakeWebview(), paths=paths)
+
+
+def test_recovery_diagnostics_are_supplied_from_runtime_metadata():
+    page = build_recovery_app(app_version="2026.9.6", model_diagnostic="bundle r17").test_client().get("/").get_data(as_text=True)
+
+    assert "App version: 2026.9.6" in page
+    assert "Model bundle: bundle r17" in page

@@ -180,6 +180,7 @@
     }
 
     async function commitDelete(scanId) {
+      historyGeneration += 1;
       view.markHistoryDeleting(scanId);
       try {
         await api(`/api/v1/history/${encodeURIComponent(scanId)}`, {method: "DELETE"});
@@ -221,6 +222,7 @@
     }
 
     async function commitClear() {
+      historyGeneration += 1;
       try {
         await api("/api/v1/history", {method: "DELETE"});
         await loadHistory();
