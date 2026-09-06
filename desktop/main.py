@@ -75,7 +75,7 @@ def build_desktop_app(paths: AppPaths):
 
     try:
         classifier = OnnxClassifier(paths.model_bundle_dir)
-    except (ModelBundleError, OSError, RuntimeError, *_ONNX_STARTUP_ERRORS) as exc:
+    except (ModelBundleError, *_ONNX_STARTUP_ERRORS) as exc:
         raise ModelStartupError(_read_model_diagnostic(paths.model_bundle_dir)) from exc
     return create_desktop_app(
         classifier=classifier,

@@ -181,6 +181,23 @@ def test_unexpected_desktop_initialization_error_is_not_mislabeled_as_recovery(
         run(webview_module=FakeWebview(), paths=paths)
 
 
+def test_unrelated_onnx_constructor_runtime_error_propagates(monkeypatch, tmp_path):
+    paths = AppPaths(
+        resources_dir=tmp_path / "resources", static_dir=tmp_path / "static",
+        model_bundle_dir=tmp_path / "model", reference_dir=tmp_path / "reference",
+        data_dir=tmp_path / "support", history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+
+    def unrelated_bug(_bundle_dir):
+        raise RuntimeError("unexpected constructor bug")
+
+    monkeypatch.setattr("desktop.main.OnnxClassifier", unrelated_bug)
+
+    with pytest.raises(RuntimeError, match="unexpected constructor bug"):
+        run(webview_module=FakeWebview(), paths=paths)
+
+
 def test_recovery_diagnostics_are_supplied_from_runtime_metadata():
     page = build_recovery_app(app_version="2026.9.6", model_diagnostic="bundle r17").test_client().get("/").get_data(as_text=True)
 
