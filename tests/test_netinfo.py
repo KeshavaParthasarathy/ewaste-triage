@@ -139,6 +139,7 @@ def test_discover_lan_addresses_filters_unsafe_addresses_and_orders_candidates(m
                 "en1": [_Address(2, "0.0.0.0"), _Address(30, "fe80::1%en1")],
                 "en0": [
                     _Address(30, "fd00::2"),
+                    _Address(30, "2001:db8::1"),
                     _Address(2, "192.168.1.20"),
                     _Address(30, "2606:4700:4700::1111"),
                     _Address(2, "10.0.0.9"),

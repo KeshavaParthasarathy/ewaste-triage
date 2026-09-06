@@ -4,10 +4,37 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hmac
+import ipaddress
+import math
+from numbers import Real
 import secrets
 import threading
 import time
-from urllib.parse import quote
+
+
+_PRIVATE_IPV4_NETWORKS = (
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+)
+_PRIVATE_IPV6_NETWORK = ipaddress.IPv6Network("fc00::/7")
+
+
+def _canonical_lan_host(host: str) -> str:
+    if not isinstance(host, str) or not host or any(character in host for character in "[]%"):
+        raise ValueError("host must be a safe LAN IP literal")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError as exc:
+        raise ValueError("host must be a safe LAN IP literal") from exc
+    if address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified:
+        raise ValueError("host must be a safe LAN IP literal")
+    if address.version == 4:
+        if not any(address in network for network in _PRIVATE_IPV4_NETWORKS):
+            raise ValueError("host must be a safe LAN IP literal")
+    elif not (address.is_global or address in _PRIVATE_IPV6_NETWORK):
+        raise ValueError("host must be a safe LAN IP literal")
+    return str(address)
 
 
 @dataclass(frozen=True)
@@ -23,9 +50,9 @@ class PhoneSession:
 
     @property
     def upload_url(self) -> str:
-        host = self.host.strip("[]")
+        host = self.host
         if ":" in host:
-            host = f"[{quote(host, safe=':')}]"
+            host = f"[{host}]"
         return f"http://{host}:{self.port}/phone?token={self.token}"
 
 
@@ -33,16 +60,20 @@ class PhoneSessionManager:
     """Maintain exactly one inactivity-expiring phone capture capability."""
 
     def __init__(self, *, now=time.monotonic, ttl_seconds: float = 600) -> None:
-        if ttl_seconds <= 0:
-            raise ValueError("ttl_seconds must be positive")
+        if (
+            isinstance(ttl_seconds, bool)
+            or not isinstance(ttl_seconds, Real)
+            or not math.isfinite(ttl_seconds)
+            or ttl_seconds <= 0
+        ):
+            raise ValueError("ttl_seconds must be a finite positive real value")
         self._now = now
         self._ttl_seconds = ttl_seconds
         self._lock = threading.RLock()
         self._session: PhoneSession | None = None
 
     def start(self, host: str, port: int) -> PhoneSession:
-        if not isinstance(host, str) or not host:
-            raise ValueError("host must be a non-empty string")
+        host = _canonical_lan_host(host)
         if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
             raise ValueError("port must be an integer between 1 and 65535")
         with self._lock:

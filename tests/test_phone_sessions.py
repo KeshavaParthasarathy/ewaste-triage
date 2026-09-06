@@ -1,3 +1,7 @@
+import math
+
+import pytest
+
 from server.phone_sessions import PhoneSessionManager
 
 
@@ -16,11 +20,11 @@ def test_session_uses_random_token_short_code_bracketed_ipv6_url_and_expiry():
     clock = FakeClock()
     sessions = PhoneSessionManager(now=clock, ttl_seconds=600)
 
-    session = sessions.start(host="2001:db8:1::12", port=9012)
+    session = sessions.start(host="2606:4700:4700::1111", port=9012)
 
     assert len(session.token) >= 43
     assert session.pairing_code.isdigit() and len(session.pairing_code) == 6
-    assert session.upload_url == f"http://[2001:db8:1::12]:9012/phone?token={session.token}"
+    assert session.upload_url == f"http://[2606:4700:4700::1111]:9012/phone?token={session.token}"
     clock.advance(601)
     assert sessions.active() is None
 
@@ -53,3 +57,50 @@ def test_stop_and_replacement_revoke_prior_capabilities():
     sessions.stop()
     assert not sessions.authorize(new_session.token)
     assert sessions.active() is None
+
+
+@pytest.mark.parametrize("ttl_seconds", [True, False, 0, -1, math.nan, math.inf, -math.inf])
+def test_session_manager_rejects_nonfinite_or_nonpositive_ttls(ttl_seconds):
+    with pytest.raises(ValueError, match="finite positive"):
+        PhoneSessionManager(ttl_seconds=ttl_seconds)
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("192.168.1.12", "192.168.1.12"),
+        ("FD00:0:0:0:0:0:0:12", "fd00::12"),
+        ("2606:4700:4700::1111", "2606:4700:4700::1111"),
+    ],
+)
+def test_start_canonicalizes_safe_lan_ip_literals(host, expected):
+    session = PhoneSessionManager(now=FakeClock()).start(host=host, port=9012)
+
+    assert session.host == expected
+    url_host = expected if ":" not in expected else f"[{expected}]"
+    assert session.upload_url.startswith(f"http://{url_host}:9012/phone?token=")
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "example.com",
+        "https://192.168.1.12",
+        "user@192.168.1.12",
+        "192.168.1.12/phone",
+        "[fd00::12]",
+        "[fd00::12",
+        "fd00::12%en0",
+        "127.0.0.1",
+        "0.0.0.0",
+        "224.0.0.1",
+        "fe80::1",
+        "::1",
+        "::",
+        "ff02::1",
+        "2001:db8::1",
+    ],
+)
+def test_start_rejects_non_lan_or_nonliteral_hosts(host):
+    with pytest.raises(ValueError, match="safe LAN IP literal"):
+        PhoneSessionManager(now=FakeClock()).start(host=host, port=9012)

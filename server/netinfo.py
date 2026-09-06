@@ -27,6 +27,7 @@ _PRIVATE_IPV4_NETWORKS = (
     ipaddress.IPv4Network("172.16.0.0/12"),
     ipaddress.IPv4Network("192.168.0.0/16"),
 )
+_PRIVATE_IPV6_NETWORK = ipaddress.IPv6Network("fc00::/7")
 
 
 def discover_lan_addresses() -> list[str]:
@@ -64,7 +65,7 @@ def _lan_candidate(raw_address: str) -> tuple[int, int, str] | None:
         return 0, int(address), str(address)
     if address.is_global:
         return 1, int(address), str(address)
-    if address.is_private:
+    if address in _PRIVATE_IPV6_NETWORK:
         return 2, int(address), str(address)
     return None
 
