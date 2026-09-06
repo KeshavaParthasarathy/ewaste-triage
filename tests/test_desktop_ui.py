@@ -441,34 +441,53 @@ controller.openHistory({
 controller.openAssessment().then(() => {
   document.getElementById("assessment-age-min").value = "24";
   document.getElementById("assessment-issue-notes").value = "draft stays editable";
+  document.getElementById("assessment-issue-overheating").checked = true;
   controller.markAssessmentEditing();
   document.getElementById("phone-dialog").dataset.phoneState = "ready";
   documentHandlers.click({target: opener, preventDefault() {}});
   setImmediate(() => {
   const dialog = document.getElementById("release-about-dialog");
   const literal = document.getElementById("release-app-version").textContent;
-  const preserved = [
+  const assessmentForm = document.getElementById("assessment-form");
+  const snapshot = () => [
     document.getElementById("assessment-view").hidden,
     document.getElementById("assessment-frame").dataset.assessmentState,
     document.getElementById("assessment-age-min").value,
     document.getElementById("assessment-issue-notes").value,
+    document.getElementById("assessment-issue-overheating").checked,
     document.getElementById("phone-dialog").dataset.phoneState
   ];
+  const editAge = value => {
+    const control = document.getElementById("assessment-age-min");
+    control.value = value;
+    assessmentForm.handlers.input({target: control});
+  };
   documentHandlers.click({target: document.getElementById("release-about-close-secondary"), preventDefault() {}});
+  const afterButton = snapshot();
+  editAge("25");
   const buttonFocus = opener.focused;
   dialog.showModal();
   dialog.handlers.click({target: dialog});
+  const afterBackdrop = snapshot();
+  editAge("26");
   const backdropFocus = opener.focused;
   dialog.showModal();
   dialog.handlers.keydown({key: "Escape", preventDefault() {}});
-  process.stdout.write(JSON.stringify({literal, preserved, buttonFocus, backdropFocus, escapeFocus: opener.focused, open: dialog.open, controller: Boolean(controller)}));
+  const afterEscape = snapshot();
+  const notes = document.getElementById("assessment-issue-notes");
+  notes.value = "draft remains usable after every close";
+  assessmentForm.handlers.input({target: notes});
+  process.stdout.write(JSON.stringify({literal, afterButton, afterBackdrop, afterEscape, finalNotes: notes.value, buttonFocus, backdropFocus, escapeFocus: opener.focused, open: dialog.open, controller: Boolean(controller)}));
   });
 });
 """)
 
     assert result == {
         "literal": "<img src=x onerror=1>",
-        "preserved": [False, "assessment-editing", "24", "draft stays editable", "ready"],
+        "afterButton": [False, "assessment-editing", "24", "draft stays editable", True, "ready"],
+        "afterBackdrop": [False, "assessment-editing", "25", "draft stays editable", True, "ready"],
+        "afterEscape": [False, "assessment-editing", "26", "draft stays editable", True, "ready"],
+        "finalNotes": "draft remains usable after every close",
         "buttonFocus": 1,
         "backdropFocus": 2,
         "escapeFocus": 3,
