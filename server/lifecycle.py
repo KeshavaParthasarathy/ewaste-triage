@@ -45,6 +45,9 @@ class Recommendation(str, Enum):
     SPECIALIST_HANDLING = "specialist_handling"
 
 
+HIGH_CONSUMPTION_PERCENT = 80
+
+
 @dataclass(frozen=True)
 class Range:
     minimum: int
@@ -109,9 +112,10 @@ def _source_ids(lifecycle: Mapping) -> tuple[str, ...]:
 def _lifecycle_range(lifecycle: Mapping) -> Range | None:
     minimum, maximum = lifecycle.get("minimum"), lifecycle.get("maximum")
     try:
-        return Range(minimum, maximum)
+        lifetime = Range(minimum, maximum)
     except ValueError:
         return None
+    return lifetime if lifetime.minimum > 0 else None
 
 
 def _outward_percent(numerator: Range, denominator: Range) -> Range:
@@ -192,6 +196,17 @@ def _recommendation(
         return Recommendation.UNKNOWN, (
             "A supported lifecycle estimate needs more item-specific evidence.",
         )
+    # A full interval can be retired; any interval that may be at least 80% consumed
+    # needs a diagnostic rather than a reuse claim. These policy boundaries are
+    # deliberately conservative until component-specific rules are source-backed.
+    if percent_used.minimum >= 100:
+        return Recommendation.RECYCLE, (
+            "The sourced lifecycle interval is fully consumed; route the component to recycling.",
+        )
+    if percent_used.maximum >= HIGH_CONSUMPTION_PERCENT:
+        return Recommendation.DIAGNOSTIC_TEST, (
+            f"The lifecycle interval may be at least {HIGH_CONSUMPTION_PERCENT}% consumed; perform a diagnostic test before reuse.",
+        )
     if inputs.operational is OperationalState.WORKING:
         return Recommendation.LIKELY_REUSABLE, (
             "Working status supports likely reuse after the applicable functional test.",
@@ -224,6 +239,14 @@ def assess_component(component: Mapping, inputs: AssessmentInputs) -> LifecycleR
         )
 
     source_ids = _source_ids(lifecycle)
+    if _lifecycle_range(lifecycle) is None:
+        return LifecycleResult(
+            None,
+            Confidence.UNAVAILABLE,
+            tuple(evidence),
+            Recommendation.UNKNOWN,
+            ("Invalid lifecycle range; a positive finite ordered lifetime is required.",),
+        )
     base = _age_estimate(lifecycle, inputs.age_months, inputs.cycle_count)
     evidence.append(Evidence("lifecycle_reference", "Sourced lifecycle reference.", source_ids))
     if inputs.age_months is not None:

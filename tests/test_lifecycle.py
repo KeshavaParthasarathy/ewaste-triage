@@ -110,6 +110,48 @@ def test_cycle_lifecycle_requires_user_supplied_cycle_range():
     assert supplied.percent_used == Range(25, 50)
 
 
+@pytest.mark.parametrize("metric", ("years", "cycles"))
+def test_zero_minimum_lifetime_returns_unknown_instead_of_dividing_by_zero(metric):
+    component = component_with_lifecycle(
+        {
+            "metric": metric,
+            "minimum": 0,
+            "maximum": 6,
+            "source_ids": ["reviewed_lifecycle_source"],
+        }
+    )
+    result = assess_component(
+        component,
+        inputs(
+            age_months=Range(24, 36),
+            cycle_count=Range(200, 400),
+        ),
+    )
+
+    assert result.percent_used is None
+    assert result.confidence is Confidence.UNAVAILABLE
+    assert "invalid lifecycle range" in " ".join(result.reasons).lower()
+
+
+@pytest.mark.parametrize("minimum", (-1, float("inf")))
+def test_negative_or_nonfinite_lifetime_returns_unknown(minimum):
+    result = assess_component(
+        component_with_lifecycle(
+            {
+                "metric": "years",
+                "minimum": minimum,
+                "maximum": 6,
+                "source_ids": ["reviewed_lifecycle_source"],
+            }
+        ),
+        inputs(age_months=Range(24, 36)),
+    )
+
+    assert result.percent_used is None
+    assert result.confidence is Confidence.UNAVAILABLE
+    assert "invalid lifecycle range" in " ".join(result.reasons).lower()
+
+
 def test_usage_is_evidence_but_does_not_shift_a_sourced_range():
     component = component_with_life_years(4, 6)
     light = assess_component(component, inputs(age_months=Range(24, 36), usage=Usage.LIGHT))
@@ -162,6 +204,27 @@ def test_intermittent_operation_requires_diagnostic_test_even_with_low_estimate(
 
     assert result.recommendation is Recommendation.DIAGNOSTIC_TEST
     assert "intermittent" in " ".join(result.reasons).lower()
+
+
+def test_high_possible_consumption_requires_diagnostic_test_not_likely_reuse():
+    result = assess_component(
+        component_with_life_years(4, 6),
+        inputs(age_months=Range(48, 48)),
+    )
+
+    assert result.percent_used == Range(66, 100)
+    assert result.recommendation is Recommendation.DIAGNOSTIC_TEST
+    assert "80%" in " ".join(result.reasons)
+
+
+def test_fully_consumed_lifecycle_recommends_recycling():
+    result = assess_component(
+        component_with_life_years(4, 6),
+        inputs(age_months=Range(72, 72)),
+    )
+
+    assert result.percent_used == Range(100, 100)
+    assert result.recommendation is Recommendation.RECYCLE
 
 
 def test_supported_measured_diagnostic_overrides_age_estimate_with_provenance():
