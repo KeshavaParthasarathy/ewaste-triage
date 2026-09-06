@@ -85,6 +85,7 @@ def create_desktop_app(
     lan_address_provider=None,
     phone_clock=None,
     phone_monitor_interval=0.25,
+    release_metadata=None,
 ):
     """Build the user product without collection or valuation dependencies."""
     static_dir = Path(static_dir or Path(__file__).parent / "static")
@@ -113,6 +114,7 @@ def create_desktop_app(
         REFERENCE_STORE=reference_store,
         LIFECYCLE_ASSESSOR=lifecycle_assessor,
         PHONE_SESSIONS=phone_sessions,
+        RELEASE_METADATA=release_metadata,
     )
 
     def assessment_error(message, status):
@@ -644,6 +646,17 @@ def create_desktop_app(
     def health():
         engine = app.config["CLASSIFIER"]
         return jsonify({"model_loaded": True, "arch": engine.arch, "n_classes": len(engine.classes), "classes": engine.classes})
+
+    @app.get("/api/v1/release-metadata")
+    def release_metadata_response():
+        metadata = app.config["RELEASE_METADATA"]
+        if metadata is None:
+            response = jsonify({"error": "release metadata is unavailable"})
+            response.status_code = 503
+        else:
+            response = jsonify(metadata.public_payload())
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.post("/api/v1/classify")
     def classify():

@@ -43,6 +43,9 @@
         <button class="quiet-button phone-button" type="button" id="phone-capture" aria-label="Use phone">
           <span aria-hidden="true">▯</span><span class="phone-button-label">Use phone</span>
         </button>
+        <button class="quiet-button about-button" type="button" id="open-release-about">
+          <span aria-hidden="true">i</span><span>About</span>
+        </button>
       </header>
 
       <section class="view scan-view" id="scan-view" aria-labelledby="scan-title">
@@ -445,6 +448,34 @@
         <button class="primary-button" id="phone-retry" type="button">Try again</button>
         <button class="primary-button" id="phone-view-result" type="button">View result</button>
       </footer>
+    </div>
+  </dialog>
+
+  <dialog class="release-about-dialog" id="release-about-dialog"
+          aria-labelledby="release-about-title" aria-describedby="release-about-description"
+          data-release-state="idle">
+    <div class="release-about-shell">
+      <button class="dialog-close" type="button" id="release-about-close" aria-label="Close About">×</button>
+      <header class="release-about-header">
+        <span class="dialog-icon" aria-hidden="true">i</span>
+        <div>
+          <p class="eyebrow">E-Waste Triage</p>
+          <h2 id="release-about-title">Release information</h2>
+          <p id="release-about-description">This local product identity is verified from the bundled release record.</p>
+        </div>
+      </header>
+      <p class="release-about-status" id="release-about-status" role="status" aria-live="polite" aria-atomic="true">Open About to load release information.</p>
+      <dl class="release-about-details" aria-label="Validated release details">
+        <div><dt>App version</dt><dd><output id="release-app-version">—</output></dd></div>
+        <div><dt>Source revision</dt><dd><output id="release-source-revision">—</output></dd></div>
+        <div><dt>Model SHA-256</dt><dd><output id="release-model-sha256">—</output></dd></div>
+        <div><dt>Component database SHA-256</dt><dd><output id="release-component-sha256">—</output></dd></div>
+        <div><dt>Component database version</dt><dd><output id="release-component-version">—</output></dd></div>
+      </dl>
+      <div class="release-about-actions">
+        <button class="quiet-button" type="button" id="release-about-close-secondary">Close</button>
+        <button class="primary-button" type="button" id="retry-release-about">Try again</button>
+      </div>
     </div>
   </dialog>
 

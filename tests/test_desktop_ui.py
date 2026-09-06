@@ -144,6 +144,34 @@ def test_phone_pairing_sheet_closes_through_the_secure_escape_path():
     assert "void controller.stopPhoneSession();" in javascript
 
 
+def test_release_about_is_a_secondary_accessible_dialog_without_a_fourth_area():
+    page = _page()
+    controls = {
+        attrs.get("id"): (tag, attrs)
+        for tag, attrs in page.elements
+        if attrs.get("id")
+    }
+
+    assert controls["open-release-about"][0] == "button"
+    dialog_tag, dialog_attrs = controls["release-about-dialog"]
+    assert dialog_tag == "dialog"
+    assert dialog_attrs["aria-labelledby"] == "release-about-title"
+    assert controls["release-about-close"][0] == "button"
+    assert controls["release-about-status"][1]["aria-live"] == "polite"
+    for target in (
+        "release-app-version", "release-source-revision", "release-model-sha256",
+        "release-component-sha256", "release-component-version",
+    ):
+        assert controls[target][0] == "output"
+    primary_links = [
+        attrs for tag, attrs in page.elements
+        if tag == "button" and attrs.get("data-view-link")
+    ]
+    assert {attrs["data-view-link"] for attrs in primary_links} == {
+        "scan", "assessment", "history"
+    }
+
+
 def test_phone_controller_starts_polls_and_presents_incoming_result_once():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);
@@ -266,6 +294,78 @@ const controller = UI.createController({
     assert result["stale"] is False
     assert ["/api/phone-session", "DELETE"] in result["requests"]
     assert result["states"][-1] == "idle"
+
+
+def test_release_about_controller_loads_the_closed_metadata_route_and_recovers():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const requests = [];
+const states = [];
+const values = [];
+let call = 0;
+const view = {
+  setReleaseState(state, payload) { states.push(state); if (payload) values.push(payload); }
+};
+const fetchImpl = async url => {
+  requests.push(url);
+  call += 1;
+  if (call === 2) return {ok: false, status: 503, json: async () => ({error: "temporarily unavailable"})};
+  return {ok: true, status: 200, json: async () => ({
+    app_version: "1.2.3", source_revision: "a".repeat(40),
+    model_sha256: "b".repeat(64), component_database_sha256: "c".repeat(64),
+    component_database_version: "2.0.0"
+  })};
+};
+(async () => {
+  const controller = UI.createReleaseAboutController({view, fetchImpl});
+  const first = await controller.open();
+  const failed = await controller.retry();
+  const recovered = await controller.retry();
+  process.stdout.write(JSON.stringify({first, failed, recovered, requests, states, values}));
+})();
+""")
+
+    assert result["first"] is True
+    assert result["failed"] is False
+    assert result["recovered"] is True
+    assert result["requests"] == [
+        "/api/v1/release-metadata",
+        "/api/v1/release-metadata",
+        "/api/v1/release-metadata",
+    ]
+    assert result["states"] == ["loading", "ready", "loading", "error", "loading", "ready"]
+    assert result["values"][-1]["component_database_version"] == "2.0.0"
+
+
+def test_release_about_controller_deduplicates_rapid_opens_and_ignores_closed_request():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const states = [];
+let resolve;
+const pending = new Promise(done => { resolve = done; });
+let requests = 0;
+const controller = UI.createReleaseAboutController({
+  view: {setReleaseState(state) { states.push(state); }},
+  fetchImpl: async () => { requests += 1; return pending; }
+});
+(async () => {
+  const first = controller.open();
+  const duplicate = controller.open();
+  controller.close();
+  resolve({ok: true, status: 200, json: async () => ({
+    app_version: "1.2.3", source_revision: "a".repeat(40), model_sha256: "b".repeat(64),
+    component_database_sha256: "c".repeat(64), component_database_version: "2.0.0"
+  })});
+  process.stdout.write(JSON.stringify({first: await first, duplicate: await duplicate, requests, states}));
+})();
+""")
+
+    assert result == {
+        "first": False,
+        "duplicate": False,
+        "requests": 1,
+        "states": ["loading"],
+    }
 
 
 def test_controller_runs_real_states_once_and_loads_influence_asynchronously():

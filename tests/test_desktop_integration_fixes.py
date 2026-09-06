@@ -3,6 +3,7 @@ import json
 import hashlib
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -11,6 +12,7 @@ from PIL import Image
 import pytest
 
 from desktop.main import (
+    ModelStartupError,
     ReferenceDataStartupError,
     build_desktop_app,
     build_recovery_app,
@@ -35,6 +37,7 @@ PREDICTION = {
 class FakeClassifier:
     arch = "fake-onnx"
     classes = ["0306_mobile_phone", "0303_laptop"]
+    manifest = SimpleNamespace(artifact_sha256="a" * 64)
 
     def classify(self, image):
         image.load()
@@ -264,16 +267,28 @@ def test_strict_packaged_assembly_anchors_reference_to_release_manifest(
     release_manifest = {
         "schema_version": 1,
         "app_version": "1.2.3",
-        "model": {},
+        "model": {
+            "model_id": "release-model-1",
+            "artifact_sha256": "a" * 64,
+            "manifest_sha256": "c" * 64,
+            "labels_sha256": "d" * 64,
+            "schema_version": 1,
+        },
         "components": {
             "sha256": database_sha,
             "content_sha256": "b" * 64,
             "schema_version": 2,
             "version": "2.0.0",
         },
-        "target": {},
+        "target": {"architecture": "arm64", "minimum_macos": "14.0"},
         "created_at": "2026-09-06T12:00:00+00:00",
-        "parity": {},
+        "parity": {
+            "schema_version": 1, "status": "passed", "model_id": "release-model-1",
+            "model_sha256": "a" * 64,
+            "labels": ["0301_computer_mouse", "0301_keyboard", "0303_laptop", "0306_mobile_phone", "0401_headphones"],
+            "metrics": {"reference_images": 5, "top1_matches": 5, "max_probability_delta": 0.0},
+            "holdout": {"status": "passed", "split": "holdout", "valid": True, "overlaps_training": False, "samples": 25},
+        },
     }
     manifest_path = release_dir / "release-manifest.json"
     manifest_path.write_text(json.dumps(release_manifest, sort_keys=True))
@@ -353,9 +368,149 @@ def test_strict_packaged_assembly_rejects_manifest_not_anchored_by_build_metadat
         history_media_dir=tmp_path / "support/media",
     )
     monkeypatch.setattr("desktop.main.OnnxClassifier", lambda _path: FakeClassifier())
+    monkeypatch.setattr("desktop.main.ReferenceStore", lambda _path, **_expectations: SimpleNamespace(close=lambda: None))
 
     with pytest.raises(ReferenceDataStartupError, match="unavailable or incompatible"):
         build_desktop_app(paths, require_release_integrity=True)
+
+
+def test_strict_packaged_assembly_rejects_invalid_build_source_revision(
+    monkeypatch, tmp_path
+):
+    """A displayable release must have an immutable Git-shaped source identity."""
+    resources = tmp_path / "resources"
+    reference_dir = resources / "reference"
+    release_dir = resources / "release"
+    reference_dir.mkdir(parents=True)
+    release_dir.mkdir(parents=True)
+    database = reference_dir / "components.sqlite"
+    database.write_bytes(b"component bytes")
+    manifest = {
+        "schema_version": 1,
+        "app_version": "1.2.3",
+        "model": {
+            "model_id": "release-model-1",
+            "artifact_sha256": "a" * 64,
+            "manifest_sha256": "b" * 64,
+            "labels_sha256": "c" * 64,
+            "schema_version": 1,
+        },
+        "components": {
+            "sha256": hashlib.sha256(database.read_bytes()).hexdigest(),
+            "content_sha256": "d" * 64,
+            "schema_version": 2,
+            "version": "2.0.0",
+        },
+        "target": {},
+        "created_at": "2026-09-06T12:00:00+00:00",
+        "parity": {},
+    }
+    manifest_path = release_dir / "release-manifest.json"
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True))
+    (resources / "build-metadata.json").write_text(json.dumps({
+        "schema_version": 1,
+        "app_version": "1.2.3",
+        "source_revision": "A" * 40,
+        "release_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    }))
+    paths = AppPaths(
+        resources_dir=resources, static_dir=resources / "server/static",
+        model_bundle_dir=resources / "models/production", reference_dir=reference_dir,
+        data_dir=tmp_path / "support", history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+    monkeypatch.setattr("desktop.main.OnnxClassifier", lambda _path: FakeClassifier())
+    monkeypatch.setattr("desktop.main.ReferenceStore", lambda _path, **_expectations: SimpleNamespace(close=lambda: None))
+
+    with pytest.raises(ReferenceDataStartupError, match="unavailable or incompatible"):
+        build_desktop_app(paths, require_release_integrity=True)
+
+
+def test_strict_packaged_assembly_rejects_classifier_from_another_valid_release(
+    monkeypatch, tmp_path
+):
+    """Changing a valid model artifact must not leave About claiming this release."""
+    resources = tmp_path / "resources"
+    reference_dir = resources / "reference"
+    release_dir = resources / "release"
+    reference_dir.mkdir(parents=True)
+    release_dir.mkdir(parents=True)
+    database = reference_dir / "components.sqlite"
+    database.write_bytes(b"component bytes")
+    manifest = {
+        "schema_version": 1,
+        "app_version": "1.2.3",
+        "model": {
+            "model_id": "release-model-1",
+            "artifact_sha256": "a" * 64,
+            "manifest_sha256": "b" * 64,
+            "labels_sha256": "c" * 64,
+            "schema_version": 1,
+        },
+        "components": {
+            "sha256": hashlib.sha256(database.read_bytes()).hexdigest(),
+            "content_sha256": "d" * 64,
+            "schema_version": 2,
+            "version": "2.0.0",
+        },
+        "target": {"architecture": "arm64", "minimum_macos": "14.0"},
+        "created_at": "2026-09-06T12:00:00+00:00",
+        "parity": {
+            "schema_version": 1, "status": "passed", "model_id": "release-model-1",
+            "model_sha256": "a" * 64,
+            "labels": ["0301_computer_mouse", "0301_keyboard", "0303_laptop", "0306_mobile_phone", "0401_headphones"],
+            "metrics": {"reference_images": 5, "top1_matches": 5, "max_probability_delta": 0.0},
+            "holdout": {"status": "passed", "split": "holdout", "valid": True, "overlaps_training": False, "samples": 25},
+        },
+    }
+    manifest_path = release_dir / "release-manifest.json"
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True))
+    (resources / "build-metadata.json").write_text(json.dumps({
+        "schema_version": 1,
+        "app_version": "1.2.3",
+        "source_revision": "a" * 40,
+        "release_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    }))
+    paths = AppPaths(
+        resources_dir=resources, static_dir=resources / "server/static",
+        model_bundle_dir=resources / "models/production", reference_dir=reference_dir,
+        data_dir=tmp_path / "support", history_database_path=tmp_path / "support/history.sqlite",
+        history_media_dir=tmp_path / "support/media",
+    )
+    classifier = FakeClassifier()
+    classifier.manifest = SimpleNamespace(artifact_sha256="e" * 64)
+    monkeypatch.setattr("desktop.main.OnnxClassifier", lambda _path: classifier)
+    monkeypatch.setattr("desktop.main.ReferenceStore", lambda _path, **_expectations: SimpleNamespace(close=lambda: None))
+
+    with pytest.raises(ModelStartupError, match="unavailable or incompatible"):
+        build_desktop_app(paths, require_release_integrity=True)
+
+
+def test_release_metadata_api_returns_only_the_validated_display_contract(tmp_path):
+    """The About surface exposes no bundle paths or implementation metadata."""
+    app = _desktop_app(tmp_path)
+    expected = {
+        "app_version": "1.2.3",
+        "source_revision": "a" * 40,
+        "model_sha256": "b" * 64,
+        "component_database_sha256": "c" * 64,
+        "component_database_version": "2.0.0",
+    }
+    app.config["RELEASE_METADATA"] = SimpleNamespace(
+        public_payload=lambda: expected
+    )
+
+    response = app.test_client().get("/api/v1/release-metadata")
+
+    assert response.status_code == 200
+    assert response.get_json() == expected
+
+
+def test_development_release_metadata_api_fails_closed_without_invented_values(tmp_path):
+    response = _desktop_app(tmp_path).test_client().get("/api/v1/release-metadata")
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "release metadata is unavailable"}
 
 
 def test_recovery_diagnostics_are_supplied_from_runtime_metadata():

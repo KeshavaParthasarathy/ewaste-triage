@@ -2115,6 +2115,137 @@ html[data-state="review"] .confidence-track span {
   background: color-mix(in srgb, var(--surface-soft) 70%, var(--line));
 }
 
+.about-button {
+  margin-left: -16px;
+}
+
+.release-about-dialog {
+  width: min(calc(100% - 36px), 650px);
+  max-height: min(720px, calc(100vh - 36px));
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  color: var(--text);
+  background: radial-gradient(circle at 88% 2%, color-mix(in srgb, var(--accent-soft) 68%, transparent), transparent 18rem), var(--surface-solid);
+  box-shadow: 0 34px 100px rgba(0, 0, 0, 0.32), 0 4px 20px rgba(0, 0, 0, 0.12);
+}
+
+.release-about-dialog::backdrop {
+  background: rgba(8, 14, 10, 0.48);
+  backdrop-filter: blur(7px) saturate(90%);
+}
+
+.release-about-dialog[open] {
+  animation: release-about-enter 300ms var(--ease-spring) both;
+}
+
+.release-about-shell {
+  position: relative;
+  padding: clamp(24px, 5vw, 38px);
+}
+
+.release-about-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding-right: 32px;
+}
+
+.release-about-header .dialog-icon {
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+}
+
+.release-about-header h2 {
+  margin: 2px 0 0;
+  font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+}
+
+.release-about-header p:last-child,
+.release-about-status {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.release-about-status {
+  min-height: 1.45em;
+  margin-top: 22px;
+}
+
+.release-about-details {
+  display: grid;
+  gap: 0;
+  margin: 14px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-soft) 76%, transparent);
+  transition: opacity var(--motion-standard) var(--ease-out), filter var(--motion-standard) var(--ease-out), transform var(--motion-standard) var(--ease-out);
+}
+
+.release-about-details > div {
+  display: grid;
+  grid-template-columns: minmax(148px, 0.52fr) minmax(0, 1.48fr);
+  gap: 16px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--line);
+  animation: release-detail-enter 300ms var(--ease-out) both;
+}
+
+.release-about-details > div:first-child { border-top: 0; }
+.release-about-details > div:nth-child(2) { animation-delay: 35ms; }
+.release-about-details > div:nth-child(3) { animation-delay: 70ms; }
+.release-about-details > div:nth-child(4) { animation-delay: 105ms; }
+.release-about-details > div:nth-child(5) { animation-delay: 140ms; }
+
+.release-about-details dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.release-about-details dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.release-about-details output {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  user-select: text;
+}
+
+.release-about-dialog[data-release-state="loading"] .release-about-details {
+  opacity: 0.48;
+  filter: blur(1px);
+  transform: translateY(3px);
+}
+
+.release-about-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+@keyframes release-about-enter {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes release-detail-enter {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (max-width: 820px) {
   .app-shell {
     display: block;
@@ -2200,12 +2331,25 @@ html[data-state="review"] .confidence-track span {
     display: none;
   }
 
+  .about-button {
+    margin-left: -16px;
+  }
+
   .workspace {
     padding-inline: 14px;
   }
 
   .phone-dialog-shell {
     padding: 24px 18px;
+  }
+
+  .release-about-shell {
+    padding: 24px 18px;
+  }
+
+  .release-about-details > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 
   .phone-dialog-header {
@@ -2342,6 +2486,12 @@ html[data-state="review"] .confidence-track span {
   .phone-state-panel,
   .phone-pairing-reveal,
   .phone-incoming-result {
+    transform: none;
+  }
+
+  .release-about-dialog,
+  .release-about-details,
+  .release-about-details > div {
     transform: none;
   }
 

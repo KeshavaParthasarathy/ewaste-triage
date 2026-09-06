@@ -222,6 +222,14 @@ def test_spec_uses_explicit_product_static_and_release_asset_allowlists():
     assert "collect.html" not in SPEC.read_text(encoding="utf-8")
 
 
+def test_spec_collects_the_release_metadata_runtime_without_copying_metadata():
+    hidden_imports = _assignment(SPEC, "HIDDEN_IMPORTS")
+    release_assets = _assignment(SPEC, "RELEASE_DATA_FILES")
+
+    assert "desktop.release_metadata" in hidden_imports
+    assert [source for source, _destination in release_assets if "metadata" in source] == []
+
+
 def test_spec_excludes_admin_training_and_test_modules():
     from scripts.verify_macos_bundle import FORBIDDEN_PYTHON_MODULE_PREFIXES
 

@@ -1069,6 +1069,57 @@
     };
   }
 
+  function createReleaseAboutController(options) {
+    const view = options.view;
+    const fetchImpl = options.fetchImpl;
+    let cached = null;
+    let generation = 0;
+    let request = null;
+
+    function isDisplayMetadata(value) {
+      return value && typeof value === "object" &&
+        Object.keys(value).length === 5 &&
+        ["app_version", "source_revision", "model_sha256", "component_database_sha256", "component_database_version"]
+          .every(key => typeof value[key] === "string");
+    }
+
+    async function load(force = false) {
+      if (cached && !force) {
+        view.setReleaseState("ready", cached);
+        return true;
+      }
+      if (request && !force) return request;
+      const requestedGeneration = ++generation;
+      view.setReleaseState("loading");
+      const pending = Promise.resolve(fetchImpl("/api/v1/release-metadata"))
+        .then(responseJson)
+        .then(payload => {
+          if (!isDisplayMetadata(payload)) throw new Error("Release metadata is unavailable.");
+          if (requestedGeneration !== generation) return false;
+          cached = payload;
+          view.setReleaseState("ready", payload);
+          return true;
+        })
+        .catch(error => {
+          if (requestedGeneration !== generation) return false;
+          view.setReleaseState("error", {message: error.message});
+          return false;
+        })
+        .finally(() => {
+          if (request === pending) request = null;
+        });
+      request = pending;
+      return pending;
+    }
+
+    function close() {
+      generation += 1;
+      request = null;
+    }
+
+    return {open: () => load(false), retry: () => load(true), close};
+  }
+
   function element(document, tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -1120,6 +1171,14 @@
     const phoneErrorTitle = document.getElementById("phone-error-title");
     const phoneErrorMessage = document.getElementById("phone-error-message");
     const phoneIncomingCategory = document.getElementById("phone-incoming-category");
+    const releaseStatus = document.getElementById("release-about-status");
+    const releaseValues = {
+      app_version: document.getElementById("release-app-version"),
+      source_revision: document.getElementById("release-source-revision"),
+      model_sha256: document.getElementById("release-model-sha256"),
+      component_database_sha256: document.getElementById("release-component-sha256"),
+      component_database_version: document.getElementById("release-component-version")
+    };
     let previewUrl = "";
     let activeResult = null;
     let alternativeHandler = null;
@@ -1184,6 +1243,23 @@
         phoneSessionDuration = 600;
         updatePhoneSession({expires_in_seconds: phoneSessionDuration});
       }
+    }
+
+    function setReleaseState(state, payload = {}) {
+      const dialog = document.getElementById("release-about-dialog");
+      dialog.dataset.releaseState = state;
+      if (state === "loading") {
+        releaseStatus.textContent = "Loading release information.";
+        return;
+      }
+      if (state === "error") {
+        releaseStatus.textContent = payload.message || "Release information is unavailable. Try again.";
+        return;
+      }
+      for (const [name, target] of Object.entries(releaseValues)) {
+        target.textContent = payload[name];
+      }
+      releaseStatus.textContent = "Release information is ready.";
     }
 
     function renderPhoneIncomingResult(result) {
@@ -1778,6 +1854,7 @@
       setAssessmentBusy,
       setAssessmentState,
       setPhoneState,
+      setReleaseState,
       showPreview,
       showAssessmentFormError,
       showHistoryUndo,
@@ -1801,6 +1878,12 @@
     const input = document.getElementById("photo-input");
     const dropTarget = document.getElementById("drop-target");
     const phoneDialog = document.getElementById("phone-dialog");
+    const releaseDialog = document.getElementById("release-about-dialog");
+    const releaseController = createReleaseAboutController({
+      view,
+      fetchImpl: global.fetch.bind(global)
+    });
+    let releaseOpener = null;
 
     input.addEventListener("change", () => {
       if (input.files && input.files[0]) void controller.analyze(input.files[0]);
@@ -1855,6 +1938,16 @@
       }
       const closePhone = event.target.closest("[data-close-phone], #phone-stop, #phone-view-result");
       if (closePhone) phoneDialog.close();
+      const openReleaseAbout = event.target.closest("#open-release-about");
+      if (openReleaseAbout) {
+        releaseOpener = openReleaseAbout;
+        if (!releaseDialog.open) releaseDialog.showModal();
+        void releaseController.open();
+      }
+      const retryReleaseAbout = event.target.closest("#retry-release-about");
+      if (retryReleaseAbout) void releaseController.retry();
+      const closeReleaseAbout = event.target.closest("#release-about-close, #release-about-close-secondary");
+      if (closeReleaseAbout) releaseDialog.close();
       const retryPhone = event.target.closest("#phone-retry");
       if (retryPhone) void controller.startPhoneSession();
       const close = event.target.closest("[data-close-dialog]");
@@ -1875,6 +1968,18 @@
       if (event.key !== "Escape") return;
       event.preventDefault();
       phoneDialog.close();
+    });
+    releaseDialog.addEventListener("click", event => {
+      if (event.target === releaseDialog) releaseDialog.close();
+    });
+    releaseDialog.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      releaseDialog.close();
+    });
+    releaseDialog.addEventListener("close", () => {
+      releaseController.close();
+      if (releaseOpener) releaseOpener.focus();
     });
 
     document.getElementById("analyze-another").addEventListener("click", () => controller.reset());
@@ -1916,6 +2021,7 @@
     bootstrap,
     buildAssessmentPresentation,
     createController,
+    createReleaseAboutController,
     createDomView,
     formatCategory,
     historyPresentation,

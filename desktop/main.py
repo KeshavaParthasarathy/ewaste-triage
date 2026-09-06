@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -18,6 +17,7 @@ except ImportError:  # Keep module imports usable for service-only tests and too
     webview = None
 
 from desktop.paths import AppPaths, test_mode_enabled
+from desktop.release_metadata import ReleaseMetadataError, load_release_metadata
 from desktop.server_thread import ServerThread
 from server.history import HistoryStore
 from server.inference import OnnxClassifier
@@ -46,29 +46,6 @@ _ONNX_STARTUP_ERRORS = (
     ort_state.InvalidProtobuf,
 )
 _EXPECTED_MODEL_STARTUP_ERRORS = (ModelBundleError, *_ONNX_STARTUP_ERRORS)
-_BUILD_METADATA_FIELDS = {
-    "schema_version",
-    "app_version",
-    "source_revision",
-    "release_manifest_sha256",
-}
-_RELEASE_MANIFEST_FIELDS = {
-    "schema_version",
-    "app_version",
-    "model",
-    "components",
-    "target",
-    "created_at",
-    "parity",
-}
-_COMPONENT_RELEASE_FIELDS = {
-    "sha256",
-    "content_sha256",
-    "schema_version",
-    "version",
-}
-
-
 def _safe_diagnostic(value: object, fallback: str) -> str:
     if not isinstance(value, str):
         return fallback
@@ -112,52 +89,12 @@ def _capture_cleanup_failure(action, previous_error):
 
 
 def _packaged_component_expectations(paths: AppPaths) -> dict[str, object]:
-    """Read the component contract only when it is anchored by build metadata."""
+    """Compatibility wrapper for the shared release metadata boundary."""
     try:
-        metadata = json.loads(paths.build_metadata_path.read_text(encoding="utf-8"))
-        manifest_bytes = paths.release_manifest_path.read_bytes()
-        manifest = json.loads(manifest_bytes.decode("utf-8"))
-        if not isinstance(metadata, dict) or set(metadata) != _BUILD_METADATA_FIELDS:
-            raise ValueError("invalid build metadata")
-        if metadata["schema_version"] != 1:
-            raise ValueError("unsupported build metadata")
-        expected_manifest_sha = metadata["release_manifest_sha256"]
-        if (
-            not isinstance(expected_manifest_sha, str)
-            or not re.fullmatch(r"[0-9a-f]{64}", expected_manifest_sha)
-            or hashlib.sha256(manifest_bytes).hexdigest() != expected_manifest_sha
-        ):
-            raise ValueError("release manifest is not anchored by build metadata")
-        if not isinstance(manifest, dict) or set(manifest) != _RELEASE_MANIFEST_FIELDS:
-            raise ValueError("invalid release manifest")
-        if (
-            manifest.get("schema_version") != 1
-            or manifest.get("app_version") != metadata.get("app_version")
-        ):
-            raise ValueError("release manifest version mismatch")
-        components = manifest.get("components")
-        if not isinstance(components, dict) or set(components) != _COMPONENT_RELEASE_FIELDS:
-            raise ValueError("invalid component release contract")
-        for field in ("sha256", "content_sha256"):
-            if not isinstance(components[field], str) or not re.fullmatch(
-                r"[0-9a-f]{64}", components[field]
-            ):
-                raise ValueError("invalid component release hash")
-        if (
-            isinstance(components["schema_version"], bool)
-            or not isinstance(components["schema_version"], int)
-            or not isinstance(components["version"], str)
-            or not components["version"].strip()
-        ):
-            raise ValueError("invalid component release version")
-    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        _metadata, expectations = load_release_metadata(paths)
+    except ReleaseMetadataError as exc:
         raise ReferenceDataStartupError("unavailable or incompatible") from exc
-    return {
-        "expected_sha256": components["sha256"],
-        "expected_content_sha256": components["content_sha256"],
-        "expected_schema_version": components["schema_version"],
-        "expected_version": components["version"],
-    }
+    return expectations
 
 
 def _test_readiness_path() -> Path:
@@ -216,12 +153,15 @@ def build_desktop_app(
     except _EXPECTED_MODEL_STARTUP_ERRORS as exc:
         raise ModelStartupError(_read_model_diagnostic(paths.model_bundle_dir)) from exc
     try:
-        expectations = (
-            _packaged_component_expectations(paths)
-            if require_release_integrity
-            else {}
-        )
+        release_metadata = None
+        expectations = {}
+        if require_release_integrity:
+            release_metadata, expectations = load_release_metadata(paths)
+            if classifier.manifest.artifact_sha256 != release_metadata.model_sha256:
+                raise ModelStartupError("unavailable or incompatible")
         references = ReferenceStore(paths.reference_database_path, **expectations)
+    except ReleaseMetadataError as exc:
+        raise ReferenceDataStartupError("unavailable or incompatible") from exc
     except ReferenceStartupError as exc:
         raise ReferenceDataStartupError("unavailable or incompatible") from exc
 
@@ -238,6 +178,7 @@ def build_desktop_app(
             history_store=HistoryStore(paths.history_database_path, paths.history_media_dir),
             static_dir=paths.static_dir,
             reference_store=references,
+            release_metadata=release_metadata,
             **phone_options,
         )
         app.extensions["close_reference_store"] = references.close

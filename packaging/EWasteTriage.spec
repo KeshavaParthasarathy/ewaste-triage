@@ -36,6 +36,7 @@ EXCLUDED_MODULES = (
     "torchvision",
 )
 HIDDEN_IMPORTS = (
+    "desktop.release_metadata",
     "pillow_heif",
     "psutil",
     "qrcode",
