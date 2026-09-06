@@ -2,26 +2,66 @@
 
 from __future__ import annotations
 
+import base64
+from copy import deepcopy
+import io
 from pathlib import Path
 from collections.abc import Mapping
 import math
 import sqlite3
+import threading
+import time
 
 import numpy as np
 from flask import Flask, jsonify, request, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
 from PIL import Image, UnidentifiedImageError
+import qrcode
 
+from desktop.server_thread import PhoneServerController
 from server.explanations import ActiveSourceImageStore, occlusion_map
 from server.imaging import ImageTooLarge, inference_crop, normalize_image
 from server.lifecycle import AssessmentInputs, Condition, OperationalState, Range, Usage, assess_component
 from server.history import AssessmentConflictError
+from server.netinfo import preferred_lan_address
+from server.phone_app import create_phone_app
+from server.phone_sessions import PhoneSessionManager
 
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_LIFECYCLE_YEARS = 100
 MAX_LIFECYCLE_CYCLES = 1_000_000
 USER_PROVIDED_EVIDENCE_GRADE = "user_provided_unverified"
+
+
+class _PhoneResultInbox:
+    """Keep at most one detached phone result until the desktop consumes it."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._result = None
+
+    def put(self, result):
+        with self._lock:
+            self._result = deepcopy(dict(result))
+
+    def pop(self):
+        with self._lock:
+            result = self._result
+            self._result = None
+        return deepcopy(result)
+
+    def clear(self):
+        with self._lock:
+            self._result = None
+
+
+def _phone_qr_data_url(url: str) -> str:
+    """Encode a tokenized URL as an in-memory PNG data URL."""
+    output = io.BytesIO()
+    qrcode.make(url).save(output, format="PNG")
+    encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def create_desktop_app(
@@ -33,9 +73,26 @@ def create_desktop_app(
     clock=None,
     reference_store=None,
     lifecycle_assessor=assess_component,
+    phone_sessions=None,
+    phone_server_factory=None,
+    lan_address_provider=None,
+    phone_clock=None,
+    phone_monitor_interval=0.25,
 ):
     """Build the user product without collection or valuation dependencies."""
     static_dir = Path(static_dir or Path(__file__).parent / "static")
+    phone_clock = phone_clock or time.monotonic
+    phone_sessions = phone_sessions or PhoneSessionManager(now=phone_clock)
+    phone_server_factory = phone_server_factory or PhoneServerController
+    lan_address_provider = lan_address_provider or preferred_lan_address
+    if (
+        isinstance(phone_monitor_interval, bool)
+        or not isinstance(phone_monitor_interval, (int, float))
+        or not math.isfinite(phone_monitor_interval)
+        or phone_monitor_interval <= 0
+    ):
+        raise ValueError("phone_monitor_interval must be a finite positive number")
+
     app = Flask(__name__, static_folder=None)
     app.config.update(
         CLASSIFIER=classifier,
@@ -48,6 +105,7 @@ def create_desktop_app(
         MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES,
         REFERENCE_STORE=reference_store,
         LIFECYCLE_ASSESSOR=lifecycle_assessor,
+        PHONE_SESSIONS=phone_sessions,
     )
 
     def assessment_error(message, status):
@@ -259,6 +317,190 @@ def create_desktop_app(
         except (UnidentifiedImageError, OSError):
             return None, (jsonify({"error": "uploaded file is not a decodable image"}), 400)
 
+    def classify_normalized_image(image, *, retain_original=False):
+        result = dict(app.config["CLASSIFIER"].classify(image))
+        scan_id = None
+        store = app.config["HISTORY_STORE"]
+        if store is not None:
+            try:
+                scan_id = store.add_scan(
+                    result,
+                    image,
+                    retain_original=retain_original,
+                    original=image if retain_original else None,
+                )
+            except Exception:
+                app.logger.exception(
+                    "classification succeeded but history persistence failed"
+                )
+                result["history_error"] = (
+                    "Classification complete, but this scan was not saved to history."
+                )
+        result["scan_id"] = scan_id
+        if scan_id is not None:
+            classes = getattr(app.config["CLASSIFIER"], "classes", None)
+            class_index = (
+                classes.index(result["class_name"])
+                if classes is not None and result["class_name"] in classes
+                else None
+            )
+            app.config["SOURCE_IMAGE_STORE"].put(
+                scan_id,
+                inference_crop(image),
+                class_index=class_index,
+            )
+        return result
+
+    phone_inbox = _PhoneResultInbox()
+    phone_operation_lock = threading.Lock()
+
+    def receive_phone_result(result):
+        token = request.form.get("token")
+        pairing_code = request.form.get("code")
+        with phone_operation_lock:
+            if phone_sessions.authorize(token, pairing_code):
+                phone_inbox.put(result)
+
+    phone_app = create_phone_app(
+        phone_sessions,
+        lambda image: classify_normalized_image(image, retain_original=False),
+        receive_phone_result,
+    )
+    phone_app.config["PHONE_REQUIRE_PAIRING_CODE"] = True
+    phone_controller = phone_server_factory(phone_app)
+    phone_monitor_lock = threading.Lock()
+    phone_monitor_stop = None
+    phone_monitor_thread = None
+
+    def detach_phone_monitor():
+        nonlocal phone_monitor_stop, phone_monitor_thread
+        with phone_monitor_lock:
+            monitor_stop = phone_monitor_stop
+            monitor_thread = phone_monitor_thread
+            phone_monitor_stop = None
+            phone_monitor_thread = None
+        if monitor_stop is not None:
+            monitor_stop.set()
+        return monitor_thread
+
+    def stop_phone_capture_locked(*, clear_result):
+        monitor_thread = detach_phone_monitor()
+        error = None
+        try:
+            phone_sessions.stop()
+        except BaseException as exc:
+            error = exc
+        if clear_result:
+            phone_inbox.clear()
+        try:
+            phone_controller.stop()
+        except BaseException as exc:
+            if error is None:
+                error = exc
+        return monitor_thread, error
+
+    def join_phone_monitor(monitor_thread):
+        if (
+            monitor_thread is not None
+            and monitor_thread is not threading.current_thread()
+        ):
+            monitor_thread.join()
+
+    def stop_phone_capture(*, clear_result=True):
+        monitor_thread = None
+        error = None
+        with phone_operation_lock:
+            monitor_thread, error = stop_phone_capture_locked(
+                clear_result=clear_result
+            )
+        join_phone_monitor(monitor_thread)
+        if error is not None:
+            raise error
+
+    def start_phone_monitor():
+        nonlocal phone_monitor_stop, phone_monitor_thread
+        monitor_stop = threading.Event()
+
+        def monitor():
+            nonlocal phone_monitor_stop, phone_monitor_thread
+            while not monitor_stop.wait(phone_monitor_interval):
+                if phone_sessions.active() is not None:
+                    continue
+                with phone_operation_lock:
+                    with phone_monitor_lock:
+                        if phone_monitor_stop is not monitor_stop:
+                            return
+                        phone_monitor_stop = None
+                        phone_monitor_thread = None
+                    phone_inbox.clear()
+                    try:
+                        phone_controller.stop()
+                    except Exception:
+                        app.logger.exception(
+                            "expired phone capture listener did not close cleanly"
+                        )
+                    return
+
+        with phone_monitor_lock:
+            phone_monitor_stop = monitor_stop
+            phone_monitor_thread = threading.Thread(
+                target=monitor,
+                name="ewaste-phone-expiry-monitor",
+                daemon=True,
+            )
+            phone_monitor_thread.start()
+
+    def session_payload(*, result=None):
+        session = phone_sessions.active()
+        if session is None:
+            return {"active": False, "result": result}
+        return {
+            "active": True,
+            "upload_url": session.upload_url,
+            "pairing_code": session.pairing_code,
+            "expires_in_seconds": max(0.0, session.expires_at - phone_clock()),
+            "result": result,
+        }
+
+    def start_phone_capture(host):
+        monitor_threads = []
+        payload = None
+        error = None
+        with phone_operation_lock:
+            old_monitor, stop_error = stop_phone_capture_locked(
+                clear_result=True
+            )
+            monitor_threads.append(old_monitor)
+            if stop_error is not None:
+                error = stop_error
+            else:
+                try:
+                    bound = phone_controller.start(host, port=0)
+                    session = phone_sessions.start(
+                        host=bound.host,
+                        port=bound.port,
+                    )
+                    payload = session_payload(result=None)
+                    payload["qr_png"] = _phone_qr_data_url(
+                        session.upload_url
+                    )
+                    start_phone_monitor()
+                except BaseException as exc:
+                    error = exc
+                    cleanup_monitor, _ = (
+                        stop_phone_capture_locked(clear_result=True)
+                    )
+                    monitor_threads.append(cleanup_monitor)
+        for monitor_thread in dict.fromkeys(monitor_threads):
+            join_phone_monitor(monitor_thread)
+        if error is not None:
+            raise error
+        return payload
+
+    app.extensions["phone_app"] = phone_app
+    app.extensions["phone_server_controller"] = phone_controller
+    app.extensions["close_phone_capture"] = stop_phone_capture
+
     @app.get("/")
     def home():
         return send_from_directory(static_dir, "index.html")
@@ -280,24 +522,71 @@ def create_desktop_app(
         if error:
             return error
         try:
-            result = app.config["CLASSIFIER"].classify(image)
+            retain_original = request.form.get("retain_original", "").lower() in {
+                "1", "true", "yes", "on"
+            }
+            result = classify_normalized_image(
+                image,
+                retain_original=retain_original,
+            )
         except ImageTooLarge as exc:
             return jsonify({"error": str(exc)}), 413
-        scan_id = None
-        store = app.config["HISTORY_STORE"]
-        if store is not None:
-            retain_original = request.form.get("retain_original", "").lower() in {"1", "true", "yes", "on"}
-            try:
-                scan_id = store.add_scan(result, image, retain_original=retain_original, original=image if retain_original else None)
-            except Exception:
-                app.logger.exception("classification succeeded but history persistence failed")
-                result["history_error"] = "Classification complete, but this scan was not saved to history."
-        result["scan_id"] = scan_id
-        if scan_id is not None:
-            classes = getattr(app.config["CLASSIFIER"], "classes", None)
-            class_index = classes.index(result["class_name"]) if classes is not None else None
-            app.config["SOURCE_IMAGE_STORE"].put(scan_id, inference_crop(image), class_index=class_index)
         return jsonify(result)
+
+    @app.post("/api/phone-session")
+    def start_phone_session():
+        host = lan_address_provider()
+        if host is None:
+            return (
+                jsonify({
+                    "error": (
+                        "No usable local network address is available. Connect this Mac "
+                        "and your phone to the same Wi-Fi network, then try again."
+                    )
+                }),
+                503,
+            )
+
+        try:
+            payload = start_phone_capture(host)
+        except (OSError, RuntimeError, ValueError):
+            app.logger.exception("phone capture session could not start")
+            try:
+                stop_phone_capture(clear_result=True)
+            except Exception:
+                app.logger.exception(
+                    "phone capture startup cleanup did not complete cleanly"
+                )
+            return (
+                jsonify({
+                    "error": (
+                        "Phone capture could not start on this network. Keep desktop "
+                        "scanning open and check your Wi-Fi connection."
+                    )
+                }),
+                503,
+            )
+        response = jsonify(payload)
+        response.status_code = 201
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/api/phone-session")
+    def get_phone_session():
+        result = phone_inbox.pop()
+        payload = session_payload(result=result)
+        if not payload["active"] and phone_controller.is_running:
+            stop_phone_capture(clear_result=False)
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.delete("/api/phone-session")
+    def delete_phone_session():
+        stop_phone_capture(clear_result=True)
+        response = jsonify({"active": False, "result": None})
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.post("/api/v1/explain/<scan_id>")
     def explain(scan_id):

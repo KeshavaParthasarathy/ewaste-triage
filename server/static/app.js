@@ -252,6 +252,7 @@
     const nextFrame = options.nextFrame;
     const objectUrl = options.objectUrl;
     const undoDelay = options.undoDelay === undefined ? 5000 : options.undoDelay;
+    const phonePollDelay = options.phonePollDelay === undefined ? 1000 : options.phonePollDelay;
     const schedule = options.schedule || global.setTimeout.bind(global);
     const cancelSchedule = options.cancelSchedule || global.clearTimeout.bind(global);
     let generation = 0;
@@ -263,6 +264,10 @@
     let assessmentGeneration = 0;
     let assessmentSaveToken = null;
     let activeAssessment = null;
+    let phoneGeneration = 0;
+    let phonePollTimer = null;
+    let phoneActive = false;
+    let phoneStartRequest = null;
 
     function cancelAssessmentSave() {
       if (assessmentSaveToken === null) return;
@@ -414,6 +419,130 @@
           view.setBusy(false);
         }
       }
+    }
+
+    function cancelPhonePoll() {
+      if (phonePollTimer === null) return;
+      cancelSchedule(phonePollTimer);
+      phonePollTimer = null;
+    }
+
+    function schedulePhonePoll(expectedGeneration = phoneGeneration) {
+      if (!phoneActive || phonePollTimer !== null || expectedGeneration !== phoneGeneration) return;
+      phonePollTimer = schedule(() => {
+        phonePollTimer = null;
+        if (phoneActive && expectedGeneration === phoneGeneration) {
+          void pollPhoneSession(expectedGeneration);
+        }
+      }, phonePollDelay);
+    }
+
+    function consumePhoneResult(result) {
+      invalidateAnalysis();
+      activeScanId = result.scan_id || null;
+      activeResult = withModelEvidence(result);
+      if (typeof view.showSection === "function") view.showSection("scan");
+      if (typeof view.clearPreview === "function") {
+        view.clearPreview("This photo arrived securely from your phone. The full-resolution image was not retained.");
+      }
+      view.transition(result.low_confidence ? "review" : "result", activeResult);
+      if (typeof view.renderPhoneIncomingResult === "function") {
+        view.renderPhoneIncomingResult(activeResult);
+      }
+      if (result.scan_id) void loadExplanation(result.scan_id, generation);
+      void loadHistory();
+    }
+
+    async function startPhoneSession() {
+      const requestedGeneration = ++phoneGeneration;
+      phoneActive = false;
+      cancelPhonePoll();
+      if (typeof view.setPhoneState === "function") view.setPhoneState("starting");
+      const request = api("/api/phone-session", {method: "POST"});
+      phoneStartRequest = request;
+      try {
+        const session = await request;
+        if (requestedGeneration !== phoneGeneration) return false;
+        if (!session.active) throw new Error("The phone capture session did not start.");
+        phoneActive = true;
+        if (typeof view.setPhoneState === "function") view.setPhoneState("ready", session);
+        if (typeof view.updatePhoneSession === "function") view.updatePhoneSession(session);
+        schedulePhonePoll(requestedGeneration);
+        return true;
+      } catch (error) {
+        if (requestedGeneration !== phoneGeneration) return false;
+        phoneActive = false;
+        if (typeof view.setPhoneState === "function") {
+          view.setPhoneState("error", {message: error.message});
+        }
+        return false;
+      } finally {
+        if (phoneStartRequest === request) phoneStartRequest = null;
+      }
+    }
+
+    async function pollPhoneSession(expectedGeneration = phoneGeneration) {
+      cancelPhonePoll();
+      if (!phoneActive || expectedGeneration !== phoneGeneration) return false;
+      try {
+        const session = await api("/api/phone-session", {method: "GET"});
+        if (expectedGeneration !== phoneGeneration || !phoneActive) return false;
+        if (typeof view.updatePhoneSession === "function") view.updatePhoneSession(session);
+        if (session.result) {
+          consumePhoneResult(session.result);
+          if (typeof view.setPhoneState === "function") {
+            view.setPhoneState("received", session);
+          }
+        }
+        if (!session.active) {
+          phoneActive = false;
+          cancelPhonePoll();
+          if (typeof view.setPhoneState === "function") {
+            view.setPhoneState("expired", {
+              message: "This temporary phone session expired. Start a new one to capture another photo."
+            });
+          }
+          return true;
+        }
+        schedulePhonePoll(expectedGeneration);
+        return true;
+      } catch (error) {
+        if (expectedGeneration !== phoneGeneration || !phoneActive) return false;
+        phoneActive = false;
+        cancelPhonePoll();
+        if (typeof view.setPhoneState === "function") {
+          view.setPhoneState("error", {message: error.message});
+        }
+        return false;
+      }
+    }
+
+    async function stopPhoneSession() {
+      phoneGeneration += 1;
+      phoneActive = false;
+      cancelPhonePoll();
+      const pendingStart = phoneStartRequest;
+      let stopped = true;
+      try {
+        await api("/api/phone-session", {method: "DELETE"});
+      } catch (_error) {
+        stopped = false;
+      }
+      if (pendingStart !== null) {
+        try {
+          await pendingStart;
+        } catch (_error) {
+          // The failed start has no listener to revoke.
+        }
+        try {
+          await api("/api/phone-session", {method: "DELETE"});
+          stopped = true;
+        } catch (_error) {
+          stopped = false;
+        }
+      }
+      if (typeof view.setPhoneState === "function") view.setPhoneState("idle");
+      return stopped;
     }
 
     async function commitDelete(scanId) {
@@ -726,7 +855,8 @@
     return {
       analyze, changeAssessmentCategory, clearHistory, deleteHistory, getAssessmentContext,
       loadExplanation, loadHistory, markAssessmentEditing, openAssessment, openHistory,
-      reset, saveAssessment, selectAlternative
+      pollPhoneSession, reset, saveAssessment, selectAlternative, startPhoneSession,
+      stopPhoneSession
     };
   }
 
@@ -773,9 +903,18 @@
     const assessmentComponents = document.getElementById("assessment-components");
     const assessmentSafetyList = document.getElementById("assessment-safety-list");
     const assessmentEvidenceList = document.getElementById("assessment-evidence-list");
+    const phoneDialog = document.getElementById("phone-dialog");
+    const phoneQr = document.getElementById("phone-qr");
+    const phonePairingCode = document.getElementById("phone-pairing-code");
+    const phoneCountdown = document.getElementById("phone-countdown");
+    const phoneCountdownRing = document.querySelector(".phone-countdown-ring");
+    const phoneErrorTitle = document.getElementById("phone-error-title");
+    const phoneErrorMessage = document.getElementById("phone-error-message");
+    const phoneIncomingCategory = document.getElementById("phone-incoming-category");
     let previewUrl = "";
     let activeResult = null;
     let alternativeHandler = null;
+    let phoneSessionDuration = 600;
 
     function announce(message) {
       live.textContent = "";
@@ -788,6 +927,61 @@
         control.disabled = value;
       }
       document.getElementById("photo-input").disabled = value;
+    }
+
+    function updatePhoneSession(session) {
+      const remaining = Math.max(0, Number(session && session.expires_in_seconds) || 0);
+      if (remaining > phoneSessionDuration) phoneSessionDuration = remaining;
+      const wholeSeconds = Math.ceil(remaining);
+      const minutes = Math.floor(wholeSeconds / 60);
+      const seconds = wholeSeconds % 60;
+      phoneCountdown.textContent = `${minutes}:${String(seconds).padStart(2, "0")}`;
+      phoneCountdown.dateTime = `PT${wholeSeconds}S`;
+      phoneCountdownRing.style.setProperty(
+        "--phone-progress",
+        String(Math.max(0, Math.min(1, remaining / phoneSessionDuration)))
+      );
+    }
+
+    function setPhoneState(state, payload = {}) {
+      phoneDialog.dataset.phoneState = state;
+      if ((state === "ready" || state === "received") && payload.qr_png) {
+        phoneSessionDuration = Math.max(
+          1,
+          Number(payload.expires_in_seconds) || 600
+        );
+        phoneQr.src = payload.qr_png;
+      }
+      if ((state === "ready" || state === "received") && payload.pairing_code) {
+        phonePairingCode.textContent = String(payload.pairing_code).replace(
+          /^(\d{2})(\d{2})(\d{2})$/,
+          "$1 $2 $3"
+        );
+      }
+      if (state === "starting") {
+        phoneErrorMessage.textContent = "Check that both devices are on the same Wi-Fi network, then try again.";
+        announce("Starting a temporary phone capture session.");
+      } else if (state === "ready") {
+        announce("Phone capture is ready. Scan the QR code, then enter the six-digit pairing code.");
+      } else if (state === "expired" || state === "error") {
+        phoneErrorTitle.textContent = state === "expired" ?
+          "Phone session expired" : "Phone capture unavailable";
+        phoneErrorMessage.textContent = payload.message ||
+          "Check that both devices are on the same Wi-Fi network, then try again.";
+        announce(phoneErrorMessage.textContent);
+      } else if (state === "idle") {
+        phoneQr.removeAttribute("src");
+        phonePairingCode.textContent = "—— —— ——";
+        phoneSessionDuration = 600;
+        updatePhoneSession({expires_in_seconds: phoneSessionDuration});
+      }
+    }
+
+    function renderPhoneIncomingResult(result) {
+      phoneIncomingCategory.textContent = formatCategory(
+        result.confirmed_class_name || result.class_name
+      );
+      announce(`${phoneIncomingCategory.textContent} photo received from your phone.`);
     }
 
     function showPreview(url) {
@@ -1341,14 +1535,17 @@
       renderHistory,
       renderHistoryError,
       renderInfluence,
+      renderPhoneIncomingResult,
       reset,
       setBusy,
       setAssessmentBusy,
       setAssessmentState,
+      setPhoneState,
       showPreview,
       showAssessmentFormError,
       showHistoryUndo,
       showSection,
+      updatePhoneSession,
       setAlternativeHandler(handler) { alternativeHandler = handler; },
       transition,
       get activeResult() { return activeResult; }
@@ -1366,6 +1563,7 @@
     });
     const input = document.getElementById("photo-input");
     const dropTarget = document.getElementById("drop-target");
+    const phoneDialog = document.getElementById("phone-dialog");
 
     input.addEventListener("change", () => {
       if (input.files && input.files[0]) void controller.analyze(input.files[0]);
@@ -1414,7 +1612,14 @@
         }
       }
       const phoneAction = event.target.closest("[data-phone-action], #phone-capture");
-      if (phoneAction) document.getElementById("phone-dialog").showModal();
+      if (phoneAction) {
+        if (!phoneDialog.open) phoneDialog.showModal();
+        void controller.startPhoneSession();
+      }
+      const closePhone = event.target.closest("[data-close-phone], #phone-stop, #phone-view-result");
+      if (closePhone) phoneDialog.close();
+      const retryPhone = event.target.closest("#phone-retry");
+      if (retryPhone) void controller.startPhoneSession();
       const close = event.target.closest("[data-close-dialog]");
       if (close) close.closest("dialog").close();
       const historyDelete = event.target.closest("[data-history-delete]");
@@ -1424,6 +1629,15 @@
         const item = historyReview.closest(".history-item");
         if (item && item._record) controller.openHistory(item._record);
       }
+    });
+
+    phoneDialog.addEventListener("close", () => {
+      void controller.stopPhoneSession();
+    });
+    phoneDialog.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      phoneDialog.close();
     });
 
     document.getElementById("analyze-another").addEventListener("click", () => controller.reset());

@@ -102,6 +102,172 @@ def test_styles_define_responsive_reduced_motion_and_functional_states():
     assert "transition: all" not in css
 
 
+def test_scan_page_exposes_an_initially_closed_accessible_phone_pairing_sheet():
+    page = _page()
+    controls = {
+        attrs.get("id"): (tag, attrs)
+        for tag, attrs in page.elements
+        if attrs.get("id")
+    }
+
+    assert "Use phone" in page.text
+    assert controls["phone-capture"][1].get("aria-label") == "Use phone"
+    dialog_tag, dialog_attrs = controls["phone-dialog"]
+    assert dialog_tag == "dialog"
+    assert "open" not in dialog_attrs
+    assert dialog_attrs["aria-labelledby"] == "phone-dialog-title"
+    assert controls["phone-qr"][0] == "img"
+    assert controls["phone-qr"][1]["alt"]
+    assert controls["phone-pairing-code"][0] in {"strong", "output"}
+    assert controls["phone-countdown"][0] in {"span", "time"}
+    assert controls["phone-stop"][0] == "button"
+    assert controls["phone-incoming-result"][1].get("aria-live") == "polite"
+
+
+def test_phone_pairing_styles_use_staggered_functional_motion_and_reduced_motion():
+    css = STATIC.joinpath("app.css").read_text()
+
+    assert ".phone-dialog" in css
+    assert 'data-phone-state="ready"' in css
+    assert "40ms" in css
+    assert "--phone-progress" in css
+    reduced_motion = css.split("@media (prefers-reduced-motion: reduce)", 1)[1]
+    assert ".phone-pairing-reveal" in reduced_motion
+
+
+def test_phone_pairing_sheet_closes_through_the_secure_escape_path():
+    javascript = STATIC.joinpath("app.js").read_text()
+
+    assert 'phoneDialog.addEventListener("keydown", event =>' in javascript
+    assert 'if (event.key !== "Escape") return;' in javascript
+    assert 'phoneDialog.addEventListener("close", () =>' in javascript
+    assert "void controller.stopPhoneSession();" in javascript
+
+
+def test_phone_controller_starts_polls_and_presents_incoming_result_once():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const requests = [];
+const phoneStates = [];
+const transitions = [];
+const sections = [];
+const scheduled = [];
+let pollCount = 0;
+const prediction = {
+  scan_id: "phone-scan-1",
+  class_name: "0301_computer_mouse",
+  confidence: .93,
+  low_confidence: false,
+  topk: [{class_name: "0301_computer_mouse", confidence: .93}]
+};
+const view = {
+  transition(state, payload) { transitions.push([state, payload && payload.scan_id]); },
+  setBusy() {}, renderInfluence() {}, renderHistory() {}, markHistoryDeleting() {},
+  clearPreview(message) { this.previewMessage = message; },
+  showSection(name) { sections.push(name); },
+  setPhoneState(state, payload) { phoneStates.push([state, payload && payload.pairing_code]); },
+  updatePhoneSession(payload) { this.remaining = payload.expires_in_seconds; },
+  renderPhoneIncomingResult(payload) { this.incoming = payload.scan_id; }
+};
+const fetchImpl = async (url, options = {}) => {
+  requests.push([url, options.method || "GET"]);
+  if (url === "/api/phone-session" && options.method === "POST") return {
+    ok: true, status: 201,
+    json: async () => ({active: true, pairing_code: "123456", expires_in_seconds: 600,
+      upload_url: "http://192.168.1.42:49152/phone?token=secret", qr_png: "data:image/png;base64,eA=="})
+  };
+  if (url === "/api/phone-session" && (!options.method || options.method === "GET")) {
+    pollCount += 1;
+    return {ok: true, status: 200, json: async () => ({
+      active: true, expires_in_seconds: 599, result: pollCount === 1 ? prediction : null
+    })};
+  }
+  if (url === "/api/v1/history") return {ok: true, json: async () => []};
+  if (url.startsWith("/api/v1/explain/")) return new Promise(() => {});
+  throw new Error("unexpected request " + url);
+};
+const controller = UI.createController({
+  view, fetchImpl,
+  formDataFactory: () => ({append() {}}),
+  nextFrame: async () => {}, objectUrl: () => "blob:none",
+  schedule(callback, delay) { scheduled.push(delay); return {callback}; },
+  cancelSchedule() {}
+});
+(async () => {
+  const started = await controller.startPhoneSession();
+  const first = await controller.pollPhoneSession();
+  const second = await controller.pollPhoneSession();
+  process.stdout.write(JSON.stringify({
+    started, first, second, requests, phoneStates, transitions, sections, scheduled,
+    incoming: view.incoming, remaining: view.remaining, previewMessage: view.previewMessage,
+    assessment: controller.getAssessmentContext()
+  }));
+})();
+""")
+
+    assert result["started"] is True
+    assert result["first"] is True
+    assert result["second"] is True
+    assert ["/api/phone-session", "POST"] in result["requests"]
+    assert result["requests"].count(["/api/phone-session", "GET"]) == 2
+    assert result["phoneStates"][:2] == [["starting", None], ["ready", "123456"]]
+    assert result["transitions"] == [["result", "phone-scan-1"]]
+    assert result["sections"] == ["scan"]
+    assert result["incoming"] == "phone-scan-1"
+    assert result["remaining"] == 599
+    assert result["assessment"]["scan_id"] == "phone-scan-1"
+    assert "phone" in result["previewMessage"].lower()
+    assert 1000 in result["scheduled"]
+
+
+def test_phone_controller_stop_revokes_server_and_ignores_stale_poll():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const requests = [];
+const states = [];
+let resolvePoll;
+const view = {
+  transition() {}, setBusy() {}, renderInfluence() {}, renderHistory() {}, markHistoryDeleting() {},
+  setPhoneState(state) { states.push(state); }, updatePhoneSession() {}
+};
+const fetchImpl = async (url, options = {}) => {
+  requests.push([url, options.method || "GET"]);
+  if (url === "/api/phone-session" && options.method === "POST") return {
+    ok: true, status: 201,
+    json: async () => ({active: true, pairing_code: "123456", expires_in_seconds: 600,
+      upload_url: "http://192.168.1.42:49152/phone?token=secret", qr_png: "data:image/png;base64,eA=="})
+  };
+  if (url === "/api/phone-session" && options.method === "GET") {
+    return new Promise(resolve => { resolvePoll = resolve; });
+  }
+  if (url === "/api/phone-session" && options.method === "DELETE") return {
+    ok: true, status: 200, json: async () => ({active: false, result: null})
+  };
+  if (url === "/api/v1/history") return {ok: true, json: async () => []};
+  throw new Error("unexpected request " + url);
+};
+const controller = UI.createController({
+  view, fetchImpl,
+  formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => "",
+  schedule: () => 1, cancelSchedule() {}
+});
+(async () => {
+  await controller.startPhoneSession();
+  const pending = controller.pollPhoneSession();
+  await new Promise(resolve => setImmediate(resolve));
+  const stopped = await controller.stopPhoneSession();
+  resolvePoll({ok: true, status: 200, json: async () => ({active: false, result: null})});
+  const stale = await pending;
+  process.stdout.write(JSON.stringify({stopped, stale, requests, states}));
+})();
+""")
+
+    assert result["stopped"] is True
+    assert result["stale"] is False
+    assert ["/api/phone-session", "DELETE"] in result["requests"]
+    assert result["states"][-1] == "idle"
+
+
 def test_controller_runs_real_states_once_and_loads_influence_asynchronously():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);

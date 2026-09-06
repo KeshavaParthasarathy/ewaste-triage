@@ -40,8 +40,8 @@
           <p class="eyebrow">Local device classifier</p>
           <p class="topbar-note">No account or cloud upload</p>
         </div>
-        <button class="quiet-button phone-button" type="button" id="phone-capture">
-          <span aria-hidden="true">▯</span> Phone capture
+        <button class="quiet-button phone-button" type="button" id="phone-capture" aria-label="Use phone">
+          <span aria-hidden="true">▯</span><span class="phone-button-label">Use phone</span>
         </button>
       </header>
 
@@ -73,7 +73,7 @@
             <div class="import-divider" aria-hidden="true"><span>or</span></div>
             <button class="phone-card" type="button" data-phone-action>
               <span class="phone-card-icon" aria-hidden="true">▯</span>
-              <span><strong>Capture from your phone</strong><small>Phone capture setup arrives in the next release step.</small></span>
+              <span><strong>Capture from your phone</strong><small>Pair securely over the same Wi-Fi network.</small></span>
               <span aria-hidden="true">›</span>
             </button>
           </section>
@@ -357,13 +357,82 @@
     </main>
   </div>
 
-  <dialog class="placeholder-dialog" id="phone-dialog" aria-labelledby="phone-dialog-title">
-    <button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button>
-    <span class="dialog-icon" aria-hidden="true">▯</span>
-    <p class="eyebrow">Phone capture</p>
-    <h2 id="phone-dialog-title">Capture handoff is coming next.</h2>
-    <p>This entry point is ready for the temporary, same-network phone session. For now, transfer the photo to this Mac and choose it here.</p>
-    <button class="primary-button" type="button" data-close-dialog>Got it</button>
+  <dialog class="phone-dialog" id="phone-dialog" aria-labelledby="phone-dialog-title"
+          aria-describedby="phone-dialog-description" data-phone-state="idle">
+    <div class="phone-dialog-shell">
+      <button class="dialog-close" type="button" data-close-phone aria-label="Close phone capture">×</button>
+
+      <header class="phone-dialog-header">
+        <span class="dialog-icon" aria-hidden="true">▯</span>
+        <div>
+          <p class="eyebrow">Private phone handoff</p>
+          <h2 id="phone-dialog-title">Take the photo on your phone.</h2>
+          <p id="phone-dialog-description">Your Mac opens a temporary connection on this Wi-Fi network. It closes when you stop, leave, or the timer expires.</p>
+        </div>
+      </header>
+
+      <section class="phone-starting phone-state-panel" aria-label="Starting phone capture">
+        <span class="phone-orbit" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div>
+          <strong>Opening a private handoff</strong>
+          <p>Preparing a one-time address on your local network…</p>
+        </div>
+      </section>
+
+      <section class="phone-ready phone-state-panel" aria-label="Phone capture ready">
+        <div class="phone-pairing-grid">
+          <div class="phone-qr-card phone-pairing-reveal">
+            <img id="phone-qr" alt="QR code for this temporary phone capture session">
+            <span>Scan with your phone camera</span>
+          </div>
+
+          <div class="phone-pairing-steps">
+            <div class="phone-pairing-reveal">
+              <span class="phone-step-number" aria-hidden="true">1</span>
+              <p><strong>Scan the QR code</strong><small>Keep this Mac and your phone on the same Wi-Fi network.</small></p>
+            </div>
+            <div class="phone-pairing-reveal">
+              <span class="phone-step-number" aria-hidden="true">2</span>
+              <p><strong>Enter this pairing code</strong><small>The code confirms that you can see this Mac.</small></p>
+            </div>
+            <output class="phone-pairing-code phone-pairing-reveal" id="phone-pairing-code"
+                    aria-label="Six-digit pairing code">—— —— ——</output>
+          </div>
+        </div>
+
+        <div class="phone-session-strip phone-pairing-reveal">
+          <div class="phone-countdown-ring" style="--phone-progress: 1" aria-hidden="true"></div>
+          <div>
+            <strong>Waiting for one photo</strong>
+            <p>Session closes in <time id="phone-countdown" datetime="PT10M">10:00</time>. Valid phone activity refreshes the timer.</p>
+          </div>
+          <span class="phone-private-badge"><i aria-hidden="true"></i> Local only</span>
+        </div>
+      </section>
+
+      <section class="phone-error-state phone-state-panel" role="alert">
+        <span class="error-icon" aria-hidden="true">!</span>
+        <div>
+          <strong id="phone-error-title">Phone capture unavailable</strong>
+          <p id="phone-error-message">Check that both devices are on the same Wi-Fi network, then try again.</p>
+        </div>
+      </section>
+
+      <section class="phone-incoming-result" id="phone-incoming-result" aria-live="polite" aria-atomic="true">
+        <span class="phone-result-check" aria-hidden="true">✓</span>
+        <div>
+          <p class="eyebrow">Photo received</p>
+          <strong id="phone-incoming-category">Result ready</strong>
+          <small>The classification is saved locally and ready to review.</small>
+        </div>
+      </section>
+
+      <footer class="phone-dialog-actions">
+        <button class="quiet-button" id="phone-stop" type="button">Stop phone capture</button>
+        <button class="primary-button" id="phone-retry" type="button">Try again</button>
+        <button class="primary-button" id="phone-view-result" type="button">View result</button>
+      </footer>
+    </div>
   </dialog>
 
 </body>

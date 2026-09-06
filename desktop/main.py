@@ -181,6 +181,11 @@ def run(*, webview_module=webview, paths: AppPaths | None = None) -> int:
             cleanup_error = _capture_cleanup_failure(
                 server.shutdown, cleanup_error
             )
+        phone_closer = app.extensions.get("close_phone_capture")
+        if phone_closer is not None:
+            cleanup_error = _capture_cleanup_failure(
+                phone_closer, cleanup_error
+            )
         closer = app.extensions.get("close_reference_store")
         if closer is not None:
             cleanup_error = _capture_cleanup_failure(closer, cleanup_error)
