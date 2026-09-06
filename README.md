@@ -55,6 +55,16 @@ Environment already checked: Python 3.11.5, pandas 2.0.3, scikit-learn 1.3.0 —
 - [Model training procedure](docs/MODEL_TRAINING_PROCEDURE.md) — collect, train, evaluate,
   and promote classifier releases without mixing training controls into the user app.
 
+## E-Waste Triage Mac app
+
+The user app classifies a local device photo, lets the user confirm the category, and
+keeps item-specific assessment/history data on the Mac. Training, model selection, and
+component-reference preparation remain administrator-only release work; they are not
+user-app features. The first release targets unsigned arm64 macOS 14 or later.
+
+- [Mac app tester checklist](docs/MAC_APP_TESTING.md)
+- [Mac app release runbook](docs/RELEASING_MAC_APP.md)
+
 ---
 
 ## Photo-based part breakdown & value (added)
