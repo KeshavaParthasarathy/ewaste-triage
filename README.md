@@ -48,6 +48,13 @@ from your own teardown: weigh the separated board, apply the $/lb rate for its g
 
 Environment already checked: Python 3.11.5, pandas 2.0.3, scikit-learn 1.3.0 — nothing to install.
 
+## Procedures
+
+- [Component reference release procedure](docs/COMPONENT_REFERENCE_PROCEDURE.md) — review,
+  version, compile, and verify the five read-only assessment templates.
+- [Model training procedure](docs/MODEL_TRAINING_PROCEDURE.md) — collect, train, evaluate,
+  and promote classifier releases without mixing training controls into the user app.
+
 ---
 
 ## Photo-based part breakdown & value (added)
