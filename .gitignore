@@ -7,3 +7,7 @@ __pycache__/
 *.pyc
 .superpowers/
 .worktrees/
+.release-staging/
+build/
+dist/
+*.dmg

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "E-Waste Triage release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "app_version", "model", "components", "target", "created_at", "parity"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "app_version": {"type": "string", "minLength": 1},
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id", "artifact_sha256", "labels_sha256", "schema_version"],
+      "properties": {
+        "model_id": {"type": "string", "minLength": 1},
+        "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "labels_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "schema_version": {"const": 1}
+      }
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "schema_version", "version"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "schema_version": {"const": 1},
+        "version": {"type": "string", "minLength": 1}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["architecture", "minimum_macos"],
+      "properties": {
+        "architecture": {"const": "arm64"},
+        "minimum_macos": {"const": "14.0"}
+      }
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "parity": {"type": "object"}
+  }
+}
