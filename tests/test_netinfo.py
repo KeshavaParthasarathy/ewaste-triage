@@ -122,3 +122,35 @@ def test_print_access_urls_does_not_shell_out_when_open_qr_is_false(monkeypatch,
     # fake ifconfig output instead of launching Preview, so assert on the QR file only.
     print_access_urls(8777, open_qr=False)
     assert (tmp_path / "qr.png").exists()
+
+
+def test_discover_lan_addresses_filters_unsafe_addresses_and_orders_candidates(monkeypatch):
+    class _Address:
+        def __init__(self, family, address):
+            self.family = family
+            self.address = address
+
+    class _Psutil:
+        @staticmethod
+        def net_if_addrs():
+            return {
+                "lo0": [_Address(2, "127.0.0.1"), _Address(30, "::1")],
+                "en2": [_Address(2, "224.0.0.1"), _Address(30, "ff02::1")],
+                "en1": [_Address(2, "0.0.0.0"), _Address(30, "fe80::1%en1")],
+                "en0": [
+                    _Address(30, "fd00::2"),
+                    _Address(2, "192.168.1.20"),
+                    _Address(30, "2606:4700:4700::1111"),
+                    _Address(2, "10.0.0.9"),
+                ],
+            }
+
+    monkeypatch.setattr(netinfo, "_psutil", _Psutil())
+
+    assert netinfo.discover_lan_addresses() == [
+        "10.0.0.9",
+        "192.168.1.20",
+        "2606:4700:4700::1111",
+        "fd00::2",
+    ]
+    assert netinfo.preferred_lan_address() == "10.0.0.9"

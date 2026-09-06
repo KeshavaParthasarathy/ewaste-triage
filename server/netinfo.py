@@ -11,10 +11,62 @@ startup instead of being recorded once.
 
     .venv/bin/python -m server.netinfo
 """
+import ipaddress
 import pathlib
+import socket
 import subprocess
 
+try:
+    import psutil as _psutil
+except ImportError:  # The release dependency is introduced with packaging support.
+    _psutil = None
+
 QR_PATH = pathlib.Path("/tmp/ewaste_triage_qr.png")
+_PRIVATE_IPV4_NETWORKS = (
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+)
+
+
+def discover_lan_addresses() -> list[str]:
+    """Return usable LAN addresses in a deterministic phone-friendly order."""
+    if _psutil is None:
+        return []
+    candidates: set[tuple[int, int, str]] = set()
+    for addresses in _psutil.net_if_addrs().values():
+        for entry in addresses:
+            if entry.family not in {socket.AF_INET, socket.AF_INET6}:
+                continue
+            candidate = _lan_candidate(entry.address)
+            if candidate is not None:
+                candidates.add(candidate)
+    return [address for _, _, address in sorted(candidates)]
+
+
+def preferred_lan_address() -> str | None:
+    """Return the best currently usable LAN address, if one exists."""
+    addresses = discover_lan_addresses()
+    return addresses[0] if addresses else None
+
+
+def _lan_candidate(raw_address: str) -> tuple[int, int, str] | None:
+    literal = raw_address.partition("%")[0]
+    try:
+        address = ipaddress.ip_address(literal)
+    except ValueError:
+        return None
+    if address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified:
+        return None
+    if address.version == 4:
+        if not any(address in network for network in _PRIVATE_IPV4_NETWORKS):
+            return None
+        return 0, int(address), str(address)
+    if address.is_global:
+        return 1, int(address), str(address)
+    if address.is_private:
+        return 2, int(address), str(address)
+    return None
 
 
 def parse_global_ipv6(ifconfig_output):
