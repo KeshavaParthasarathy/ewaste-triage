@@ -1,27 +1,70 @@
-(() => {
+(function (global) {
   "use strict";
 
-  const body = document.body;
-  const token = body.dataset.token;
-  const requireCode = body.dataset.requireCode === "true";
-  const states = ["capture-state", "preview-state", "analyzing-state", "result-state", "expired-state"];
-  const imageInput = document.getElementById("image-input");
-  const pairingCodeGroup = document.getElementById("pairing-code-group");
-  const pairingCode = document.getElementById("pairing-code");
-  const preview = document.getElementById("photo-preview");
-  const uploadForm = document.getElementById("upload-form");
-  const chooseAnother = document.getElementById("choose-another-button");
-  const retryButton = document.getElementById("retry-button");
-  const errorMessage = document.getElementById("error-message");
-  let previewUrl = null;
-  let statusTimer = null;
+  const LABELS = {
+    "0301_computer_mouse": "Computer mouse",
+    "0301_keyboard": "Keyboard",
+    "0303_laptop": "Laptop",
+    "0306_mobile_phone": "Mobile phone",
+    "0401_headphones": "Headphones"
+  };
+
+  function formatCategory(className) {
+    if (!className) return "Unknown device";
+    if (LABELS[className]) return LABELS[className];
+    const plain = String(className).replace(/^\d{4}_/, "").replaceAll("_", " ");
+    return plain.charAt(0).toUpperCase() + plain.slice(1);
+  }
+
+  function presentPrediction(prediction) {
+    const className = prediction.class_name || prediction.label || null;
+    const confidence = Math.max(0, Math.min(1, Number(prediction.confidence) || 0));
+    const candidates = Array.isArray(prediction.topk) ?
+      prediction.topk : prediction.alternatives;
+    const alternatives = Array.isArray(candidates) ? candidates
+      .filter((item) => (item.class_name || item.label) !== className)
+      .slice(0, 2)
+      .map((item) => formatCategory(item.class_name || item.label))
+      .filter((label) => label !== "Unknown device") : [];
+    const percent = `${Math.round(confidence * 100)}%`;
+    return {
+      label: formatCategory(className),
+      confidence: percent,
+      confidence_width: percent,
+      alternatives
+    };
+  }
+
+  function scrollBehavior(reduceMotion) {
+    return reduceMotion ? "auto" : "smooth";
+  }
+
+  function bootstrap(document) {
+    const body = document.body;
+    const token = body.dataset.token;
+    const requireCode = body.dataset.requireCode === "true";
+    const reduceMotion = global.matchMedia &&
+      global.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const states = [
+      "capture-state", "preview-state", "analyzing-state", "result-state", "expired-state"
+    ];
+    const imageInput = document.getElementById("image-input");
+    const pairingCodeGroup = document.getElementById("pairing-code-group");
+    const pairingCode = document.getElementById("pairing-code");
+    const preview = document.getElementById("photo-preview");
+    const uploadForm = document.getElementById("upload-form");
+    const chooseAnother = document.getElementById("choose-another-button");
+    const retryButton = document.getElementById("retry-button");
+    const errorMessage = document.getElementById("error-message");
+    let previewUrl = null;
+    let statusTimer = null;
 
   function showState(id) {
     states.forEach((stateId) => {
       document.getElementById(stateId).hidden = stateId !== id;
     });
     errorMessage.hidden = true;
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    global.scrollTo({ top: 0, behavior: scrollBehavior(reduceMotion) });
   }
 
   function showError(message) {
@@ -45,7 +88,7 @@
 
   function endSession() {
     if (statusTimer) {
-      window.clearInterval(statusTimer);
+      global.clearInterval(statusTimer);
       statusTimer = null;
     }
     clearPreview();
@@ -73,19 +116,15 @@
   }
 
   function renderResult(prediction) {
-    const confidence = Math.max(0, Math.min(1, Number(prediction.confidence) || 0));
-    document.getElementById("result-label").textContent = String(prediction.label || "Unknown device").replaceAll("_", " ");
-    document.getElementById("result-confidence").textContent = `${Math.round(confidence * 100)}%`;
-    document.getElementById("confidence-fill").style.width = `${Math.round(confidence * 100)}%`;
+    const presented = presentPrediction(prediction);
+    document.getElementById("result-label").textContent = presented.label;
+    document.getElementById("result-confidence").textContent = presented.confidence;
+    document.getElementById("confidence-fill").style.width = presented.confidence_width;
 
     const alternatives = document.getElementById("alternatives");
     alternatives.replaceChildren();
-    if (Array.isArray(prediction.alternatives) && prediction.alternatives.length) {
-      const names = prediction.alternatives
-        .slice(0, 2)
-        .map((item) => String(item.label || "").replaceAll("_", " "))
-        .filter(Boolean);
-      if (names.length) alternatives.textContent = `Other possibilities: ${names.join(", ")}`;
+    if (presented.alternatives.length) {
+      alternatives.textContent = `Other possibilities: ${presented.alternatives.join(", ")}`;
     }
     showState("result-state");
   }
@@ -133,7 +172,8 @@
       renderResult(payload.prediction || {});
     } catch (error) {
       showState("preview-state");
-      showError(error instanceof Error ? error.message : "The photo could not be analyzed. Try again.");
+      showError(error instanceof Error ?
+        error.message : "The photo could not be analyzed. Try again.");
     }
   });
 
@@ -147,6 +187,12 @@
     if (document.visibilityState === "visible") checkStatus();
   });
 
-  statusTimer = window.setInterval(checkStatus, 15000);
+  statusTimer = global.setInterval(checkStatus, 15000);
   checkStatus();
-})();
+  }
+
+  const exported = {bootstrap, formatCategory, presentPrediction, scrollBehavior};
+  if (typeof module !== "undefined" && module.exports) module.exports = exported;
+  global.EWastePhoneCapture = exported;
+  if (global.document) bootstrap(global.document);
+})(typeof window !== "undefined" ? window : globalThis);

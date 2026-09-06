@@ -1,5 +1,8 @@
 import io
+import json
+from pathlib import Path
 import struct
+import subprocess
 import zlib
 
 import pytest
@@ -7,6 +10,19 @@ from PIL import Image
 
 from server.phone_app import MAX_UPLOAD_BYTES, create_phone_app
 from server.phone_sessions import PhoneSessionManager
+
+
+PHONE_JAVASCRIPT = Path(__file__).parents[1] / "server" / "static" / "phone.js"
+
+
+def _run_phone_ui_contract(script):
+    completed = subprocess.run(
+        ["node", "-e", script, str(PHONE_JAVASCRIPT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(completed.stdout)
 
 
 class FakeClock:
@@ -59,9 +75,14 @@ def phone_services(sessions):
         image.load()
         classified_images.append(image)
         return {
-            "label": "mouse",
+            "class_name": "0301_computer_mouse",
+            "unu_key": "0301",
             "confidence": 0.93,
-            "alternatives": [{"label": "keyboard", "confidence": 0.05}],
+            "low_confidence": False,
+            "topk": [
+                {"class_name": "0301_computer_mouse", "confidence": 0.93},
+                {"class_name": "0301_keyboard", "confidence": 0.05},
+            ],
         }
 
     app = create_phone_app(sessions, classify_image, received_results.append)
@@ -95,7 +116,7 @@ def test_active_token_can_open_page_and_upload_normalized_jpeg(
     )
 
     assert result.status_code == 200
-    assert result.get_json()["prediction"]["label"] == "mouse"
+    assert result.get_json()["prediction"]["class_name"] == "0301_computer_mouse"
     _, classified_images, received_results = phone_services
     assert received_results == [result.get_json()["prediction"]]
     assert classified_images[0].mode == "RGB"
@@ -306,3 +327,34 @@ def test_phone_page_has_local_accessible_capture_states(client, active_session):
     assert "fetch(" in javascript
     assert "https://" not in html + css + javascript
     assert "http://" not in html + css + javascript
+
+
+def test_phone_result_presenter_consumes_production_classifier_schema():
+    result = _run_phone_ui_contract(r"""
+const PhoneUI = require(process.argv[1]);
+const presented = PhoneUI.presentPrediction({
+  class_name: "0301_computer_mouse",
+  confidence: 0.934,
+  topk: [
+    {class_name: "0301_computer_mouse", confidence: 0.934},
+    {class_name: "0301_keyboard", confidence: 0.041},
+    {class_name: "0303_laptop", confidence: 0.025}
+  ]
+});
+process.stdout.write(JSON.stringify({
+  presented,
+  reducedScroll: PhoneUI.scrollBehavior(true),
+  standardScroll: PhoneUI.scrollBehavior(false)
+}));
+""")
+
+    assert result == {
+        "presented": {
+            "label": "Computer mouse",
+            "confidence": "93%",
+            "confidence_width": "93%",
+            "alternatives": ["Keyboard", "Laptop"],
+        },
+        "reducedScroll": "auto",
+        "standardScroll": "smooth",
+    }
