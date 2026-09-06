@@ -263,7 +263,9 @@
                       <p class="field-help" id="known-issues-help">Reported safety issues trigger specialist guidance for safety-sensitive components.</p>
                       <label class="known-issue-notes" for="assessment-issue-notes">
                         <span>Other observed issue (optional)</span>
-                        <textarea id="assessment-issue-notes" name="issue_notes" maxlength="500" rows="3"></textarea>
+                        <textarea id="assessment-issue-notes" name="issue_notes" rows="3"
+                                  data-max-code-points="500" aria-describedby="known-issue-notes-help"></textarea>
+                        <small id="known-issue-notes-help">Up to 500 characters.</small>
                       </label>
                     </fieldset>
                   </div>

@@ -845,6 +845,123 @@ const controller = UI.createController({
     assert result["finalCategory"] == "0301_keyboard"
 
 
+def test_newer_correction_supersedes_an_inflight_assessment_save_confirmation():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const requests = [];
+let resolveSaveConfirmation, resolveLatestConfirmation;
+const prediction = {
+  class_name: '0306_mobile_phone', confidence: .91,
+  topk: [
+    {class_name: '0306_mobile_phone', confidence: .91},
+    {class_name: '0303_laptop', confidence: .05},
+    {class_name: '0301_keyboard', confidence: .04}
+  ]
+};
+const categories = prediction.topk.map(item => ({category_id: item.class_name}));
+const template = {category_id: '0306_mobile_phone', display_name: 'Mobile phone', template_version: '1.0.0', components: [], rules: []};
+const record = category => ({
+  scan_id: 'mixed-scan', prediction,
+  confirmation: {accepted_class_name: category, source: 'user'}
+});
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {}, renderHistory() {},
+  markHistoryDeleting() {}, showSection() {}, clearPreview() {}, renderCorrection() {},
+  setAssessmentState() {}, setAssessmentBusy() {}, clearAssessmentFormError() {},
+  showAssessmentFormError() {}, renderAssessmentDraft() {}, renderAssessment() {},
+  readAssessmentForm() { return {age_months: null, cycle_count: null, usage: 'unknown', condition: 'unknown', operational: 'working', known_issues: {}, component_overrides: {}}; },
+  getAssessmentCategory() { return '0303_laptop'; }
+};
+const fetchImpl = (url, options = {}) => {
+  const method = options.method || 'GET';
+  requests.push([url, method, options.body ? JSON.parse(options.body) : null]);
+  if (url === '/api/v1/reference/categories') return Promise.resolve({ok: true, json: async () => categories});
+  if (url === '/api/v1/scans/mixed-scan/assessment' && method === 'GET') {
+    return Promise.resolve({ok: false, status: 409, json: async () => ({error: 'confirm category'})});
+  }
+  if (url === '/api/v1/reference/categories/0306_mobile_phone') {
+    return Promise.resolve({ok: true, json: async () => template});
+  }
+  if (url === '/api/v1/history/mixed-scan/confirmation') {
+    const category = JSON.parse(options.body).accepted_class_name;
+    if (category === '0303_laptop') {
+      return new Promise(resolve => { resolveSaveConfirmation = () => resolve({ok: true, json: async () => record(category)}); });
+    }
+    return new Promise(resolve => { resolveLatestConfirmation = () => resolve({ok: true, json: async () => record(category)}); });
+  }
+  if (url === '/api/v1/scans/mixed-scan/assessment' && method === 'PUT') {
+    return Promise.resolve({ok: true, json: async () => ({category_id: '0303_laptop'})});
+  }
+  throw new Error('unexpected request ' + url);
+};
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => ''});
+(async () => {
+  controller.openHistory({scan_id: 'mixed-scan', prediction});
+  await controller.openAssessment();
+  const save = controller.saveAssessment({});
+  await new Promise(resolve => setImmediate(resolve));
+  controller.selectAlternative({class_name: '0301_keyboard'});
+  resolveSaveConfirmation();
+  const saved = await save;
+  await new Promise(resolve => setImmediate(resolve));
+  resolveLatestConfirmation();
+  await new Promise(resolve => setImmediate(resolve));
+  process.stdout.write(JSON.stringify({saved, requests, context: controller.getAssessmentContext()}));
+})();
+""")
+
+    assert result["saved"] is False
+    assert [
+        request[2]["accepted_class_name"]
+        for request in result["requests"]
+        if request[0].endswith("/confirmation")
+    ] == ["0303_laptop", "0301_keyboard"]
+    assert not any(
+        request[0].endswith("/assessment") and request[1] == "PUT"
+        for request in result["requests"]
+    )
+    assert result["context"]["confirmed_class_name"] == "0301_keyboard"
+
+
+def test_failed_latest_confirmation_restores_and_renders_last_committed_category():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const corrections = [], errors = [];
+const prediction = {
+  class_name: '0306_mobile_phone', confidence: .9,
+  topk: [
+    {class_name: '0306_mobile_phone', confidence: .9},
+    {class_name: '0303_laptop', confidence: .06},
+    {class_name: '0301_keyboard', confidence: .04}
+  ]
+};
+const view = {
+  transition() {}, setBusy() {}, showPreview() {}, renderInfluence() {}, renderHistory() {},
+  markHistoryDeleting() {}, showSection() {}, clearPreview() {},
+  renderCorrection(value) { corrections.push(value.confirmed_class_name); },
+  renderHistoryError(message) { errors.push(message); }
+};
+const fetchImpl = () => Promise.resolve({
+  ok: false, status: 503, json: async () => ({error: 'disk unavailable'})
+});
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => ''});
+(async () => {
+  controller.openHistory({
+    scan_id: 'failed-scan', prediction,
+    confirmation: {accepted_class_name: '0303_laptop', source: 'user'}
+  });
+  controller.selectAlternative({class_name: '0301_keyboard'});
+  await new Promise(resolve => setImmediate(resolve));
+  process.stdout.write(JSON.stringify({corrections, errors, context: controller.getAssessmentContext()}));
+})();
+""")
+
+    assert result["corrections"] == ["0301_keyboard", "0303_laptop"]
+    assert len(result["errors"]) == 1
+    assert "not saved" in result["errors"][0]
+    assert result["context"]["confirmed_class_name"] == "0303_laptop"
+
+
 def test_reset_suppresses_obsolete_confirmation_error_reporting():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);

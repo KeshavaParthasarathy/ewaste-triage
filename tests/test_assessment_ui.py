@@ -173,7 +173,8 @@ def test_assessment_form_exposes_supported_item_and_component_inputs():
         assert attrs["type"] == "checkbox"
     notes_tag, notes_attrs = controls["assessment-issue-notes"]
     assert notes_tag == "textarea"
-    assert notes_attrs["maxlength"] == "500"
+    assert "maxlength" not in notes_attrs
+    assert notes_attrs["data-max-code-points"] == "500"
     assert controls["assessment-safety-list"][1]["aria-live"] == "polite"
     assert controls["save-assessment"][0] == "button"
     feedback_tag, feedback_attrs = controls["assessment-save-feedback"]
@@ -282,6 +283,30 @@ process.stdout.write(JSON.stringify({accepted: attempt('😀'.repeat(500)), reje
 
     assert result["accepted"]["notes"] == "😀" * 500
     assert "500" in result["rejected"]["error"]
+
+
+def test_known_issue_notes_control_validity_counts_astral_characters_as_code_points():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const control = {
+  value: '', message: null, attributes: {},
+  setCustomValidity(message) { this.message = message; },
+  setAttribute(name, value) { this.attributes[name] = String(value); },
+  removeAttribute(name) { delete this.attributes[name]; }
+};
+control.value = '😀'.repeat(500);
+const accepted = UI.validateKnownIssueNotesControl(control);
+const acceptedState = {message: control.message, invalid: control.attributes['aria-invalid'] || null};
+control.value = '😀'.repeat(501);
+const rejected = UI.validateKnownIssueNotesControl(control);
+process.stdout.write(JSON.stringify({accepted, acceptedState, rejected, message: control.message, invalid: control.attributes['aria-invalid']}));
+""")
+
+    assert result["accepted"] is True
+    assert result["acceptedState"] == {"message": "", "invalid": None}
+    assert result["rejected"] is False
+    assert "500" in result["message"]
+    assert result["invalid"] == "true"
 
 
 def test_lifecycle_payload_supports_capacity_and_clears_disabled_dependents():

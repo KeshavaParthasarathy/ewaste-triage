@@ -121,6 +121,33 @@ def test_initial_assessment_computation_failure_leaves_no_empty_record(tmp_path)
     assert store.get_assessment(scan_id) is None
 
 
+@pytest.mark.parametrize(
+    ("payload", "expected_status"),
+    [
+        ({"usage": "not-a-supported-value"}, 400),
+        ({"known_issues": {"notes": "x" * 501}}, 422),
+        ({"known_issues": {"overheating": 1}}, 400),
+        ({"component_overrides": {"not-in-template": {}}}, 400),
+    ],
+)
+def test_invalid_first_assessment_update_does_not_create_a_default_snapshot(
+    tmp_path, payload, expected_status
+):
+    client, store, _, scan_id = make_client(tmp_path)
+    client.put(
+        f"/api/v1/history/{scan_id}/confirmation",
+        json={"accepted_class_name": "0306_mobile_phone"},
+    )
+
+    response = client.put(
+        f"/api/v1/scans/{scan_id}/assessment",
+        json=payload,
+    )
+
+    assert response.status_code == expected_status
+    assert store.get_assessment(scan_id) is None
+
+
 def test_repairable_legacy_empty_assessment_is_never_exposed(tmp_path):
     client, store, _, scan_id = make_client(tmp_path)
     client.put(

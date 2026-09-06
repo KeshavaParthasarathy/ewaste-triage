@@ -28,6 +28,7 @@
     swelling_or_battery_damage: "Swelling or battery damage",
     recall: "Known recall"
   };
+  const MAX_KNOWN_ISSUE_NOTES_CODE_POINTS = 500;
 
   function isSupportedImage(file) {
     if (!file || !file.name) return false;
@@ -85,8 +86,10 @@
       value === "on" || value === "1";
     const issueNotes = values.issue_notes === undefined || values.issue_notes === null ?
       "" : String(values.issue_notes).trim();
-    if (Array.from(issueNotes).length > 500) {
-      throw new Error("Known-issue notes must be 500 characters or fewer.");
+    if (Array.from(issueNotes).length > MAX_KNOWN_ISSUE_NOTES_CODE_POINTS) {
+      throw new Error(
+        `Known-issue notes must be ${MAX_KNOWN_ISSUE_NOTES_CODE_POINTS} characters or fewer.`
+      );
     }
     const payload = {
       age_months: rangeFromValues(values.age_min, values.age_max, "Age"),
@@ -136,6 +139,22 @@
       if (Object.keys(override).length) payload.component_overrides[componentId] = override;
     }
     return payload;
+  }
+
+  function validateKnownIssueNotesControl(control) {
+    const value = String((control && control.value) || "").trim();
+    const valid = Array.from(value).length <= MAX_KNOWN_ISSUE_NOTES_CODE_POINTS;
+    const message = valid ? "" :
+      `Known-issue notes must be ${MAX_KNOWN_ISSUE_NOTES_CODE_POINTS} characters or fewer.`;
+    if (control && typeof control.setCustomValidity === "function") {
+      control.setCustomValidity(message);
+    }
+    if (control && valid && typeof control.removeAttribute === "function") {
+      control.removeAttribute("aria-invalid");
+    } else if (control && !valid && typeof control.setAttribute === "function") {
+      control.setAttribute("aria-invalid", "true");
+    }
+    return valid;
   }
 
   function rangeWithUnit(value, unit) {
@@ -348,10 +367,10 @@
       return null;
     }
 
-    function consumeConfirmationRecord(record, requestedCategoryId) {
+    function confirmationResult(record, requestedCategoryId, baseResult = activeResult) {
       const prediction = record && record.prediction ? record.prediction : {};
       const confirmation = record && record.confirmation ? record.confirmation : {};
-      const current = activeResult || {};
+      const current = baseResult || {};
       const modelClassName = prediction.class_name || current.model_class_name || current.class_name;
       const modelConfidence = prediction.confidence === undefined ?
         current.model_confidence : prediction.confidence;
@@ -368,7 +387,11 @@
         merged,
         merged.confirmed_class_name
       );
-      activeResult = withModelEvidence(merged);
+      return withModelEvidence(merged);
+    }
+
+    function consumeConfirmationRecord(record, requestedCategoryId) {
+      activeResult = confirmationResult(record, requestedCategoryId);
       return activeResult;
     }
 
@@ -384,10 +407,31 @@
           inFlightPromise: null,
           pending: null,
           latestCategory: null,
+          committedResult: null,
           idleWaiters: []
         });
       }
       return confirmationWriters.get(scanId);
+    }
+
+    function seedConfirmationWriter(scanId, result) {
+      const writer = confirmationWriter(scanId);
+      if (!writer.committedResult && result) {
+        writer.committedResult = {...result};
+      }
+      return writer;
+    }
+
+    function renderCommittedConfirmation(result) {
+      if (!result) return;
+      if (
+        result.confirmation_source === "user" &&
+        typeof view.renderCorrection === "function"
+      ) {
+        view.renderCorrection(result, false);
+      } else if (typeof view.transition === "function") {
+        view.transition(result.low_confidence ? "review" : "result", result);
+      }
     }
 
     function drainConfirmationWriter(writer) {
@@ -400,20 +444,25 @@
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({accepted_class_name: entry.categoryId})
       }).then(record => {
-        if (
+        writer.committedResult = confirmationResult(
+          record,
+          entry.categoryId,
+          writer.committedResult
+        );
+        const isLatestWrite =
           !writer.pending &&
-          writer.latestCategory === entry.categoryId &&
+          writer.latestCategory === entry.categoryId;
+        if (
+          isLatestWrite &&
           activeResult &&
           entry.generation === generation &&
           activeResult.scan_id === writer.scanId &&
           activeResult.confirmed_class_name === entry.categoryId
         ) {
-          consumeConfirmationRecord(record, entry.categoryId);
-          if (typeof view.renderCorrection === "function") {
-            view.renderCorrection(activeResult, false);
-          }
+          activeResult = {...writer.committedResult};
+          renderCommittedConfirmation(activeResult);
         }
-        entry.waiters.forEach(waiter => waiter.resolve(record));
+        entry.waiters.forEach(waiter => waiter.resolve(isLatestWrite ? record : false));
       }).catch(error => {
         entry.waiters.forEach(waiter => waiter.reject(error));
         if (
@@ -423,6 +472,17 @@
           activeResult &&
           activeResult.scan_id === writer.scanId &&
           activeResult.confirmed_class_name === entry.categoryId &&
+          writer.committedResult
+        ) {
+          activeResult = {...writer.committedResult};
+          renderCommittedConfirmation(activeResult);
+        }
+        if (
+          !writer.pending &&
+          writer.latestCategory === entry.categoryId &&
+          entry.generation === generation &&
+          activeResult &&
+          activeResult.scan_id === writer.scanId &&
           typeof view.renderHistoryError === "function"
         ) {
           view.renderHistoryError(`The category change was not saved: ${error.message}`);
@@ -438,7 +498,10 @@
     }
 
     function persistConfirmation(scanId, categoryId) {
-      const writer = confirmationWriter(scanId);
+      const writer = seedConfirmationWriter(
+        scanId,
+        activeResult && activeResult.scan_id === scanId ? activeResult : null
+      );
       writer.latestCategory = categoryId;
       return new Promise((resolve, reject) => {
         const waiter = {resolve, reject};
@@ -933,6 +996,10 @@
         confirmation_source: confirmation.source
       });
       activeResult = modelResult;
+      const writer = confirmationWriter(record.scan_id);
+      if (!writer.inFlight && !writer.pending) {
+        writer.committedResult = {...activeResult};
+      }
       view.showSection("scan");
       view.clearPreview("The source image is unavailable for this history record.");
       view.transition(prediction.low_confidence ? "review" : "result", activeResult);
@@ -950,6 +1017,9 @@
         item => item.class_name === candidate.class_name
       );
       if (!selected || selected.class_name === activeResult.model_class_name) return false;
+      if (activeResult.scan_id) {
+        seedConfirmationWriter(activeResult.scan_id, activeResult);
+      }
       activeResult = {
         ...activeResult,
         confirmed_class_name: selected.class_name,
@@ -1813,8 +1883,10 @@
     document.getElementById("open-assessment").addEventListener("click", () => void controller.openAssessment());
     document.getElementById("retry-assessment").addEventListener("click", () => void controller.openAssessment());
     const assessmentForm = document.getElementById("assessment-form");
+    const knownIssueNotes = document.getElementById("assessment-issue-notes");
     assessmentForm.addEventListener("submit", event => {
       event.preventDefault();
+      validateKnownIssueNotesControl(knownIssueNotes);
       if (assessmentForm.reportValidity()) void controller.saveAssessment(assessmentForm);
     });
     assessmentForm.addEventListener("change", event => {
@@ -1825,6 +1897,9 @@
       }
     });
     assessmentForm.addEventListener("input", event => {
+      if (event.target.id === "assessment-issue-notes") {
+        validateKnownIssueNotesControl(event.target);
+      }
       if (event.target.id !== "assessment-category") controller.markAssessmentEditing();
     });
     document.getElementById("clear-history").addEventListener("click", () => {
@@ -1845,7 +1920,8 @@
     createDomView,
     formatCategory,
     historyPresentation,
-    isSupportedImage
+    isSupportedImage,
+    validateKnownIssueNotesControl
   };
   if (typeof module !== "undefined" && module.exports) module.exports = exported;
   global.EWasteTriage = exported;

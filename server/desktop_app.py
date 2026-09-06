@@ -309,7 +309,7 @@ def create_desktop_app(
             outputs.append({**component, "result": result_json(app.config["LIFECYCLE_ASSESSOR"](component, inputs))})
         return outputs
 
-    def assessment_for(scan_id, repair_attempted=False):
+    def assessment_for(scan_id, repair_attempted=False, initial_payload=None):
         store = app.config["HISTORY_STORE"]
         if store is None or store.get_scan(scan_id) is None:
             return None, assessment_error("scan not found", 404)
@@ -348,7 +348,11 @@ def create_desktop_app(
                     raise ValueError("legacy assessment cannot be completed")
             except AssessmentConflictError:
                 if not repair_attempted:
-                    return assessment_for(scan_id, repair_attempted=True)
+                    return assessment_for(
+                        scan_id,
+                        repair_attempted=True,
+                        initial_payload=initial_payload,
+                    )
                 return None, assessment_error(
                     "stored assessment changed while it was being repaired", 409
                 )
@@ -368,7 +372,18 @@ def create_desktop_app(
         except (sqlite3.Error, ValueError, RuntimeError):
             return None, assessment_error("component reference data is unavailable", 503)
         try:
-            payload = validate_payload({})
+            payload = (
+                initial_payload
+                if initial_payload is not None
+                else validate_payload({})
+            )
+            known_components = {
+                component["component_id"] for component in template["components"]
+            }
+            if set(payload["component_overrides"]) - known_components:
+                return None, assessment_error(
+                    "component override does not belong to the stored template", 400
+                )
             components = computed_components(template, payload)
             assessment = store.create_assessment(
                 scan_id,
@@ -386,7 +401,7 @@ def create_desktop_app(
         if assessment is None:
             return None, assessment_error("scan not found", 404)
         if not assessment.get("components"):
-            return assessment_for(scan_id)
+            return assessment_for(scan_id, initial_payload=initial_payload)
         return assessment, None
 
     @app.errorhandler(RequestEntityTooLarge)
@@ -761,15 +776,15 @@ def create_desktop_app(
 
     @app.put("/api/v1/scans/<scan_id>/assessment")
     def update_assessment(scan_id):
-        assessment, error = assessment_for(scan_id)
-        if error is not None:
-            return error
         try:
             payload = validate_payload(request.get_json(silent=True))
         except OverflowError as exc:
             return assessment_error(str(exc), 422)
         except ValueError as exc:
             return assessment_error(str(exc), 400)
+        assessment, error = assessment_for(scan_id, initial_payload=payload)
+        if error is not None:
+            return error
         store = app.config["HISTORY_STORE"]
         known_components = {component["component_id"] for component in assessment["template"]["components"]}
         unknown_components = set(payload["component_overrides"]) - known_components
