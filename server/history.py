@@ -16,6 +16,10 @@ from PIL import Image
 _MANAGED_MEDIA_NAME = re.compile(r"^[0-9a-f]{32}-(?:thumbnail|original)\.jpg$")
 
 
+class AssessmentConflictError(RuntimeError):
+    pass
+
+
 class HistoryStore:
     """Persist scan metadata and remove only media owned by this store."""
 
@@ -170,19 +174,24 @@ class HistoryStore:
 
     def set_confirmation(self, scan_id: str, accepted_class_name: str):
         """Store a user choice separately from the immutable model prediction."""
-        record = self.get_scan(scan_id)
-        if record is None:
-            return None
-        offered = {item.get("class_name") for item in record["prediction"].get("topk", [])}
-        if accepted_class_name not in offered:
-            return False
         confirmation = {"accepted_class_name": accepted_class_name, "source": "user"}
         with closing(self._connect()) as connection:
-            with connection:
-                connection.execute(
-                    "UPDATE scans SET confirmation_json = ? WHERE scan_id = ?",
-                    (json.dumps(confirmation, separators=(",", ":"), sort_keys=True), scan_id),
-                )
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT prediction_json FROM scans WHERE scan_id = ?", (scan_id,)).fetchone()
+            if row is None:
+                connection.rollback()
+                return None
+            prediction = json.loads(row["prediction_json"])
+            offered = {item.get("class_name") for item in prediction.get("topk", [])}
+            if accepted_class_name not in offered:
+                connection.rollback()
+                return False
+            assessment = connection.execute("SELECT category_id FROM assessments WHERE scan_id = ?", (scan_id,)).fetchone()
+            if assessment is not None and assessment["category_id"] != accepted_class_name:
+                connection.rollback()
+                raise AssessmentConflictError("assessment category is immutable")
+            connection.execute("UPDATE scans SET confirmation_json = ? WHERE scan_id = ?", (json.dumps(confirmation, separators=(",", ":"), sort_keys=True), scan_id))
+            connection.commit()
         return self.get_scan(scan_id)
 
     @staticmethod
@@ -203,9 +212,14 @@ class HistoryStore:
         if not isinstance(category_id, str) or not isinstance(template_version, str):
             raise ValueError("template requires category_id and template_version")
         with closing(self._connect()) as connection:
-            with connection:
-                if connection.execute("SELECT 1 FROM scans WHERE scan_id = ?", (scan_id,)).fetchone() is None:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                scan = connection.execute("SELECT confirmation_json FROM scans WHERE scan_id = ?", (scan_id,)).fetchone()
+                if scan is None:
                     return None
+                confirmation = json.loads(scan["confirmation_json"]) if scan["confirmation_json"] else None
+                if confirmation is None or confirmation.get("accepted_class_name") != category_id:
+                    raise AssessmentConflictError("confirmed category changed before snapshot creation")
                 existing = connection.execute(
                     "SELECT assessment_json FROM assessments WHERE scan_id = ?", (scan_id,)
                 ).fetchone()
@@ -225,6 +239,10 @@ class HistoryStore:
                     "INSERT INTO assessments(scan_id, category_id, template_version, assessment_json, updated_at) VALUES (?, ?, ?, ?, ?)",
                     (scan_id, category_id, template_version, self._canonical_json(assessment), updated_at),
                 )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
         return assessment
 
     def update_assessment(

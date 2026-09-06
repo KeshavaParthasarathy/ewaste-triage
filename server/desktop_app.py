@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from collections.abc import Mapping
+import math
+import sqlite3
 
 import numpy as np
 from flask import Flask, jsonify, request, send_from_directory
@@ -13,6 +15,7 @@ from PIL import Image, UnidentifiedImageError
 from server.explanations import ActiveSourceImageStore, occlusion_map
 from server.imaging import ImageTooLarge, inference_crop, normalize_image
 from server.lifecycle import AssessmentInputs, Condition, OperationalState, Range, Usage, assess_component
+from server.history import AssessmentConflictError
 
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
@@ -56,7 +59,8 @@ def create_desktop_app(
         minimum, maximum = value["minimum"], value["maximum"]
         if type(minimum) is not int or type(maximum) is not int:
             raise ValueError(f"{name} bounds must be integers")
-        if minimum < 0 or maximum < minimum or maximum > 1_000_000:
+        maximum_allowed = 1_200 if name == "age_months" else 10_000_000
+        if minimum < 0 or maximum < minimum or maximum > maximum_allowed:
             raise OverflowError(f"{name} bounds are reversed or outside accepted bounds")
         return {"minimum": minimum, "maximum": maximum}
 
@@ -82,7 +86,7 @@ def create_desktop_app(
         if not isinstance(overrides, Mapping):
             raise ValueError("component_overrides must be an object")
         clean_overrides = {}
-        allowed_override = {"presence_label", "condition", "operational", "lifecycle", "safety_sensitive"}
+        allowed_override = {"presence_label", "condition", "lifecycle"}
         for component_id, override in overrides.items():
             if not isinstance(component_id, str) or not component_id or not isinstance(override, Mapping):
                 raise ValueError("component overrides must use component IDs and object values")
@@ -91,24 +95,36 @@ def create_desktop_app(
             clean = dict(override)
             if "presence_label" in clean and clean["presence_label"] not in {"standard", "common", "optional", "unknown"}:
                 raise ValueError("invalid component presence_label")
-            for name, enum in (("condition", Condition), ("operational", OperationalState)):
+            for name, enum in (("condition", Condition),):
                 if name in clean:
                     try:
                         clean[name] = enum(clean[name]).value
                     except (TypeError, ValueError) as exc:
                         raise ValueError(f"invalid component {name}") from exc
-            if "safety_sensitive" in clean and type(clean["safety_sensitive"]) is not bool:
-                raise ValueError("component safety_sensitive must be boolean")
             if "lifecycle" in clean:
                 lifecycle = clean["lifecycle"]
-                if not isinstance(lifecycle, Mapping) or set(lifecycle) - {"metric", "minimum", "maximum", "capacity_percent"} or not {"metric", "minimum", "maximum"} <= set(lifecycle):
+                allowed_lifecycle = {"metric", "minimum", "maximum", "capacity_percent", "source_ids", "evidence_grade", "reviewed_on"}
+                required_lifecycle = {"metric", "minimum", "maximum", "source_ids", "evidence_grade", "reviewed_on"}
+                if not isinstance(lifecycle, Mapping) or set(lifecycle) - allowed_lifecycle or not required_lifecycle <= set(lifecycle):
                     raise ValueError("component lifecycle must be a supported mapping")
                 if lifecycle["metric"] not in {"years", "cycles", "cycles_to_capacity"}:
                     raise ValueError("unsupported component lifecycle metric")
                 if type(lifecycle["minimum"]) is not int or type(lifecycle["maximum"]) is not int:
                     raise ValueError("component lifecycle bounds must be integers")
-                if lifecycle["minimum"] <= 0 or lifecycle["maximum"] < lifecycle["minimum"]:
+                maximum_lifetime = 200 if lifecycle["metric"] == "years" else 10_000_000
+                if lifecycle["minimum"] <= 0 or lifecycle["maximum"] < lifecycle["minimum"] or lifecycle["maximum"] > maximum_lifetime:
                     raise OverflowError("component lifecycle bounds are reversed or outside accepted bounds")
+                has_capacity = "capacity_percent" in lifecycle
+                if lifecycle["metric"] == "cycles_to_capacity" and not has_capacity:
+                    raise ValueError("cycles_to_capacity requires capacity_percent")
+                if lifecycle["metric"] != "cycles_to_capacity" and has_capacity:
+                    raise ValueError("capacity_percent is only valid for cycles_to_capacity")
+                if has_capacity and (type(lifecycle["capacity_percent"]) is not int or not 1 <= lifecycle["capacity_percent"] <= 100):
+                    raise OverflowError("capacity_percent is outside accepted bounds")
+                if not isinstance(lifecycle["source_ids"], list) or not lifecycle["source_ids"] or not all(isinstance(item, str) and item for item in lifecycle["source_ids"]):
+                    raise ValueError("component lifecycle requires source_ids")
+                if not isinstance(lifecycle["evidence_grade"], str) or not lifecycle["evidence_grade"] or not isinstance(lifecycle["reviewed_on"], str) or not lifecycle["reviewed_on"]:
+                    raise ValueError("component lifecycle requires evidence metadata")
             clean_overrides[component_id] = clean
         result["component_overrides"] = clean_overrides
         return result
@@ -130,6 +146,11 @@ def create_desktop_app(
             override = payload["component_overrides"].get(original["component_id"], {})
             component = dict(original)
             component.update({key: value for key, value in override.items() if key not in {"condition", "operational"}})
+            if isinstance(component.get("lifecycle"), Mapping):
+                component["lifecycle"] = {
+                    **component["lifecycle"],
+                    "source_ids": component["lifecycle"].get("source_ids", component.get("source_ids", [])),
+                }
             inputs = AssessmentInputs(
                 age_months=Range(**age) if age else None,
                 cycle_count=Range(**cycles) if cycles else None,
@@ -159,7 +180,12 @@ def create_desktop_app(
             template = refs.snapshot(category_id)
         except KeyError:
             return None, assessment_error("no component template is available for the confirmed category", 404)
-        assessment = store.create_assessment(scan_id, template)
+        except (sqlite3.Error, ValueError, RuntimeError):
+            return None, assessment_error("component reference data is unavailable", 503)
+        try:
+            assessment = store.create_assessment(scan_id, template)
+        except AssessmentConflictError:
+            return None, assessment_error("confirmed category changed before assessment creation", 409)
         if not assessment["components"]:
             payload = validate_payload(assessment["inputs"])
             assessment = store.update_assessment(
@@ -312,10 +338,10 @@ def create_desktop_app(
         store = app.config["HISTORY_STORE"]
         if not isinstance(accepted, str) or store is None:
             return jsonify({"error": "accepted category was not offered by the model"}), 400
-        assessment = store.get_assessment(scan_id)
-        if assessment is not None and assessment["category_id"] != accepted:
+        try:
+            record = store.set_confirmation(scan_id, accepted)
+        except AssessmentConflictError:
             return jsonify({"error": "an existing assessment keeps its confirmed category"}), 409
-        record = store.set_confirmation(scan_id, accepted)
         if record is None:
             return jsonify({"error": "scan not found"}), 404
         if record is False:

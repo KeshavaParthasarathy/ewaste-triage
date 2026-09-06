@@ -25,6 +25,7 @@ PREDICTION = {
 def test_assessment_snapshot_is_versioned_and_survives_store_reopen(tmp_path):
     store = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media")
     scan_id = store.add_scan(PREDICTION, Image.new("RGB", (10, 10)), retain_original=False, original=None)
+    store.set_confirmation(scan_id, "0306_mobile_phone")
     template = {
         "category_id": "0306_mobile_phone",
         "template_version": "1.0.0",

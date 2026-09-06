@@ -74,20 +74,20 @@ def build_desktop_app(paths: AppPaths):
     """Assemble the local Flask service from immutable resources and local data."""
     from server.desktop_app import create_desktop_app
 
+    references = None
     try:
         classifier = OnnxClassifier(paths.model_bundle_dir)
         references = ReferenceStore(paths.reference_database_path)
-    except (ModelBundleError, OSError, ValueError, *_ONNX_STARTUP_ERRORS) as exc:
+        app = create_desktop_app(
+            classifier=classifier,
+            history_store=HistoryStore(paths.history_database_path, paths.history_media_dir),
+            static_dir=paths.static_dir,
+            reference_store=references,
+        )
+    except Exception as exc:
+        if references is not None:
+            references.close()
         raise ModelStartupError(_read_model_diagnostic(paths.model_bundle_dir)) from exc
-    app = create_desktop_app(
-        classifier=classifier,
-        history_store=HistoryStore(
-            paths.history_database_path,
-            paths.history_media_dir,
-        ),
-        static_dir=paths.static_dir,
-        reference_store=references,
-    )
     app.extensions["close_reference_store"] = references.close
     return app
 
@@ -121,8 +121,8 @@ def run(*, webview_module=webview, paths: AppPaths | None = None) -> int:
             model_diagnostic=str(exc),
         )
     server = ServerThread(app)
-    url = server.start_and_wait()
     try:
+        url = server.start_and_wait()
         webview_module.create_window("E-Waste Triage", url, min_size=(760, 620))
         webview_module.start(debug=False)
         return 0

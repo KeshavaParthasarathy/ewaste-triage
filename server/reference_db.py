@@ -9,6 +9,7 @@ import math
 import os
 import sqlite3
 import tempfile
+import threading
 from collections.abc import Mapping
 from contextlib import closing
 from pathlib import Path
@@ -400,7 +401,8 @@ class ReferenceStore:
 
     def __init__(self, database_path: Path):
         path = Path(database_path).resolve()
-        self._connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        self._lock = threading.RLock()
+        self._connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA query_only = ON")
         self._manifest = ReferenceManifest(
@@ -408,7 +410,8 @@ class ReferenceStore:
         )
 
     def _metadata(self, key: str) -> str:
-        row = self._connection.execute("SELECT value FROM metadata WHERE key = ?", (key,)).fetchone()
+        with self._lock:
+            row = self._connection.execute("SELECT value FROM metadata WHERE key = ?", (key,)).fetchone()
         if row is None:
             raise ValueError(f"component reference database is missing {key!r} metadata")
         return row["value"]
@@ -418,9 +421,10 @@ class ReferenceStore:
         return self._manifest
 
     def list_categories(self) -> list[dict[str, Any]]:
-        rows = self._connection.execute(
-            "SELECT category_id, display_name, template_version, handling_note, source_ids_json FROM categories ORDER BY category_id"
-        ).fetchall()
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT category_id, display_name, template_version, handling_note, source_ids_json FROM categories ORDER BY category_id"
+            ).fetchall()
         return [
             {"category_id": row["category_id"], "display_name": row["display_name"], "template_version": row["template_version"],
              "handling_note": row["handling_note"], "source_ids": json.loads(row["source_ids_json"])}
@@ -428,9 +432,10 @@ class ReferenceStore:
         ]
 
     def get_category(self, category_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT category_id, display_name, template_version, handling_note, source_ids_json FROM categories WHERE category_id = ?", (category_id,)
-        ).fetchone()
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT category_id, display_name, template_version, handling_note, source_ids_json FROM categories WHERE category_id = ?", (category_id,)
+            ).fetchone()
         if row is None:
             return None
         return {"category_id": row["category_id"], "display_name": row["display_name"], "template_version": row["template_version"],
@@ -440,16 +445,17 @@ class ReferenceStore:
         category = self.get_category(category_id)
         if category is None:
             raise KeyError(category_id)
-        component_rows = self._connection.execute(
+        with self._lock:
+            component_rows = self._connection.execute(
             """SELECT cc.component_id, c.display_name, cc.presence_label, cc.lifecycle_json,
                       cc.source_ids_json, cc.evidence_grade, cc.reviewed_on, cc.safety_sensitive, cc.notes_json
                FROM category_components cc JOIN components c USING (component_id)
                WHERE cc.category_id = ? ORDER BY cc.ordinal""",
             (category_id,),
-        ).fetchall()
-        rules = self._connection.execute(
-            "SELECT rule_id, text, source_ids_json, evidence_grade, reviewed_on FROM rules WHERE category_id = ? ORDER BY rule_id", (category_id,)
-        ).fetchall()
+            ).fetchall()
+            rules = self._connection.execute(
+                "SELECT rule_id, text, source_ids_json, evidence_grade, reviewed_on FROM rules WHERE category_id = ? ORDER BY rule_id", (category_id,)
+            ).fetchall()
         return {
             **category,
             "schema_version": self.manifest.schema_version,
@@ -468,7 +474,8 @@ class ReferenceStore:
         }
 
     def close(self) -> None:
-        self._connection.close()
+        with self._lock:
+            self._connection.close()
 
     def __enter__(self):
         return self
