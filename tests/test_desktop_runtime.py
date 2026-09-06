@@ -2,6 +2,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from flask import Flask
+import pytest
 
 from desktop.main import run
 from desktop.paths import AppPaths
@@ -30,7 +31,7 @@ class FakeWebview:
         self.started.append(kwargs)
 
 
-def test_server_thread_uses_an_ephemeral_loopback_port():
+def test_server_thread_uses_an_ephemeral_127_loopback_port():
     server = ServerThread(create_health_app(), port=0)
     try:
         url = server.start_and_wait()
@@ -39,6 +40,12 @@ def test_server_thread_uses_an_ephemeral_loopback_port():
             assert response.status == 200
     finally:
         server.shutdown()
+
+
+@pytest.mark.parametrize("host", ("0.0.0.0", "192.168.1.20", "::", "localhost"))
+def test_server_thread_rejects_any_non_loopback_bind_host(host):
+    with pytest.raises(ValueError, match="127.0.0.1"):
+        ServerThread(create_health_app(), host=host)
 
 
 def test_runtime_paths_keep_bundled_resources_separate_from_writable_data(

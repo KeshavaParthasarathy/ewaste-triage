@@ -11,6 +11,8 @@ class ServerThread:
     """Serve one WSGI app privately until the native window closes."""
 
     def __init__(self, app, host: str = "127.0.0.1", port: int = 0):
+        if host != "127.0.0.1":
+            raise ValueError("desktop server must bind only to 127.0.0.1")
         self.app = app
         self.host = host
         self.port = port
