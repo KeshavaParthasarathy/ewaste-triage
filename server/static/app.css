@@ -2193,7 +2193,7 @@ html[data-state="review"] .confidence-track span {
   gap: 16px;
   padding: 11px 14px;
   border-top: 1px solid var(--line);
-  animation: release-detail-enter 300ms var(--ease-out) both;
+  animation: release-detail-enter 180ms var(--ease-out) both;
 }
 
 .release-about-details > div:first-child { border-top: 0; }

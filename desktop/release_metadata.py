@@ -37,6 +37,18 @@ class ReleaseMetadataError(ValueError):
 
 
 @dataclass(frozen=True)
+class RuntimeModelIntegrity:
+    """Internal release anchors required to bind a frozen classifier safely."""
+
+    model_id: str
+    model_schema_version: int
+    model_artifact_sha256: str
+    model_manifest_sha256: str
+    model_labels_sha256: str
+    labels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ReleaseMetadata:
     """The sole public, display-safe release identity contract."""
 
@@ -148,7 +160,34 @@ def _validate_release_manifest(manifest: object) -> tuple[dict[str, object], dic
     return release, components
 
 
-def load_release_metadata(paths) -> tuple[ReleaseMetadata, dict[str, object]]:
+def _sha256_file(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise ReleaseMetadataError("unavailable or incompatible") from exc
+
+
+def validate_runtime_model_identity(paths, classifier, integrity: RuntimeModelIntegrity) -> None:
+    """Bind the loaded classifier to every anchored staged-model identity input."""
+    if _sha256_file(paths.model_bundle_dir / "manifest.json") != integrity.model_manifest_sha256:
+        raise ReleaseMetadataError("unavailable or incompatible")
+    labels_path = paths.resources_dir / "release" / "labels.json"
+    if _sha256_file(labels_path) != integrity.model_labels_sha256:
+        raise ReleaseMetadataError("unavailable or incompatible")
+    labels = _read_json(labels_path)
+    if not isinstance(labels, list) or tuple(labels) != integrity.labels:
+        raise ReleaseMetadataError("unavailable or incompatible")
+    manifest = getattr(classifier, "manifest", None)
+    if (
+        getattr(manifest, "model_id", None) != integrity.model_id
+        or getattr(manifest, "schema_version", None) != integrity.model_schema_version
+        or getattr(manifest, "artifact_sha256", None) != integrity.model_artifact_sha256
+        or tuple(getattr(classifier, "classes", ())) != integrity.labels
+    ):
+        raise ReleaseMetadataError("unavailable or incompatible")
+
+
+def load_release_metadata(paths) -> tuple[ReleaseMetadata, dict[str, object], RuntimeModelIntegrity]:
     """Read one closed, byte-anchored release record for runtime and About."""
     metadata = _object(_read_json(paths.build_metadata_path), _BUILD_FIELDS)
     if type(metadata["schema_version"]) is not int or metadata["schema_version"] != 1:
@@ -181,9 +220,18 @@ def load_release_metadata(paths) -> tuple[ReleaseMetadata, dict[str, object]]:
         component_database_sha256=components["sha256"],
         component_database_version=components["version"],
     )
-    return value, {
+    expectations = {
         "expected_sha256": components["sha256"],
         "expected_content_sha256": components["content_sha256"],
         "expected_schema_version": components["schema_version"],
         "expected_version": components["version"],
     }
+    integrity = RuntimeModelIntegrity(
+        model_id=release["model"]["model_id"],
+        model_schema_version=release["model"]["schema_version"],
+        model_artifact_sha256=release["model"]["artifact_sha256"],
+        model_manifest_sha256=release["model"]["manifest_sha256"],
+        model_labels_sha256=release["model"]["labels_sha256"],
+        labels=tuple(release["parity"]["labels"]),
+    )
+    return value, expectations, integrity

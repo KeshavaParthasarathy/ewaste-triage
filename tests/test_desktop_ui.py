@@ -1,5 +1,6 @@
 import json
 import pathlib
+import re
 import subprocess
 from html.parser import HTMLParser
 
@@ -170,6 +171,18 @@ def test_release_about_is_a_secondary_accessible_dialog_without_a_fourth_area():
     assert {attrs["data-view-link"] for attrs in primary_links} == {
         "scan", "assessment", "history"
     }
+
+
+def test_release_about_stagger_finishes_within_the_motion_budget():
+    css = STATIC.joinpath("app.css").read_text()
+    duration = int(re.search(
+        r"release-detail-enter (\d+)ms", css
+    ).group(1))
+    delays = [int(value) for value in re.findall(
+        r"release-about-details > div:nth-child\(\d+\) \{ animation-delay: (\d+)ms", css
+    )]
+
+    assert duration + max(delays) <= 325
 
 
 def test_phone_controller_starts_polls_and_presents_incoming_result_once():
@@ -365,6 +378,70 @@ const controller = UI.createReleaseAboutController({
         "duplicate": False,
         "requests": 1,
         "states": ["loading"],
+    }
+
+
+def test_release_about_dom_view_renders_literal_values_and_native_close_paths():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+const nodes = new Map();
+function node(id = "") {
+  const handlers = {};
+  return {
+    id, handlers, dataset: {}, style: {setProperty() {}}, hidden: false, textContent: "",
+    value: "", files: [], children: [], className: "", open: false,
+    append(...items) { this.children.push(...items); }, appendChild(item) { this.children.push(item); return item; },
+    replaceChildren(...items) { this.children = items; }, setAttribute(name, value) { this[name] = String(value); },
+    removeAttribute(name) { delete this[name]; }, querySelector() { return node(); }, querySelectorAll() { return []; },
+    addEventListener(name, handler) { handlers[name] = handler; }, focus() { this.focused = (this.focused || 0) + 1; },
+    showModal() { this.open = true; }, close() { this.open = false; if (handlers.close) handlers.close(); },
+    closest(selector) {
+      if (selector.includes("#" + this.id)) return this;
+      if (selector.includes("[data-view-link]") && this.dataset.viewLink) return this;
+      if (selector.includes("[data-phone-action]") && this.dataset.phoneAction) return this;
+      return null;
+    }
+  };
+}
+const documentHandlers = {};
+const document = {
+  readyState: "complete", documentElement: node("html"), handlers: documentHandlers,
+  getElementById(id) { if (!nodes.has(id)) nodes.set(id, node(id)); return nodes.get(id); },
+  querySelector() { return node(); }, querySelectorAll() { return []; }, createElement() { return node(); },
+  addEventListener(name, handler) { documentHandlers[name] = handler; }
+};
+global.fetch = async url => ({ok: true, status: 200, json: async () => url === "/api/v1/history" ? [] : ({
+  app_version: "<img src=x onerror=1>", source_revision: "a".repeat(40), model_sha256: "b".repeat(64),
+  component_database_sha256: "c".repeat(64), component_database_version: "2.0.0"
+})});
+global.FormData = class { entries() { return []; } append() {} };
+global.URL = {createObjectURL: () => "blob:none", revokeObjectURL() {}};
+global.requestAnimationFrame = callback => callback();
+global.confirm = () => false;
+const controller = UI.bootstrap(document);
+const opener = document.getElementById("open-release-about");
+document.documentElement.dataset.state = "result";
+document.getElementById("phone-dialog").dataset.phoneState = "ready";
+documentHandlers.click({target: opener, preventDefault() {}});
+setImmediate(() => {
+  const dialog = document.getElementById("release-about-dialog");
+  const literal = document.getElementById("release-app-version").textContent;
+  const preserved = [document.documentElement.dataset.state, document.getElementById("phone-dialog").dataset.phoneState];
+  dialog.handlers.click({target: dialog});
+  const backdropFocus = opener.focused;
+  dialog.showModal();
+  dialog.handlers.keydown({key: "Escape", preventDefault() {}});
+  process.stdout.write(JSON.stringify({literal, preserved, backdropFocus, escapeFocus: opener.focused, open: dialog.open, controller: Boolean(controller)}));
+});
+""")
+
+    assert result == {
+        "literal": "<img src=x onerror=1>",
+        "preserved": ["result", "ready"],
+        "backdropFocus": 1,
+        "escapeFocus": 2,
+        "open": False,
+        "controller": True,
     }
 
 

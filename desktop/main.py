@@ -17,7 +17,11 @@ except ImportError:  # Keep module imports usable for service-only tests and too
     webview = None
 
 from desktop.paths import AppPaths, test_mode_enabled
-from desktop.release_metadata import ReleaseMetadataError, load_release_metadata
+from desktop.release_metadata import (
+    ReleaseMetadataError,
+    load_release_metadata,
+    validate_runtime_model_identity,
+)
 from desktop.server_thread import ServerThread
 from server.history import HistoryStore
 from server.inference import OnnxClassifier
@@ -91,7 +95,7 @@ def _capture_cleanup_failure(action, previous_error):
 def _packaged_component_expectations(paths: AppPaths) -> dict[str, object]:
     """Compatibility wrapper for the shared release metadata boundary."""
     try:
-        _metadata, expectations = load_release_metadata(paths)
+        _metadata, expectations, _integrity = load_release_metadata(paths)
     except ReleaseMetadataError as exc:
         raise ReferenceDataStartupError("unavailable or incompatible") from exc
     return expectations
@@ -152,16 +156,19 @@ def build_desktop_app(
         classifier = OnnxClassifier(paths.model_bundle_dir)
     except _EXPECTED_MODEL_STARTUP_ERRORS as exc:
         raise ModelStartupError(_read_model_diagnostic(paths.model_bundle_dir)) from exc
+    release_metadata = None
+    expectations = {}
+    if require_release_integrity:
+        try:
+            release_metadata, expectations, model_integrity = load_release_metadata(paths)
+        except ReleaseMetadataError as exc:
+            raise ReferenceDataStartupError("unavailable or incompatible") from exc
+        try:
+            validate_runtime_model_identity(paths, classifier, model_integrity)
+        except ReleaseMetadataError as exc:
+            raise ModelStartupError("unavailable or incompatible") from exc
     try:
-        release_metadata = None
-        expectations = {}
-        if require_release_integrity:
-            release_metadata, expectations = load_release_metadata(paths)
-            if classifier.manifest.artifact_sha256 != release_metadata.model_sha256:
-                raise ModelStartupError("unavailable or incompatible")
         references = ReferenceStore(paths.reference_database_path, **expectations)
-    except ReleaseMetadataError as exc:
-        raise ReferenceDataStartupError("unavailable or incompatible") from exc
     except ReferenceStartupError as exc:
         raise ReferenceDataStartupError("unavailable or incompatible") from exc
 

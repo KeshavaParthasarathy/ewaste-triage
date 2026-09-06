@@ -261,6 +261,14 @@ def test_strict_packaged_assembly_anchors_reference_to_release_manifest(
     release_dir = resources / "release"
     reference_dir.mkdir(parents=True)
     release_dir.mkdir(parents=True)
+    model_dir = resources / "models" / "production"
+    model_dir.mkdir(parents=True)
+    runtime_manifest_path = model_dir / "manifest.json"
+    runtime_manifest_path.write_text(json.dumps({"runtime": "release-model-1"}, sort_keys=True))
+    labels_path = release_dir / "labels.json"
+    labels_path.write_text(json.dumps([
+        "0301_computer_mouse", "0301_keyboard", "0303_laptop", "0306_mobile_phone", "0401_headphones"
+    ]))
     database = reference_dir / "components.sqlite"
     database.write_bytes(b"component bytes")
     database_sha = hashlib.sha256(database.read_bytes()).hexdigest()
@@ -270,8 +278,8 @@ def test_strict_packaged_assembly_anchors_reference_to_release_manifest(
         "model": {
             "model_id": "release-model-1",
             "artifact_sha256": "a" * 64,
-            "manifest_sha256": "c" * 64,
-            "labels_sha256": "d" * 64,
+                "manifest_sha256": hashlib.sha256(runtime_manifest_path.read_bytes()).hexdigest(),
+                "labels_sha256": hashlib.sha256(labels_path.read_bytes()).hexdigest(),
             "schema_version": 1,
         },
         "components": {
@@ -323,7 +331,12 @@ def test_strict_packaged_assembly_anchors_reference_to_release_manifest(
         calls.append((path, expectations))
         return OwnedReference()
 
-    monkeypatch.setattr("desktop.main.OnnxClassifier", lambda _path: FakeClassifier())
+    classifier = FakeClassifier()
+    classifier.manifest = SimpleNamespace(
+        model_id="release-model-1", schema_version=1, artifact_sha256="a" * 64
+    )
+    classifier.classes = release_manifest["parity"]["labels"]
+    monkeypatch.setattr("desktop.main.OnnxClassifier", lambda _path: classifier)
     monkeypatch.setattr("desktop.main.ReferenceStore", open_reference)
 
     app = build_desktop_app(paths, require_release_integrity=True)
