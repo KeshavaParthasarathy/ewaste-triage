@@ -43,6 +43,20 @@ class HistoryStore:
                 connection.execute("ALTER TABLE scans ADD COLUMN confirmation_json TEXT")
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS assessments (
+                    scan_id TEXT PRIMARY KEY REFERENCES scans(scan_id) ON DELETE CASCADE,
+                    category_id TEXT NOT NULL,
+                    template_version TEXT NOT NULL,
+                    assessment_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS assessments_category_version ON assessments(category_id, template_version)"
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS pending_media_deletions (
                     scan_id TEXT NOT NULL,
                     media_name TEXT PRIMARY KEY CHECK (
@@ -170,6 +184,75 @@ class HistoryStore:
                     (json.dumps(confirmation, separators=(",", ":"), sort_keys=True), scan_id),
                 )
         return self.get_scan(scan_id)
+
+    @staticmethod
+    def _canonical_json(value: Mapping) -> str:
+        return json.dumps(dict(value), allow_nan=False, separators=(",", ":"), sort_keys=True)
+
+    def get_assessment(self, scan_id: str) -> dict | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT assessment_json FROM assessments WHERE scan_id = ?", (scan_id,)
+            ).fetchone()
+        return json.loads(row["assessment_json"]) if row is not None else None
+
+    def create_assessment(self, scan_id: str, template: Mapping) -> dict | None:
+        """Persist an immutable category-template snapshot once a category is confirmed."""
+        category_id = template.get("category_id")
+        template_version = template.get("template_version")
+        if not isinstance(category_id, str) or not isinstance(template_version, str):
+            raise ValueError("template requires category_id and template_version")
+        with closing(self._connect()) as connection:
+            with connection:
+                if connection.execute("SELECT 1 FROM scans WHERE scan_id = ?", (scan_id,)).fetchone() is None:
+                    return None
+                existing = connection.execute(
+                    "SELECT assessment_json FROM assessments WHERE scan_id = ?", (scan_id,)
+                ).fetchone()
+                if existing is not None:
+                    return json.loads(existing["assessment_json"])
+                assessment = {
+                    "scan_id": scan_id,
+                    "category_id": category_id,
+                    "template_version": template_version,
+                    "template": dict(template),
+                    "inputs": {},
+                    "component_overrides": {},
+                    "components": [],
+                }
+                updated_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+                connection.execute(
+                    "INSERT INTO assessments(scan_id, category_id, template_version, assessment_json, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    (scan_id, category_id, template_version, self._canonical_json(assessment), updated_at),
+                )
+        return assessment
+
+    def update_assessment(
+        self,
+        scan_id: str,
+        inputs: Mapping,
+        component_overrides: Mapping,
+        components: list[dict] | None = None,
+    ) -> dict | None:
+        """Atomically replace only item-specific assessment state and derived results."""
+        with closing(self._connect()) as connection:
+            with connection:
+                row = connection.execute(
+                    "SELECT assessment_json FROM assessments WHERE scan_id = ?", (scan_id,)
+                ).fetchone()
+                if row is None:
+                    return None
+                assessment = json.loads(row["assessment_json"])
+                assessment["inputs"] = dict(inputs)
+                assessment["component_overrides"] = dict(component_overrides)
+                if components is not None:
+                    assessment["components"] = components
+                updated_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+                connection.execute(
+                    "UPDATE assessments SET assessment_json = ?, updated_at = ? WHERE scan_id = ?",
+                    (self._canonical_json(assessment), updated_at, scan_id),
+                )
+        return assessment
 
     def _managed_media_name(self, stored_path: str | None) -> str | None:
         if stored_path is None:

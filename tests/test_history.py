@@ -22,6 +22,27 @@ PREDICTION = {
 }
 
 
+def test_assessment_snapshot_is_versioned_and_survives_store_reopen(tmp_path):
+    store = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media")
+    scan_id = store.add_scan(PREDICTION, Image.new("RGB", (10, 10)), retain_original=False, original=None)
+    template = {
+        "category_id": "0306_mobile_phone",
+        "template_version": "1.0.0",
+        "components": [{"component_id": "battery", "lifecycle": None}],
+        "rules": [],
+        "source_ids": ["source"],
+    }
+
+    created = store.create_assessment(scan_id, template)
+    updated = store.update_assessment(scan_id, {"usage": "heavy"}, {})
+    reopened = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media").get_assessment(scan_id)
+
+    assert created["template_version"] == "1.0.0"
+    assert updated["inputs"] == {"usage": "heavy"}
+    assert reopened == updated
+    assert store.create_assessment(scan_id, {**template, "template_version": "2.0.0"}) == updated
+
+
 def test_scan_persists_with_stable_uuid_and_utc_timestamp(tmp_path):
     database = tmp_path / "history.sqlite"
     media = tmp_path / "media"
