@@ -22,6 +22,11 @@ class AppPaths:
     history_database_path: Path
     history_media_dir: Path
 
+    @property
+    def reference_database_path(self) -> Path:
+        """Immutable compiled component-reference artifact bundled with the app."""
+        return self.reference_dir / "components.sqlite"
+
     @classmethod
     def for_runtime(
         cls, frozen: bool, executable: Path | None = None

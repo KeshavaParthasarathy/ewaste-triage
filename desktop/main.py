@@ -17,6 +17,7 @@ from desktop.server_thread import ServerThread
 from server.history import HistoryStore
 from server.inference import OnnxClassifier
 from server.model_bundle import ModelBundleError
+from server.reference_db import ReferenceStore
 from flask import Flask
 from onnxruntime.capi import onnxruntime_pybind11_state as ort_state
 
@@ -75,16 +76,20 @@ def build_desktop_app(paths: AppPaths):
 
     try:
         classifier = OnnxClassifier(paths.model_bundle_dir)
-    except (ModelBundleError, *_ONNX_STARTUP_ERRORS) as exc:
+        references = ReferenceStore(paths.reference_database_path)
+    except (ModelBundleError, OSError, ValueError, *_ONNX_STARTUP_ERRORS) as exc:
         raise ModelStartupError(_read_model_diagnostic(paths.model_bundle_dir)) from exc
-    return create_desktop_app(
+    app = create_desktop_app(
         classifier=classifier,
         history_store=HistoryStore(
             paths.history_database_path,
             paths.history_media_dir,
         ),
         static_dir=paths.static_dir,
+        reference_store=references,
     )
+    app.extensions["close_reference_store"] = references.close
+    return app
 
 
 def build_recovery_app(*, app_version: str, model_diagnostic: str):
@@ -123,6 +128,9 @@ def run(*, webview_module=webview, paths: AppPaths | None = None) -> int:
         return 0
     finally:
         server.shutdown()
+        closer = app.extensions.get("close_reference_store")
+        if closer is not None:
+            closer()
 
 
 if __name__ == "__main__":

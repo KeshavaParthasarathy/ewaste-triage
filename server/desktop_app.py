@@ -99,6 +99,16 @@ def create_desktop_app(
                         raise ValueError(f"invalid component {name}") from exc
             if "safety_sensitive" in clean and type(clean["safety_sensitive"]) is not bool:
                 raise ValueError("component safety_sensitive must be boolean")
+            if "lifecycle" in clean:
+                lifecycle = clean["lifecycle"]
+                if not isinstance(lifecycle, Mapping) or set(lifecycle) - {"metric", "minimum", "maximum", "capacity_percent"} or not {"metric", "minimum", "maximum"} <= set(lifecycle):
+                    raise ValueError("component lifecycle must be a supported mapping")
+                if lifecycle["metric"] not in {"years", "cycles", "cycles_to_capacity"}:
+                    raise ValueError("unsupported component lifecycle metric")
+                if type(lifecycle["minimum"]) is not int or type(lifecycle["maximum"]) is not int:
+                    raise ValueError("component lifecycle bounds must be integers")
+                if lifecycle["minimum"] <= 0 or lifecycle["maximum"] < lifecycle["minimum"]:
+                    raise OverflowError("component lifecycle bounds are reversed or outside accepted bounds")
             clean_overrides[component_id] = clean
         result["component_overrides"] = clean_overrides
         return result
@@ -138,6 +148,9 @@ def create_desktop_app(
         confirmation = scan.get("confirmation")
         if confirmation is None:
             return None, assessment_error("confirm or correct the category before starting an assessment", 409)
+        existing = store.get_assessment(scan_id)
+        if existing is not None:
+            return existing, None
         refs = reference()
         if refs is None:
             return None, assessment_error("component reference data is unavailable", 503)
@@ -274,6 +287,10 @@ def create_desktop_app(
         except ValueError as exc:
             return assessment_error(str(exc), 400)
         store = app.config["HISTORY_STORE"]
+        known_components = {component["component_id"] for component in assessment["template"]["components"]}
+        unknown_components = set(payload["component_overrides"]) - known_components
+        if unknown_components:
+            return assessment_error("component override does not belong to the stored template", 400)
         updated = store.update_assessment(
             scan_id,
             {key: value for key, value in payload.items() if key != "component_overrides"},
@@ -295,6 +312,9 @@ def create_desktop_app(
         store = app.config["HISTORY_STORE"]
         if not isinstance(accepted, str) or store is None:
             return jsonify({"error": "accepted category was not offered by the model"}), 400
+        assessment = store.get_assessment(scan_id)
+        if assessment is not None and assessment["category_id"] != accepted:
+            return jsonify({"error": "an existing assessment keeps its confirmed category"}), 409
         record = store.set_confirmation(scan_id, accepted)
         if record is None:
             return jsonify({"error": "scan not found"}), 404

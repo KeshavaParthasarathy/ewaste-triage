@@ -10,7 +10,7 @@ PREDICTION = {
     "class_name": "0306_mobile_phone",
     "confidence": 0.91,
     "low_confidence": False,
-    "topk": [{"class_name": "0306_mobile_phone", "confidence": 0.91}],
+    "topk": [{"class_name": "0306_mobile_phone", "confidence": 0.91}, {"class_name": "0303_laptop", "confidence": 0.09}],
 }
 
 
@@ -94,6 +94,7 @@ def test_assessment_is_gated_by_category_acceptance_then_immutable(tmp_path):
     assert first.json["components"] == second.json["components"]
     assert first.json["template"]["components"][0]["component_id"] == "battery"
     assert "component_overrides" not in first.json["inputs"]
+    assert client.put(f"/api/v1/history/{scan_id}/confirmation", json={"accepted_class_name": "0303_laptop"}).status_code == 409
 
 
 def test_assessment_payload_and_scan_errors_are_strict(tmp_path):
@@ -102,11 +103,15 @@ def test_assessment_payload_and_scan_errors_are_strict(tmp_path):
 
     invalid_enum = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"usage": "extreme"})
     invalid_range = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"age_months": {"minimum": 5, "maximum": 4}})
+    unknown_component = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"component_overrides": {"missing": {}}})
+    invalid_lifecycle = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"component_overrides": {"battery": {"lifecycle": {"metric": "years", "minimum": 0, "maximum": 2}}}})
     unknown = client.put("/api/v1/scans/missing/assessment", json={})
     valid = client.put(f"/api/v1/scans/{scan_id}/assessment", json={"age_months": {"minimum": 24, "maximum": 36}, "usage": "heavy", "condition": "no_visible_damage", "component_overrides": {"battery": {"presence_label": "standard"}}})
 
     assert invalid_enum.status_code == 400
     assert invalid_range.status_code == 422
+    assert unknown_component.status_code == 400
+    assert invalid_lifecycle.status_code == 422
     assert unknown.status_code == 404
     assert valid.status_code == 200
     assert valid.json["inputs"]["usage"] == "heavy"
