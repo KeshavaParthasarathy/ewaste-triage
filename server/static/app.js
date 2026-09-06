@@ -14,6 +14,14 @@
     "0306_mobile_phones": "Mobile phone",
     "0401_headphones": "Headphones"
   };
+  const RECOMMENDATION_LABELS = {
+    likely_reusable: "Likely reusable after test",
+    diagnostic_test: "Run a diagnostic test",
+    repair_assessment: "Arrange a repair assessment",
+    recycle: "Route to appropriate recycling",
+    specialist_handling: "Use specialist handling",
+    unknown: "More evidence needed"
+  };
 
   function isSupportedImage(file) {
     if (!file || !file.name) return false;
@@ -54,6 +62,161 @@
     return payload;
   }
 
+  function rangeFromValues(minimumValue, maximumValue, label) {
+    const minimumBlank = minimumValue === undefined || minimumValue === null || minimumValue === "";
+    const maximumBlank = maximumValue === undefined || maximumValue === null || maximumValue === "";
+    if (minimumBlank && maximumBlank) return null;
+    const minimum = Number(minimumBlank ? maximumValue : minimumValue);
+    const maximum = Number(maximumBlank ? minimumValue : maximumValue);
+    if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 0 || maximum < minimum) {
+      throw new Error(`${label} must be a non-negative range with the lower value first.`);
+    }
+    return {minimum, maximum};
+  }
+
+  function assessmentPayloadFromValues(values) {
+    const payload = {
+      age_months: rangeFromValues(values.age_min, values.age_max, "Age"),
+      cycle_count: rangeFromValues(values.cycle_min, values.cycle_max, "Cycle count"),
+      usage: values.usage || "unknown",
+      condition: values.condition || "unknown",
+      operational: values.operational || "unknown",
+      component_overrides: {}
+    };
+    const componentFields = {};
+    for (const [name, rawValue] of Object.entries(values)) {
+      const match = /^component\.([^.]+)\.(presence|condition|lifecycle_metric|lifecycle_min|lifecycle_max)$/.exec(name);
+      if (!match || rawValue === "" || rawValue === undefined || rawValue === null) continue;
+      if (!componentFields[match[1]]) componentFields[match[1]] = {};
+      componentFields[match[1]][match[2]] = rawValue;
+    }
+    for (const [componentId, fields] of Object.entries(componentFields)) {
+      const override = {};
+      if (fields.presence) override.presence_label = fields.presence;
+      if (fields.condition) override.condition = fields.condition;
+      if (fields.lifecycle_metric || fields.lifecycle_min || fields.lifecycle_max) {
+        if (!fields.lifecycle_metric) throw new Error("Choose years or cycles for the component lifecycle reference.");
+        const range = rangeFromValues(fields.lifecycle_min, fields.lifecycle_max, "Component lifecycle");
+        if (range === null) throw new Error("Enter a component lifecycle range.");
+        override.lifecycle = {metric: fields.lifecycle_metric, ...range};
+      }
+      if (Object.keys(override).length) payload.component_overrides[componentId] = override;
+    }
+    return payload;
+  }
+
+  function rangeWithUnit(value, unit) {
+    if (!value) return "Unknown";
+    const range = value.minimum === value.maximum ? `${value.minimum}` : `${value.minimum}–${value.maximum}`;
+    return `${range}${unit.startsWith("%") ? "" : " "}${unit}`;
+  }
+
+  function sourceLabel(sourceIds, grade, reviewedOn) {
+    const parts = [];
+    if (Array.isArray(sourceIds) && sourceIds.length) parts.push(sourceIds.join(", "));
+    if (grade) parts.push(String(grade).replace(/_/g, " "));
+    if (reviewedOn) parts.push(`reviewed ${reviewedOn}`);
+    return parts.join(" · ") || "No reviewed source attached";
+  }
+
+  function readableValue(value) {
+    if (!value || value === "unknown") return "Unknown";
+    const text = String(value).replace(/_/g, " ");
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function lifecycleReferenceLabel(lifecycle) {
+    if (!lifecycle) return "No sourced lifecycle range";
+    const numeric = lifecycle.minimum === lifecycle.maximum ?
+      `${lifecycle.minimum}` : `${lifecycle.minimum}–${lifecycle.maximum}`;
+    if (lifecycle.metric === "years") return `${numeric} years`;
+    if (lifecycle.metric === "cycles_to_capacity") {
+      return `${numeric} cycles to ${lifecycle.capacity_percent}% capacity`;
+    }
+    return `${numeric} cycles`;
+  }
+
+  function buildAssessmentPresentation(assessment) {
+    const template = assessment.template || {};
+    const inputs = assessment.inputs || {};
+    const components = (Array.isArray(assessment.components) ? assessment.components : []).map(component => {
+      const result = component.result || {};
+      const lifecycle = component.lifecycle || null;
+      const lifecycleOwnsSources = lifecycle && Object.prototype.hasOwnProperty.call(lifecycle, "source_ids");
+      const lifecycleOwnsGrade = lifecycle && Object.prototype.hasOwnProperty.call(lifecycle, "evidence_grade");
+      const lifecycleOwnsReview = lifecycle && Object.prototype.hasOwnProperty.call(lifecycle, "reviewed_on");
+      const lifecycleSources = lifecycleOwnsSources ? lifecycle.source_ids : component.source_ids;
+      const lifecycleGrade = lifecycleOwnsGrade ? lifecycle.evidence_grade : component.evidence_grade;
+      const lifecycleReview = lifecycleOwnsReview ? lifecycle.reviewed_on : component.reviewed_on;
+      const hasReviewedReference = lifecycle && Array.isArray(lifecycleSources) && lifecycleSources.length;
+      let missingGuidance = "";
+      if (!result.percent_used && !hasReviewedReference) {
+        missingGuidance = "Needs a reviewed component lifecycle reference or supported diagnostic; age or usage alone cannot improve this value.";
+      } else if (!result.percent_used) {
+        missingGuidance = (result.reasons || []).join(" ") || "Add the missing item input named by the lifecycle reference.";
+      }
+      return {
+        ...component,
+        range: rangeWithUnit(result.percent_used, "% used"),
+        reference_range: lifecycleReferenceLabel(lifecycle),
+        confidence_label: result.confidence === "unavailable" ? "Unavailable" :
+          `${String(result.confidence || "unknown").replace(/_/g, " ")} confidence`,
+        recommendation_label: RECOMMENDATION_LABELS[result.recommendation] || "More evidence needed",
+        reasons: Array.isArray(result.reasons) ? result.reasons : [],
+        evidence: Array.isArray(result.evidence) ? result.evidence : [],
+        missing_guidance: missingGuidance,
+        source_label: sourceLabel(lifecycleSources, lifecycleGrade, lifecycleReview)
+      };
+    });
+    const supportedRanges = components
+      .map(component => component.result && component.result.percent_used)
+      .filter(Boolean);
+    const overall = supportedRanges.length ? {
+      minimum: Math.min(...supportedRanges.map(value => value.minimum)),
+      maximum: Math.max(...supportedRanges.map(value => value.maximum))
+    } : null;
+    const safety = (Array.isArray(template.rules) ? template.rules : []).map(rule => ({
+      text: rule.text,
+      source_label: sourceLabel(rule.source_ids, rule.evidence_grade, rule.reviewed_on),
+      priority: "rule"
+    }));
+    for (const component of components) {
+      if (component.safety_sensitive && component.result && component.result.recommendation === "specialist_handling") {
+        safety.unshift({
+          text: `${component.display_name}: ${component.reasons.join(" ")}`,
+          source_label: component.source_label,
+          priority: "escalation"
+        });
+      }
+    }
+    if (!safety.length && template.handling_note) {
+      safety.push({
+        text: template.handling_note,
+        source_label: sourceLabel(template.source_ids, null, null),
+        priority: "context"
+      });
+    }
+    return {
+      overall_range: rangeWithUnit(overall, "% used"),
+      overall_maximum: overall ? overall.maximum : 0,
+      overall_detail: supportedRanges.length ?
+        `${supportedRanges.length} component ${supportedRanges.length === 1 ? "range is" : "ranges are"} supported by the current facts.` :
+        "No component range is supported yet. Review the missing-input guidance below.",
+      safety,
+      components,
+      input_evidence: [
+        {label: "Age", value: rangeWithUnit(inputs.age_months, "months")},
+        {label: "Cycles", value: rangeWithUnit(inputs.cycle_count, "cycles")},
+        {label: "Usage", value: readableValue(inputs.usage)},
+        {label: "Visible condition", value: readableValue(inputs.condition)},
+        {label: "Operating state", value: readableValue(inputs.operational)}
+      ],
+      template_version: assessment.template_version || template.template_version || "Unknown",
+      category_name: template.display_name || formatCategory(assessment.category_id),
+      handling_note: template.handling_note || ""
+    };
+  }
+
   function createController(options) {
     const view = options.view;
     const fetchImpl = options.fetchImpl;
@@ -69,6 +232,9 @@
     let activeResult = null;
     let historyGeneration = 0;
     let pendingHistoryAction = null;
+    let assessmentGeneration = 0;
+    let assessmentSavePending = false;
+    let activeAssessment = null;
 
     function withModelEvidence(result) {
       const modelClassName = result.model_class_name || result.class_name;
@@ -127,6 +293,12 @@
 
     function invalidateAnalysis() {
       generation += 1;
+      assessmentGeneration += 1;
+      activeAssessment = null;
+      if (assessmentSavePending) {
+        assessmentSavePending = false;
+        if (typeof view.setAssessmentBusy === "function") view.setAssessmentBusy(false);
+      }
       activeScanId = null;
       if (activeAnalysisGeneration !== null) {
         activeAnalysisGeneration = null;
@@ -244,6 +416,128 @@
       if (typeof view.reset === "function") view.reset();
     }
 
+    async function openAssessment() {
+      if (typeof view.showSection === "function") view.showSection("assessment");
+      const context = getAssessmentContext();
+      const requestedGeneration = ++assessmentGeneration;
+      activeAssessment = null;
+      if (!context || !context.scan_id) {
+        if (typeof view.setAssessmentState === "function") {
+          view.setAssessmentState("assessment-error", "Save a classification before starting an assessment.");
+        }
+        return false;
+      }
+      if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-loading");
+      try {
+        const categories = await api("/api/v1/reference/categories");
+        if (requestedGeneration !== assessmentGeneration) return false;
+        try {
+          const assessment = await api(`/api/v1/scans/${encodeURIComponent(context.scan_id)}/assessment`);
+          if (requestedGeneration !== assessmentGeneration) return false;
+          activeAssessment = {mode: "existing", categories, assessment, context};
+          if (typeof view.renderAssessment === "function") view.renderAssessment(activeAssessment);
+          if (typeof view.setAssessmentState === "function") {
+            view.setAssessmentState("assessment-ready", `${formatCategory(assessment.category_id)} assessment ready.`);
+          }
+          return true;
+        } catch (error) {
+          if (error.status !== 409) throw error;
+          const categoryId = context.confirmed_class_name;
+          const template = await api(`/api/v1/reference/categories/${encodeURIComponent(categoryId)}`);
+          if (requestedGeneration !== assessmentGeneration) return false;
+          activeAssessment = {mode: "draft", categories, template, context};
+          if (typeof view.renderAssessmentDraft === "function") view.renderAssessmentDraft(activeAssessment);
+          if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-editing");
+          return true;
+        }
+      } catch (error) {
+        if (requestedGeneration !== assessmentGeneration) return false;
+        if (typeof view.setAssessmentState === "function") {
+          view.setAssessmentState("assessment-error", error.message);
+        }
+        return false;
+      }
+    }
+
+    async function changeAssessmentCategory(categoryId) {
+      if (!activeAssessment || activeAssessment.mode !== "draft" || !categoryId) return false;
+      let draftInputs = null;
+      try {
+        draftInputs = typeof view.readAssessmentForm === "function" ? view.readAssessmentForm() : null;
+        if (draftInputs) draftInputs = {...draftInputs, component_overrides: {}};
+      } catch (error) {
+        if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-error", error.message);
+        return false;
+      }
+      const requestedGeneration = ++assessmentGeneration;
+      if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-loading");
+      try {
+        const template = await api(`/api/v1/reference/categories/${encodeURIComponent(categoryId)}`);
+        if (requestedGeneration !== assessmentGeneration || !activeAssessment) return false;
+        activeAssessment = {...activeAssessment, template, draft_inputs: draftInputs};
+        if (typeof view.renderAssessmentDraft === "function") view.renderAssessmentDraft(activeAssessment);
+        if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-editing");
+        return true;
+      } catch (error) {
+        if (requestedGeneration !== assessmentGeneration) return false;
+        if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-error", error.message);
+        return false;
+      }
+    }
+
+    function markAssessmentEditing() {
+      if (activeAssessment && typeof view.setAssessmentState === "function") {
+        view.setAssessmentState("assessment-editing");
+      }
+    }
+
+    async function saveAssessment(form) {
+      if (assessmentSavePending || !activeAssessment) return false;
+      const context = activeAssessment.context;
+      const scanId = context && context.scan_id;
+      if (!scanId) return false;
+      const requestedGeneration = ++assessmentGeneration;
+      assessmentSavePending = true;
+      if (typeof view.setAssessmentBusy === "function") view.setAssessmentBusy(true);
+      if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-loading");
+      try {
+        const payload = view.readAssessmentForm(form);
+        const categoryId = view.getAssessmentCategory(form);
+        await api(`/api/v1/history/${encodeURIComponent(scanId)}/confirmation`, {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({accepted_class_name: categoryId})
+        });
+        if (requestedGeneration !== assessmentGeneration) return false;
+        const assessment = await api(`/api/v1/scans/${encodeURIComponent(scanId)}/assessment`, {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload)
+        });
+        if (requestedGeneration !== assessmentGeneration) return false;
+        activeAssessment = {
+          mode: "existing",
+          categories: activeAssessment.categories,
+          assessment,
+          context: {...context, confirmed_class_name: assessment.category_id}
+        };
+        if (typeof view.renderAssessment === "function") view.renderAssessment(activeAssessment);
+        if (typeof view.setAssessmentState === "function") {
+          view.setAssessmentState("assessment-ready", `${formatCategory(assessment.category_id)} assessment updated.`);
+        }
+        return true;
+      } catch (error) {
+        if (requestedGeneration !== assessmentGeneration) return false;
+        if (typeof view.setAssessmentState === "function") view.setAssessmentState("assessment-error", error.message);
+        return false;
+      } finally {
+        if (requestedGeneration === assessmentGeneration) {
+          assessmentSavePending = false;
+          if (typeof view.setAssessmentBusy === "function") view.setAssessmentBusy(false);
+        }
+      }
+    }
+
     function openHistory(record) {
       invalidateAnalysis();
       const prediction = record.prediction || {};
@@ -324,8 +618,9 @@
     }
 
     return {
-      analyze, clearHistory, deleteHistory, getAssessmentContext, loadExplanation,
-      loadHistory, openHistory, reset, selectAlternative
+      analyze, changeAssessmentCategory, clearHistory, deleteHistory, getAssessmentContext,
+      loadExplanation, loadHistory, markAssessmentEditing, openAssessment, openHistory,
+      reset, saveAssessment, selectAlternative
     };
   }
 
@@ -365,6 +660,12 @@
     const historyUndo = document.getElementById("history-undo");
     const historyUndoMessage = document.getElementById("history-undo-message");
     const historyUndoButton = document.getElementById("history-undo-button");
+    const assessmentFrame = document.getElementById("assessment-frame");
+    const assessmentForm = document.getElementById("assessment-form");
+    const assessmentCategory = document.getElementById("assessment-category");
+    const assessmentComponents = document.getElementById("assessment-components");
+    const assessmentSafetyList = document.getElementById("assessment-safety-list");
+    const assessmentEvidenceList = document.getElementById("assessment-evidence-list");
     let previewUrl = "";
     let activeResult = null;
     let alternativeHandler = null;
@@ -590,10 +891,241 @@
       announce(message);
     }
 
+    function selectOption(value, label) {
+      const option = element(document, "option", "", label);
+      option.value = value;
+      return option;
+    }
+
+    function setSelectOptions(select, options, value) {
+      select.replaceChildren(...options.map(option => selectOption(option.value, option.label)));
+      select.value = value || options[0].value;
+    }
+
+    function renderEvidenceRows(assessment, presentation, context) {
+      assessmentEvidenceList.replaceChildren();
+      const model = context && context.model_evidence;
+      const rows = [
+        ["Category", model ? `${formatCategory(model.class_name)} at ${percent(model.confidence)} model confidence` : presentation.category_name],
+        ["Identification", context && context.confirmation && context.confirmation.source === "user" ? "User confirmed or corrected" : "Awaiting user confirmation"],
+        ["Template", `${presentation.category_name} · revision ${presentation.template_version}`],
+        ...presentation.input_evidence.map(item => [item.label, item.value])
+      ];
+      for (const [term, detail] of rows) {
+        const wrapper = element(document, "div", "evidence-row");
+        wrapper.append(element(document, "dt", "", term), element(document, "dd", "", detail));
+        assessmentEvidenceList.append(wrapper);
+      }
+    }
+
+    function renderSafety(presentation) {
+      assessmentSafetyList.replaceChildren();
+      if (!presentation.safety.length) {
+        assessmentSafetyList.append(element(document, "p", "safety-empty", "No category-specific safety rule is attached. Continue with ordinary electronics handling care."));
+        return;
+      }
+      presentation.safety.forEach(item => {
+        const callout = element(document, "article", `safety-callout safety-${item.priority}`);
+        callout.append(
+          element(document, "span", "safety-symbol", item.priority === "escalation" ? "!" : "i"),
+          element(document, "p", "", item.text)
+        );
+        const source = element(document, "small", "", item.source_label);
+        callout.append(source);
+        assessmentSafetyList.append(callout);
+      });
+    }
+
+    function labeledSelect(labelText, name, options, value) {
+      const label = element(document, "label", "component-control");
+      label.append(element(document, "span", "", labelText));
+      const select = element(document, "select");
+      select.name = name;
+      setSelectOptions(select, options, value);
+      label.append(select);
+      return label;
+    }
+
+    function lifecycleOverrideControls(componentId, override) {
+      const lifecycle = override.lifecycle || {};
+      const fieldset = element(document, "fieldset", "component-lifecycle-override");
+      fieldset.append(element(document, "legend", "", "Documented item lifecycle reference"));
+      fieldset.append(labeledSelect("Unit", `component.${componentId}.lifecycle_metric`, [
+        {value: "", label: "No item override"},
+        {value: "years", label: "Years"},
+        {value: "cycles", label: "Cycles"}
+      ], lifecycle.metric || ""));
+      const range = element(document, "div", "component-range-inputs");
+      for (const [suffix, labelText, value] of [
+        ["min", "From", lifecycle.minimum], ["max", "To", lifecycle.maximum]
+      ]) {
+        const label = element(document, "label", "component-control");
+        label.append(element(document, "span", "", labelText));
+        const input = element(document, "input");
+        input.type = "number";
+        input.inputMode = "numeric";
+        input.min = "1";
+        input.step = "1";
+        input.name = `component.${componentId}.lifecycle_${suffix}`;
+        input.value = value === undefined ? "" : String(value);
+        label.append(input);
+        range.append(label);
+      }
+      fieldset.append(range);
+      fieldset.append(element(document, "p", "field-help", "Item-provided lifecycle references remain unverified and do not create a sourced health estimate."));
+      return fieldset;
+    }
+
+    function renderComponents(assessment, presentation) {
+      assessmentComponents.replaceChildren();
+      const overrides = assessment.component_overrides || {};
+      presentation.components.forEach((component, index) => {
+        const override = overrides[component.component_id] || {};
+        const row = element(document, "article", "component-row");
+        row.style.setProperty("--component-index", String(Math.min(index, 3)));
+        if (component.safety_sensitive) row.dataset.safetySensitive = "true";
+        const header = element(document, "div", "component-row-header");
+        const identity = element(document, "div", "component-identity");
+        identity.append(
+          element(document, "h3", "", component.display_name),
+          element(document, "span", "presence-label", `${String(component.presence_label || "unknown").replace(/_/g, " ")} in category`)
+        );
+        const estimate = element(document, "div", "component-estimate");
+        estimate.append(element(document, "strong", "", component.range), element(document, "span", "", component.confidence_label));
+        header.append(identity, estimate);
+
+        const recommendation = element(document, "div", "component-recommendation");
+        recommendation.append(
+          element(document, "span", "recommendation-mark", component.result && component.result.recommendation === "specialist_handling" ? "!" : "→"),
+          element(document, "strong", "", component.recommendation_label)
+        );
+        const reason = element(document, "p", "component-reason", component.missing_guidance || component.reasons.join(" "));
+        const reference = element(document, "p", "component-reference", `${component.reference_range} · ${component.source_label}`);
+
+        const evidence = element(document, "ul", "component-evidence");
+        for (const item of component.evidence) {
+          const sources = Array.isArray(item.source_ids) && item.source_ids.length ? ` · ${item.source_ids.join(", ")}` : "";
+          evidence.append(element(document, "li", "", `${item.detail}${sources}`));
+        }
+
+        const details = element(document, "details", "component-override");
+        details.append(element(document, "summary", "", "Item override"));
+        const controls = element(document, "div", "component-override-controls");
+        controls.append(
+          labeledSelect("Presence", `component.${component.component_id}.presence`, [
+            {value: "", label: "Use category default"},
+            {value: "standard", label: "Standard"},
+            {value: "common", label: "Common"},
+            {value: "optional", label: "Optional"},
+            {value: "unknown", label: "Unknown"}
+          ], override.presence_label || ""),
+          labeledSelect("Component condition", `component.${component.component_id}.condition`, [
+            {value: "", label: "Use device condition"},
+            {value: "unknown", label: "Unknown"},
+            {value: "no_visible_damage", label: "No visible damage"},
+            {value: "visible_wear", label: "Visible wear"},
+            {value: "damaged", label: "Damaged"}
+          ], override.condition || ""),
+          lifecycleOverrideControls(component.component_id, override)
+        );
+        details.append(controls);
+        row.append(header, recommendation, reason, reference);
+        if (component.evidence.length) row.append(evidence);
+        row.append(details);
+        assessmentComponents.append(row);
+      });
+    }
+
+    function populateAssessment({assessment, categories, context, locked}) {
+      const presentation = buildAssessmentPresentation(assessment);
+      const categoryId = assessment.category_id || assessment.template.category_id;
+      setSelectOptions(assessmentCategory, categories.map(category => ({
+        value: category.category_id,
+        label: category.display_name || formatCategory(category.category_id)
+      })), categoryId);
+      assessmentCategory.disabled = locked;
+      assessmentCategory.setAttribute("aria-describedby", "assessment-category-help");
+      document.getElementById("assessment-category-lock").hidden = !locked;
+      document.getElementById("assessment-category-help").textContent = locked ?
+        "The confirmed category is locked to preserve this item’s reference snapshot." :
+        "You can correct this before the first assessment snapshot is saved.";
+      const inputs = assessment.inputs || {};
+      for (const [id, value] of [
+        ["assessment-age-min", inputs.age_months && inputs.age_months.minimum],
+        ["assessment-age-max", inputs.age_months && inputs.age_months.maximum],
+        ["assessment-cycles-min", inputs.cycle_count && inputs.cycle_count.minimum],
+        ["assessment-cycles-max", inputs.cycle_count && inputs.cycle_count.maximum]
+      ]) document.getElementById(id).value = value === null || value === undefined ? "" : String(value);
+      document.getElementById("assessment-usage").value = inputs.usage || "unknown";
+      document.getElementById("assessment-condition").value = inputs.condition || "unknown";
+      document.getElementById("assessment-operational").value = inputs.operational || "unknown";
+      document.getElementById("assessment-overall-range").textContent = presentation.overall_range;
+      document.getElementById("assessment-overall-detail").textContent = presentation.overall_detail;
+      document.getElementById("assessment-meter-fill").style.setProperty("--assessment-range", String(Math.min(100, presentation.overall_maximum) / 100));
+      document.getElementById("assessment-template-version").textContent = `Revision ${presentation.template_version}`;
+      renderEvidenceRows(assessment, presentation, context);
+      renderSafety(presentation);
+      renderComponents(assessment, presentation);
+    }
+
+    function draftAssessment(template, inputs) {
+      return {
+        category_id: template.category_id,
+        template_version: template.template_version,
+        template,
+        inputs: inputs || {age_months: null, cycle_count: null, usage: "unknown", condition: "unknown", operational: "unknown"},
+        component_overrides: {},
+        components: (template.components || []).map(component => ({
+          ...component,
+          result: {
+            percent_used: null,
+            confidence: "unavailable",
+            recommendation: "unknown",
+            reasons: component.lifecycle ?
+              [`A user-supplied ${component.lifecycle.metric === "years" ? "age range" : "cycle-count range"} is required for this sourced lifecycle estimate.`] :
+              ["No supported lifecycle reference is available for this component."],
+            evidence: []
+          }
+        }))
+      };
+    }
+
+    function renderAssessmentDraft(value) {
+      populateAssessment({
+        assessment: draftAssessment(value.template, value.draft_inputs),
+        categories: value.categories,
+        context: value.context,
+        locked: false
+      });
+    }
+
+    function renderAssessment(value) {
+      populateAssessment({assessment: value.assessment, categories: value.categories, context: value.context, locked: true});
+    }
+
+    function readAssessmentForm(form) {
+      return assessmentPayloadFromValues(Object.fromEntries(new global.FormData(form || assessmentForm).entries()));
+    }
+
+    function setAssessmentBusy(value) {
+      document.getElementById("save-assessment").disabled = value;
+      assessmentFrame.setAttribute("aria-busy", String(value));
+    }
+
+    function setAssessmentState(state, message) {
+      assessmentFrame.dataset.assessmentState = state;
+      assessmentFrame.setAttribute("aria-busy", String(state === "assessment-loading"));
+      if (state === "assessment-error") {
+        document.getElementById("assessment-error-message").textContent = message || "Return to Scan and choose a saved result.";
+      }
+      if ((state === "assessment-ready" || state === "assessment-error") && message) announce(message);
+    }
+
     function showSection(section) {
-      const scan = section === "scan";
-      document.getElementById("scan-view").hidden = !scan;
-      document.getElementById("history-view").hidden = scan;
+      for (const name of ["scan", "assessment", "history"]) {
+        document.getElementById(`${name}-view`).hidden = name !== section;
+      }
+      if (section === "assessment") document.getElementById("assessment-view").focus();
       for (const link of document.querySelectorAll("[data-view-link]")) {
         if (link.classList.contains("nav-item")) {
           const selected = link.dataset.viewLink === section;
@@ -628,12 +1160,18 @@
       markHistoryDeleting,
       clearHistoryUndo,
       clearPreview,
+      getAssessmentCategory: () => assessmentCategory.value,
       renderCorrection,
+      readAssessmentForm,
+      renderAssessment,
+      renderAssessmentDraft,
       renderHistory,
       renderHistoryError,
       renderInfluence,
       reset,
       setBusy,
+      setAssessmentBusy,
+      setAssessmentState,
       showPreview,
       showHistoryUndo,
       showSection,
@@ -694,8 +1232,12 @@
       if (viewLink) {
         event.preventDefault();
         const section = viewLink.dataset.viewLink;
-        view.showSection(section);
-        if (section === "history") void controller.loadHistory();
+        if (section === "assessment") {
+          void controller.openAssessment();
+        } else {
+          view.showSection(section);
+          if (section === "history") void controller.loadHistory();
+        }
       }
       const phoneAction = event.target.closest("[data-phone-action], #phone-capture");
       if (phoneAction) document.getElementById("phone-dialog").showModal();
@@ -712,18 +1254,22 @@
 
     document.getElementById("analyze-another").addEventListener("click", () => controller.reset());
     document.getElementById("try-again").addEventListener("click", () => controller.reset());
-    document.getElementById("open-assessment").addEventListener("click", () => {
-      const dialog = document.getElementById("assessment-dialog");
-      const context = controller.getAssessmentContext();
-      if (context) {
-        dialog.dataset.confirmedCategory = context.confirmed_class_name;
-        document.getElementById("assessment-summary").textContent =
-          `${formatCategory(context.confirmed_class_name)} is the confirmed category. ` +
-          `The model evidence remains ${formatCategory(context.model_evidence.class_name)} ` +
-          `at ${percent(context.model_evidence.confidence)}. Detailed condition, lifecycle, ` +
-          `and component assessment is the next product step.`;
+    document.getElementById("open-assessment").addEventListener("click", () => void controller.openAssessment());
+    document.getElementById("retry-assessment").addEventListener("click", () => void controller.openAssessment());
+    const assessmentForm = document.getElementById("assessment-form");
+    assessmentForm.addEventListener("submit", event => {
+      event.preventDefault();
+      if (assessmentForm.reportValidity()) void controller.saveAssessment(assessmentForm);
+    });
+    assessmentForm.addEventListener("change", event => {
+      if (event.target.id === "assessment-category") {
+        void controller.changeAssessmentCategory(event.target.value);
+      } else {
+        controller.markAssessmentEditing();
       }
-      dialog.showModal();
+    });
+    assessmentForm.addEventListener("input", event => {
+      if (event.target.id !== "assessment-category") controller.markAssessmentEditing();
     });
     document.getElementById("clear-history").addEventListener("click", () => {
       if (global.confirm("Delete every locally saved scan? This cannot be undone.")) {
@@ -735,7 +1281,15 @@
     return controller;
   }
 
-  const exported = {bootstrap, createController, createDomView, formatCategory, isSupportedImage};
+  const exported = {
+    assessmentPayloadFromValues,
+    bootstrap,
+    buildAssessmentPresentation,
+    createController,
+    createDomView,
+    formatCategory,
+    isSupportedImage
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = exported;
   global.EWasteTriage = exported;
   if (global.document) {

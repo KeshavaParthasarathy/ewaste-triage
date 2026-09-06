@@ -58,6 +58,19 @@ def test_desktop_page_is_accessible_and_self_contained():
     assert "https://" not in page.text and "http://" not in page.text
 
 
+def test_primary_navigation_includes_the_assessment_workspace():
+    page = _page()
+    assessment_links = [
+        attrs for tag, attrs in page.elements
+        if tag == "button" and attrs.get("data-view-link") == "assessment"
+    ]
+    assert len(assessment_links) == 1
+    assert any(
+        tag == "section" and attrs.get("id") == "assessment-view"
+        for tag, attrs in page.elements
+    )
+
+
 def test_photo_import_and_history_controls_have_keyboard_semantics():
     page = _page()
     controls = {attrs.get("id"): (tag, attrs) for tag, attrs in page.elements if attrs.get("id")}

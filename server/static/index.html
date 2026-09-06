@@ -20,6 +20,9 @@
         <button class="nav-item is-selected" type="button" data-view-link="scan" aria-current="page">
           <span class="nav-icon" aria-hidden="true">⌁</span><span>Scan</span>
         </button>
+        <button class="nav-item" type="button" data-view-link="assessment">
+          <span class="nav-icon" aria-hidden="true">✓</span><span>Assessment</span>
+        </button>
         <button class="nav-item" type="button" data-view-link="history">
           <span class="nav-icon" aria-hidden="true">◷</span><span>History</span>
         </button>
@@ -160,6 +163,170 @@
         </div>
       </section>
 
+      <section class="view assessment-view" id="assessment-view" aria-labelledby="assessment-title" tabindex="-1" hidden>
+        <div class="view-heading assessment-heading">
+          <div>
+            <p class="eyebrow">Item-specific review</p>
+            <h1 id="assessment-title">Device assessment</h1>
+            <p>Confirm what you know, then review sourced component ranges and conservative next steps.</p>
+          </div>
+          <button class="quiet-button" type="button" data-view-link="scan">Back to scan</button>
+        </div>
+
+        <div class="assessment-frame" id="assessment-frame"
+             data-assessment-state="assessment-loading" aria-busy="false">
+          <section class="assessment-loading-panel" aria-labelledby="assessment-loading-title">
+            <span class="working-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+            <p class="eyebrow">Working locally</p>
+            <h2 id="assessment-loading-title">Preparing the component assessment</h2>
+            <p>Loading the saved category and its bundled reference snapshot.</p>
+          </section>
+
+          <form id="assessment-form" class="assessment-form">
+            <div class="assessment-layout">
+              <div class="assessment-editor">
+                <section class="assessment-card assessment-identification assessment-reveal" aria-labelledby="identification-title">
+                  <div class="assessment-card-heading">
+                    <div>
+                      <p class="eyebrow">Correct identification</p>
+                      <h2 id="identification-title">Confirm the device category</h2>
+                    </div>
+                    <span class="assessment-lock" id="assessment-category-lock" hidden>Snapshot locked</span>
+                  </div>
+                  <label class="field-label" for="assessment-category">Confirmed category</label>
+                  <select id="assessment-category" name="category" required></select>
+                  <p class="field-help" id="assessment-category-help">You can correct this before the first assessment snapshot is saved.</p>
+                </section>
+
+                <section class="assessment-card assessment-reveal assessment-reveal-two" aria-labelledby="facts-title">
+                  <div class="assessment-card-heading">
+                    <div>
+                      <p class="eyebrow">What you know</p>
+                      <h2 id="facts-title">Device facts</h2>
+                    </div>
+                  </div>
+
+                  <div class="fact-grid">
+                    <fieldset class="range-field">
+                      <legend>Approximate age</legend>
+                      <div class="range-inputs">
+                        <label><span>From</span><span class="input-with-unit"><input id="assessment-age-min" name="age_min" type="number" inputmode="numeric" min="0" max="1200" step="1"><small>months</small></span></label>
+                        <label><span>To</span><span class="input-with-unit"><input id="assessment-age-max" name="age_max" type="number" inputmode="numeric" min="0" max="1200" step="1"><small>months</small></span></label>
+                      </div>
+                    </fieldset>
+
+                    <fieldset class="range-field">
+                      <legend>Battery or component cycles</legend>
+                      <div class="range-inputs">
+                        <label><span>From</span><span class="input-with-unit"><input id="assessment-cycles-min" name="cycle_min" type="number" inputmode="numeric" min="0" max="10000000" step="1"><small>cycles</small></span></label>
+                        <label><span>To</span><span class="input-with-unit"><input id="assessment-cycles-max" name="cycle_max" type="number" inputmode="numeric" min="0" max="10000000" step="1"><small>cycles</small></span></label>
+                      </div>
+                    </fieldset>
+
+                    <label class="assessment-field" for="assessment-usage">
+                      <span>Usage intensity</span>
+                      <select id="assessment-usage" name="usage">
+                        <option value="unknown">Unknown</option>
+                        <option value="light">Light</option>
+                        <option value="moderate">Moderate</option>
+                        <option value="heavy">Heavy</option>
+                      </select>
+                    </label>
+
+                    <fieldset class="known-issues">
+                      <legend>Known issues</legend>
+                      <p>Record issues through visible condition and operating state so they can drive safety guidance.</p>
+                      <div class="known-issue-fields">
+                        <label for="assessment-condition"><span>Visible condition</span>
+                          <select id="assessment-condition" name="condition">
+                            <option value="unknown">Unknown</option>
+                            <option value="no_visible_damage">No visible damage</option>
+                            <option value="visible_wear">Visible wear</option>
+                            <option value="damaged">Damaged</option>
+                          </select>
+                        </label>
+                        <label for="assessment-operational"><span>Operating state</span>
+                          <select id="assessment-operational" name="operational">
+                            <option value="unknown">Unknown</option>
+                            <option value="working">Working</option>
+                            <option value="intermittent">Intermittent</option>
+                            <option value="not_working">Not working</option>
+                          </select>
+                        </label>
+                      </div>
+                    </fieldset>
+                  </div>
+                </section>
+
+                <section class="assessment-card assessment-evidence assessment-reveal assessment-reveal-three" aria-labelledby="evidence-title">
+                  <div class="assessment-card-heading">
+                    <div>
+                      <p class="eyebrow">Provenance</p>
+                      <h2 id="evidence-title">Evidence used</h2>
+                    </div>
+                  </div>
+                  <dl id="assessment-evidence-list"></dl>
+                  <p class="evidence-disclaimer">The classifier supplies the category only. Its confidence is not component-health evidence.</p>
+                </section>
+
+                <div class="assessment-save-row assessment-reveal assessment-reveal-four">
+                  <p id="assessment-save-note">Changes apply only to this saved item, never the category standard.</p>
+                  <button class="primary-button" id="save-assessment" type="submit" data-submit>Save and recalculate</button>
+                </div>
+              </div>
+
+              <div class="assessment-results">
+                <section class="assessment-overall assessment-reveal" aria-labelledby="overall-title">
+                  <p class="eyebrow">Supported component range</p>
+                  <div class="assessment-overall-line">
+                    <h2 id="overall-title">Lifecycle estimate</h2>
+                    <strong id="assessment-overall-range">Unknown</strong>
+                  </div>
+                  <div class="assessment-meter" aria-hidden="true"><span id="assessment-meter-fill"></span></div>
+                  <p id="assessment-overall-detail">Add the requested item facts to calculate any range supported by the bundled references.</p>
+                  <p class="estimate-honesty">This is an explainable estimate, not a measured health reading.</p>
+                </section>
+
+                <section class="assessment-safety assessment-reveal assessment-reveal-two" id="assessment-safety" aria-labelledby="safety-title">
+                  <div class="assessment-card-heading">
+                    <div>
+                      <p class="eyebrow">Safety first</p>
+                      <h2 id="safety-title">Handling guidance</h2>
+                    </div>
+                  </div>
+                  <div id="assessment-safety-list">
+                    <p>Safety guidance appears here before reuse recommendations.</p>
+                  </div>
+                </section>
+
+                <section class="component-section assessment-reveal assessment-reveal-three" aria-labelledby="components-title">
+                  <div class="component-heading">
+                    <div>
+                      <p class="eyebrow">Category-based inventory</p>
+                      <h2 id="components-title">Components and next steps</h2>
+                    </div>
+                    <span id="assessment-template-version">Revision —</span>
+                  </div>
+                  <p class="inventory-honesty">These components are commonly associated with this category. They were not detected in the photo.</p>
+                  <div class="component-list" id="assessment-components" aria-live="off"></div>
+                </section>
+              </div>
+            </div>
+          </form>
+
+          <section class="assessment-error-panel" aria-labelledby="assessment-error-title">
+            <span class="error-icon" aria-hidden="true">!</span>
+            <p class="eyebrow">Assessment unavailable</p>
+            <h2 id="assessment-error-title">We couldn’t load this assessment.</h2>
+            <p id="assessment-error-message">Return to Scan and choose a saved result.</p>
+            <div class="assessment-error-actions">
+              <button class="quiet-button" type="button" data-view-link="scan">Back to scan</button>
+              <button class="primary-button" type="button" id="retry-assessment">Try again</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section class="view history-view" id="history-view" aria-labelledby="history-title" hidden>
         <div class="view-heading history-heading">
           <div>
@@ -197,13 +364,5 @@
     <button class="primary-button" type="button" data-close-dialog>Got it</button>
   </dialog>
 
-  <dialog class="placeholder-dialog" id="assessment-dialog" aria-labelledby="assessment-dialog-title">
-    <button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button>
-    <span class="dialog-icon" aria-hidden="true">✓</span>
-    <p class="eyebrow">Assessment</p>
-    <h2 id="assessment-dialog-title">Classification is ready.</h2>
-    <p id="assessment-summary">Detailed condition, lifecycle, and component assessment is the next product step. This scan remains available in local history.</p>
-    <button class="primary-button" type="button" data-close-dialog>Return to result</button>
-  </dialog>
 </body>
 </html>
