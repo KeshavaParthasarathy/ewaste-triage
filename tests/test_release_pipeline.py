@@ -96,12 +96,212 @@ def test_prepare_release_rejects_checksum_mismatch(release_inputs):
     assert not output.exists()
 
 
+def test_prepare_release_rejects_unsupported_model_preprocessing(release_inputs):
+    bundle, components, report, output = release_inputs
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["preprocessing_version"] = "rgb-999-v9"
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(ReleasePreparationError, match="preprocessing"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert not output.exists()
+
+
+def test_prepare_release_rejects_invalid_model_confidence_floor(release_inputs):
+    bundle, components, report, output = release_inputs
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["confidence_floor"] = 1.1
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(ReleasePreparationError, match="confidence_floor"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert not output.exists()
+
+
+def test_prepare_release_rejects_model_manifest_change_during_staging(
+    release_inputs, monkeypatch
+):
+    bundle, components, report, output = release_inputs
+    real_copy = release_module._copy_asset
+
+    def copy_then_tamper(source, destination):
+        real_copy(source, destination)
+        if Path(source) == bundle / "manifest.json":
+            staged_manifest = json.loads(Path(destination).read_text())
+            staged_manifest["confidence_floor"] = 0.75
+            Path(destination).write_text(json.dumps(staged_manifest))
+
+    monkeypatch.setattr(release_module, "_copy_asset", copy_then_tamper)
+
+    with pytest.raises(ReleasePreparationError, match="changed while staging"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert not output.exists()
+    assert not list(output.parent.glob(f".{output.name}-*.tmp"))
+
+
+def test_prepare_release_rejects_source_manifest_change_after_validation(
+    release_inputs, monkeypatch
+):
+    bundle, components, report, output = release_inputs
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["metrics"]["parity"] = {
+        "reference_images": 1,
+        "top1_matches": 1,
+        "max_probability_delta": 0.0,
+    }
+    manifest_path.write_text(json.dumps(manifest))
+    parity = json.loads(report.read_text())
+    parity["metrics"] = {
+        "reference_images": 1,
+        "top1_matches": 1,
+        "max_probability_delta": 0.0,
+    }
+    report.write_text(json.dumps(parity))
+    real_sha256_file = release_module.sha256_file
+    mutated = False
+
+    def mutate_after_first_source_manifest_hash(path):
+        nonlocal mutated
+        digest = real_sha256_file(Path(path))
+        if Path(path) == manifest_path and not mutated:
+            mutated = True
+            manifest = json.loads(manifest_path.read_text())
+            manifest["metrics"]["parity"] = {
+                "reference_images": True,
+                "top1_matches": True,
+                "max_probability_delta": False,
+            }
+            manifest_path.write_text(json.dumps(manifest))
+        return digest
+
+    monkeypatch.setattr(
+        release_module,
+        "sha256_file",
+        mutate_after_first_source_manifest_hash,
+    )
+
+    with pytest.raises(ReleasePreparationError, match="changed while validating"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert not output.exists()
+    assert not list(output.parent.glob(f".{output.name}-*.tmp"))
+
+
+def test_prepare_release_preserves_output_when_source_changes_before_hash_capture(
+    release_inputs, monkeypatch
+):
+    bundle, components, report, output = release_inputs
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["metrics"]["parity"] = {
+        "reference_images": 1,
+        "top1_matches": 1,
+        "max_probability_delta": 0.0,
+    }
+    manifest_path.write_text(json.dumps(manifest))
+    parity = json.loads(report.read_text())
+    parity["metrics"] = {
+        "reference_images": 1,
+        "top1_matches": 1,
+        "max_probability_delta": 0.0,
+    }
+    report.write_text(json.dumps(parity))
+    output.mkdir()
+    sentinel = output / "previous-release.txt"
+    sentinel.write_text("keep the approved release")
+    real_sha256_file = release_module.sha256_file
+    mutated = False
+
+    def mutate_before_first_source_manifest_hash(path):
+        nonlocal mutated
+        if Path(path) == manifest_path and not mutated:
+            mutated = True
+            changed = json.loads(manifest_path.read_text())
+            changed["metrics"]["parity"] = {
+                "reference_images": True,
+                "top1_matches": True,
+                "max_probability_delta": False,
+            }
+            manifest_path.write_text(json.dumps(changed))
+        return real_sha256_file(Path(path))
+
+    monkeypatch.setattr(
+        release_module,
+        "sha256_file",
+        mutate_before_first_source_manifest_hash,
+    )
+
+    with pytest.raises(ReleasePreparationError, match="metrics do not match"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert sentinel.read_text() == "keep the approved release"
+    assert not list(output.parent.glob(f".{output.name}-*.tmp"))
+    assert not list(output.parent.glob(f".{output.name}-*.backup-*"))
+
+
+def test_prepare_release_rejects_coordinated_model_bundle_change_during_staging(
+    release_inputs, monkeypatch
+):
+    bundle, components, report, output = release_inputs
+    real_copy = release_module._copy_asset
+
+    def copy_then_tamper(source, destination):
+        real_copy(source, destination)
+        if Path(source) == bundle / "model.onnx":
+            Path(destination).write_bytes(b"different but internally consistent model")
+        elif Path(source) == bundle / "manifest.json":
+            staged_manifest = json.loads(Path(destination).read_text())
+            staged_manifest["artifact_sha256"] = sha256(Path(destination).parent / "model.onnx")
+            Path(destination).write_text(json.dumps(staged_manifest))
+
+    monkeypatch.setattr(release_module, "_copy_asset", copy_then_tamper)
+
+    with pytest.raises(ReleasePreparationError, match="changed while staging"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert not output.exists()
+    assert not list(output.parent.glob(f".{output.name}-*.tmp"))
+
+
+def test_prepare_release_rejects_boolean_model_parity_metric_aliases(release_inputs):
+    bundle, components, report, output = release_inputs
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["metrics"]["parity"] = {
+        "reference_images": True,
+        "top1_matches": True,
+        "max_probability_delta": False,
+    }
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(ReleasePreparationError, match="metrics do not match"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert not output.exists()
+
+
 def test_prepare_release_rejects_unknown_schema_version(release_inputs):
     bundle, components, report, output = release_inputs
     write_parity_report(report.parent, bundle, schema_version=99)
 
     with pytest.raises(ReleasePreparationError, match="schema_version"):
         prepare_release(bundle, components, report, output, "1.2.3")
+
+
+def test_prepare_release_rejects_boolean_parity_schema_version(release_inputs):
+    bundle, components, report, output = release_inputs
+    write_parity_report(report.parent, bundle, schema_version=True)
+
+    with pytest.raises(ReleasePreparationError, match="schema_version"):
+        prepare_release(bundle, components, report, output, "1.2.3")
+
+    assert not output.exists()
 
 
 def test_prepare_release_reports_an_invalid_component_database(release_inputs):
@@ -243,6 +443,7 @@ def test_prepare_release_stages_model_labels_components_and_manifest_atomically(
     assert manifest["model"] == {
         "model_id": "approved-model-2026-09",
         "artifact_sha256": sha256(output / "model" / "model.onnx"),
+        "manifest_sha256": sha256(output / "model" / "manifest.json"),
         "labels_sha256": sha256(output / "labels.json"),
         "schema_version": 1,
     }
@@ -254,10 +455,24 @@ def test_prepare_release_stages_model_labels_components_and_manifest_atomically(
 
 def test_release_manifest_schema_recursively_closes_the_actual_parity_contract():
     schema = json.loads((ROOT / "packaging" / "release-manifest.schema.json").read_text())
+    model = schema["properties"]["model"]
     parity = schema["properties"]["parity"]
     metrics = parity["properties"]["metrics"]
     holdout = parity["properties"]["holdout"]
 
+    assert model["additionalProperties"] is False
+    assert set(model["required"]) == {
+        "model_id",
+        "artifact_sha256",
+        "manifest_sha256",
+        "labels_sha256",
+        "schema_version",
+    }
+    assert set(model["properties"]) == set(model["required"])
+    assert model["properties"]["manifest_sha256"] == {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+    }
     assert parity["additionalProperties"] is False
     assert set(parity["required"]) == {
         "schema_version", "status", "model_id", "model_sha256", "labels", "metrics", "holdout"

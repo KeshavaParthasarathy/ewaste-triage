@@ -30,7 +30,10 @@ RELEASE_DATA_FILES = (
 EXCLUDED_MODULES = (
     "scripts",
     "server.app",
+    "server.classifier",
     "tests",
+    "torch",
+    "torchvision",
 )
 HIDDEN_IMPORTS = (
     "pillow_heif",

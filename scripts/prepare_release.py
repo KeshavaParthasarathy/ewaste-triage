@@ -22,7 +22,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.photo_classes import PHOTO_CLASS_SPECS
-from server.model_bundle import ModelBundleError, SUPPORTED_SCHEMA, load_model_bundle, sha256_file
+from server.imaging import SUPPORTED_PREPROCESSING_VERSION
+from server.model_bundle import (
+    ModelBundleError,
+    ModelManifest,
+    SUPPORTED_SCHEMA,
+    load_model_bundle,
+    sha256_file,
+)
 from server.reference_db import ReferenceStore, SCHEMA_VERSION as REFERENCE_SCHEMA_VERSION
 
 
@@ -67,6 +74,52 @@ def _require_number(value: object, label: str) -> float:
     return float(value)
 
 
+def _json_equal(value: object, expected: object) -> bool:
+    """Compare JSON values without Python's bool/integer aliasing."""
+    if isinstance(value, bool) or isinstance(expected, bool):
+        return isinstance(value, bool) and isinstance(expected, bool) and value is expected
+    if isinstance(value, (int, float)) or isinstance(expected, (int, float)):
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and isinstance(expected, (int, float))
+            and not isinstance(expected, bool)
+            and value == expected
+        )
+    if isinstance(value, (list, tuple)) or isinstance(expected, (list, tuple)):
+        return (
+            isinstance(value, (list, tuple))
+            and isinstance(expected, (list, tuple))
+            and len(value) == len(expected)
+            and all(_json_equal(left, right) for left, right in zip(value, expected))
+        )
+    if isinstance(value, Mapping) or isinstance(expected, Mapping):
+        return (
+            isinstance(value, Mapping)
+            and isinstance(expected, Mapping)
+            and set(value) == set(expected)
+            and all(_json_equal(value[key], expected[key]) for key in value)
+        )
+    return type(value) is type(expected) and value == expected
+
+
+def _validate_product_model_manifest(
+    manifest: ModelManifest,
+    *,
+    label: str,
+) -> Mapping[str, Any]:
+    if manifest.schema_version != SUPPORTED_SCHEMA:
+        raise ReleasePreparationError(f"{label} schema_version is unsupported")
+    if manifest.classes != CANONICAL_LABELS:
+        raise ReleasePreparationError(f"{label} labels are not the approved canonical order")
+    if manifest.preprocessing_version != SUPPORTED_PREPROCESSING_VERSION:
+        raise ReleasePreparationError(f"{label} preprocessing_version is unsupported")
+    parity = manifest.metrics.get("parity")
+    if not isinstance(parity, Mapping):
+        raise ReleasePreparationError(f"{label} has no valid parity metrics")
+    return parity
+
+
 def _validate_parity_report(
     parity_report: Path,
     *,
@@ -77,7 +130,7 @@ def _validate_parity_report(
 ) -> dict[str, Any]:
     report = _read_json(parity_report, "parity report")
     _require_exact_fields(report, _PARITY_FIELDS, "parity report")
-    if report["schema_version"] != RELEASE_SCHEMA_VERSION:
+    if _require_int(report["schema_version"], "parity report schema_version") != RELEASE_SCHEMA_VERSION:
         raise ReleasePreparationError("parity report schema_version is unsupported")
     if report["status"] != "passed":
         raise ReleasePreparationError("parity status must be passed")
@@ -95,7 +148,7 @@ def _validate_parity_report(
     delta = _require_number(metrics["max_probability_delta"], "parity max_probability_delta")
     if top1_matches != image_count or delta < 0 or delta > MAX_PARITY_DELTA:
         raise ReleasePreparationError("parity report metrics do not meet the release gate")
-    if dict(model_parity) != metrics:
+    if not _json_equal(model_parity, metrics):
         raise ReleasePreparationError("parity report metrics do not match the model manifest")
 
     holdout = report["holdout"]
@@ -227,17 +280,21 @@ def prepare_release(
     if not isinstance(app_version, str) or not app_version.strip():
         raise ReleasePreparationError("app_version must be a non-empty string")
     try:
+        manifest_asset = (model_bundle / "manifest.json").resolve(strict=True)
+        model_manifest_sha256 = sha256_file(manifest_asset)
+    except (OSError, RuntimeError) as error:
+        raise ReleasePreparationError("model manifest path could not be resolved") from error
+    try:
         model_manifest, artifact = load_model_bundle(model_bundle)
     except ModelBundleError as error:
         raise ReleasePreparationError(f"model bundle validation failed: {error}") from error
-    if model_manifest.schema_version != SUPPORTED_SCHEMA:
-        raise ReleasePreparationError("model schema_version is unsupported")
-    if model_manifest.classes != CANONICAL_LABELS:
-        raise ReleasePreparationError("model labels are not the approved canonical order")
-    try:
-        manifest_asset = (model_bundle / "manifest.json").resolve(strict=True)
-    except (OSError, RuntimeError) as error:
-        raise ReleasePreparationError("model manifest path could not be resolved") from error
+    model_sha256 = model_manifest.artifact_sha256
+    if (
+        sha256_file(manifest_asset) != model_manifest_sha256
+        or sha256_file(artifact) != model_sha256
+    ):
+        raise ReleasePreparationError("model bundle changed while validating release inputs")
+    model_parity = _validate_product_model_manifest(model_manifest, label="model manifest")
     _validate_output_path(
         output_dir,
         (
@@ -267,10 +324,6 @@ def prepare_release(
     if component_manifest.schema_version != REFERENCE_SCHEMA_VERSION:
         raise ReleasePreparationError("component database schema_version is unsupported")
 
-    model_sha256 = sha256_file(artifact)
-    model_parity = model_manifest.metrics.get("parity")
-    if not isinstance(model_parity, Mapping):
-        raise ReleasePreparationError("model manifest has no valid parity metrics")
     report = _validate_parity_report(
         parity_report,
         model_id=model_manifest.model_id,
@@ -278,6 +331,11 @@ def prepare_release(
         labels=model_manifest.classes,
         model_parity=model_parity,
     )
+    if (
+        sha256_file(manifest_asset) != model_manifest_sha256
+        or sha256_file(artifact) != model_sha256
+    ):
+        raise ReleasePreparationError("model bundle changed while validating release inputs")
 
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}-", suffix=".tmp", dir=output_dir.parent))
@@ -286,6 +344,24 @@ def prepare_release(
         model_stage.mkdir()
         _copy_asset(artifact, model_stage / "model.onnx")
         _copy_asset(manifest_asset, model_stage / "manifest.json")
+        try:
+            staged_model_manifest, staged_artifact = load_model_bundle(model_stage)
+        except ModelBundleError as error:
+            raise ReleasePreparationError(
+                f"staged model bundle validation failed: {error}"
+            ) from error
+        staged_model_parity = _validate_product_model_manifest(
+            staged_model_manifest,
+            label="staged model manifest",
+        )
+        staged_manifest_sha256 = sha256_file(model_stage / "manifest.json")
+        staged_artifact_sha256 = sha256_file(staged_artifact)
+        if (
+            staged_manifest_sha256 != model_manifest_sha256
+            or staged_artifact_sha256 != model_sha256
+            or not _json_equal(staged_model_parity, report["metrics"])
+        ):
+            raise ReleasePreparationError("model bundle changed while staging")
         labels_path = stage / "labels.json"
         # Keep the labels asset a plain JSON array for the runtime, with deterministic bytes.
         labels_path.write_text(
@@ -300,10 +376,11 @@ def prepare_release(
             "schema_version": RELEASE_SCHEMA_VERSION,
             "app_version": app_version,
             "model": {
-                "model_id": model_manifest.model_id,
-                "artifact_sha256": sha256_file(model_stage / "model.onnx"),
+                "model_id": staged_model_manifest.model_id,
+                "artifact_sha256": staged_artifact_sha256,
+                "manifest_sha256": staged_manifest_sha256,
                 "labels_sha256": sha256_file(labels_path),
-                "schema_version": model_manifest.schema_version,
+                "schema_version": staged_model_manifest.schema_version,
             },
             "components": {
                 "sha256": sha256_file(stage / "components.sqlite"),

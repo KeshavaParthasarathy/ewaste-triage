@@ -9,13 +9,14 @@ import numpy as np
 import onnxruntime as ort
 from PIL import Image
 
-from server.classifier import prediction_from_probabilities
 from server.imaging import (
     SUPPORTED_PREPROCESSING_VERSION,
     preprocess_crop_array,
     preprocess_image,
+    register_image_formats,
 )
 from server.model_bundle import ModelBundleError, load_model_bundle
+from server.prediction import prediction_from_probabilities
 
 
 EXPECTED_INPUT_SHAPE = (1, 3, 224, 224)
@@ -36,6 +37,7 @@ class OnnxClassifier:
     """Classify release images from a validated model bundle."""
 
     def __init__(self, bundle_dir: Path):
+        register_image_formats()
         self.manifest, artifact = load_model_bundle(Path(bundle_dir))
         if self.manifest.preprocessing_version != SUPPORTED_PREPROCESSING_VERSION:
             raise ModelBundleError(

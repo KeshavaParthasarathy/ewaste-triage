@@ -14,6 +14,7 @@ from onnx import TensorProto, helper, numpy_helper
 from PIL import Image
 
 import scripts.export_onnx as export_module
+import server.inference as inference_module
 from scripts.export_onnx import ParityError, export_checkpoint
 from server.classifier import Classifier
 from server.inference import OnnxClassifier
@@ -286,6 +287,21 @@ def test_onnx_classifier_rejects_unsupported_preprocessing_version(tmp_path):
 
     with pytest.raises(ModelBundleError, match="preprocessing version"):
         OnnxClassifier(bundle)
+
+
+def test_onnx_classifier_registers_optional_image_decoders(tmp_path, monkeypatch):
+    bundle = write_metadata_test_bundle(tmp_path / "bundle")
+    registrations = []
+    monkeypatch.setattr(
+        inference_module,
+        "register_image_formats",
+        lambda: registrations.append(True),
+        raising=False,
+    )
+
+    OnnxClassifier(bundle)
+
+    assert registrations == [True]
 
 
 @pytest.mark.parametrize(

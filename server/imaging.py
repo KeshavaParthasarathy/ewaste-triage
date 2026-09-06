@@ -1,21 +1,15 @@
 """Shared image decoding and release-model preprocessing."""
 import numpy as np
 from PIL import Image, ImageOps
-from torchvision import transforms
 
 
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 SUPPORTED_PREPROCESSING_VERSION = "rgb-224-v1"
 INFERENCE_CROP_SIZE = (224, 224)
-RELEASE_IMAGE_TRANSFORM = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-])
-RELEASE_TRANSFORM = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize(MEAN, STD),
-])
+_RESIZE_SHORT_EDGE = 256
+_MEAN_ARRAY = np.asarray(MEAN, dtype=np.float32).reshape(3, 1, 1)
+_STD_ARRAY = np.asarray(STD, dtype=np.float32).reshape(3, 1, 1)
 
 
 class ImageTooLarge(ValueError):
@@ -51,13 +45,28 @@ def preprocess_crop_array(image: Image.Image) -> np.ndarray:
     """Normalize an already-prepared 224×224 RGB release crop for inference."""
     if image.mode != "RGB" or image.size != INFERENCE_CROP_SIZE:
         raise ValueError("inference crop must be a 224x224 RGB image")
-    tensor = RELEASE_TRANSFORM(image).unsqueeze(0)
-    return tensor.numpy().astype(np.float32, copy=False)
+    channels_first = np.asarray(image, dtype=np.float32).transpose(2, 0, 1)
+    normalized = (channels_first / np.float32(255.0) - _MEAN_ARRAY) / _STD_ARRAY
+    return np.ascontiguousarray(normalized[np.newaxis, ...], dtype=np.float32)
 
 
 def inference_crop(image: Image.Image) -> Image.Image:
     """Return the release geometry crop from an already-normalized source image."""
-    return RELEASE_IMAGE_TRANSFORM(image)
+    width, height = image.size
+    if width <= height:
+        resized_width = _RESIZE_SHORT_EDGE
+        resized_height = int(_RESIZE_SHORT_EDGE * height / width)
+    else:
+        resized_height = _RESIZE_SHORT_EDGE
+        resized_width = int(_RESIZE_SHORT_EDGE * width / height)
+    resized = image.resize(
+        (resized_width, resized_height),
+        resample=Image.Resampling.BILINEAR,
+    )
+    crop_width, crop_height = INFERENCE_CROP_SIZE
+    left = int(round((resized_width - crop_width) / 2.0))
+    top = int(round((resized_height - crop_height) / 2.0))
+    return resized.crop((left, top, left + crop_width, top + crop_height))
 
 
 def preprocess_image(image: Image.Image) -> Image.Image:

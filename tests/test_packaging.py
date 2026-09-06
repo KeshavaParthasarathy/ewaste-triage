@@ -63,13 +63,23 @@ def _write_release_stage(root: Path, *, version: str = "1.2.3") -> Path:
     model = model_dir / "model.onnx"
     model.write_bytes(b"approved onnx model")
     model_sha = _sha256(model)
+    parity_metrics = {
+        "reference_images": 5,
+        "top1_matches": 5,
+        "max_probability_delta": 0.0,
+    }
+    model_manifest_path = model_dir / "manifest.json"
     _write_json(
-        model_dir / "manifest.json",
+        model_manifest_path,
         {
             "model_id": "release-model-1",
+            "architecture": "test-onnx",
+            "classes": CANONICAL_LABELS,
+            "preprocessing_version": "rgb-224-v1",
+            "confidence_floor": 0.6,
             "schema_version": 1,
             "artifact_sha256": model_sha,
-            "classes": CANONICAL_LABELS,
+            "metrics": {"parity": parity_metrics},
         },
     )
     labels = release / "labels.json"
@@ -82,11 +92,7 @@ def _write_release_stage(root: Path, *, version: str = "1.2.3") -> Path:
         "model_id": "release-model-1",
         "model_sha256": model_sha,
         "labels": CANONICAL_LABELS,
-        "metrics": {
-            "reference_images": 5,
-            "top1_matches": 5,
-            "max_probability_delta": 0.0,
-        },
+        "metrics": parity_metrics,
         "holdout": {
             "status": "passed",
             "split": "holdout",
@@ -104,6 +110,7 @@ def _write_release_stage(root: Path, *, version: str = "1.2.3") -> Path:
             "model": {
                 "model_id": "release-model-1",
                 "artifact_sha256": model_sha,
+                "manifest_sha256": _sha256(model_manifest_path),
                 "labels_sha256": _sha256(labels),
                 "schema_version": 1,
             },
@@ -216,8 +223,42 @@ def test_spec_excludes_admin_training_and_test_modules():
 
     excluded = set(_assignment(SPEC, "EXCLUDED_MODULES"))
 
-    assert {"scripts", "server.app", "tests"} <= excluded
+    assert {
+        "scripts",
+        "server.app",
+        "server.classifier",
+        "tests",
+        "torch",
+        "torchvision",
+    } <= excluded
     assert set(FORBIDDEN_PYTHON_MODULE_PREFIXES) == excluded
+
+
+def test_onnx_runtime_import_graph_does_not_load_training_frameworks():
+    script = """
+import builtins
+import sys
+
+original_import = builtins.__import__
+
+def reject_training_frameworks(name, *args, **kwargs):
+    if name.partition('.')[0] in {'torch', 'torchvision'}:
+        raise AssertionError(f'packaged runtime imported {name}')
+    return original_import(name, *args, **kwargs)
+
+builtins.__import__ = reject_training_frameworks
+import server.inference
+assert not ({'torch', 'torchvision'} & set(sys.modules))
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_spec_declares_required_macos_plist_purpose_strings():
@@ -318,6 +359,27 @@ def test_release_stage_verifier_rejects_unknown_manifest_fields(tmp_path):
         validate_release_stage(release)
 
 
+@pytest.mark.parametrize("invalid_const", ("schema_boolean", "overlap_integer"))
+def test_release_schema_const_rejects_boolean_integer_aliases(tmp_path, invalid_const):
+    from scripts.verify_macos_bundle import BundleVerificationError, validate_release_stage
+
+    release = _write_release_stage(tmp_path)
+    manifest_path = release / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    if invalid_const == "schema_boolean":
+        manifest["schema_version"] = True
+    else:
+        manifest["parity"]["holdout"]["overlaps_training"] = 0
+        parity_path = release / "parity-report.json"
+        parity = json.loads(parity_path.read_text())
+        parity["holdout"]["overlaps_training"] = 0
+        _write_json(parity_path, parity)
+    _write_json(manifest_path, manifest)
+
+    with pytest.raises(BundleVerificationError, match="must equal"):
+        validate_release_stage(release)
+
+
 def test_release_stage_verifier_rejects_asset_checksum_mismatch(tmp_path):
     from scripts.verify_macos_bundle import BundleVerificationError, validate_release_stage
 
@@ -325,6 +387,78 @@ def test_release_stage_verifier_rejects_asset_checksum_mismatch(tmp_path):
     (release / "model" / "model.onnx").write_bytes(b"tampered")
 
     with pytest.raises(BundleVerificationError, match="model.*checksum"):
+        validate_release_stage(release)
+
+
+def test_release_stage_verifier_rejects_tampered_model_manifest_bytes(tmp_path):
+    from scripts.verify_macos_bundle import BundleVerificationError, validate_release_stage
+
+    release = _write_release_stage(tmp_path)
+    manifest_path = release / "model" / "manifest.json"
+    model_manifest = json.loads(manifest_path.read_text())
+    model_manifest["confidence_floor"] = 0.75
+    _write_json(manifest_path, model_manifest)
+
+    with pytest.raises(BundleVerificationError, match="model manifest.*checksum"):
+        validate_release_stage(release)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    (
+        ({"confidence_floor": 1.1}, "confidence_floor"),
+        ({"preprocessing_version": "rgb-999-v9"}, "preprocessing"),
+        (
+            {
+                "metrics": {
+                    "parity": {
+                        "reference_images": 5,
+                        "top1_matches": 4,
+                        "max_probability_delta": 0.0,
+                    }
+                }
+            },
+            "parity metrics",
+        ),
+    ),
+)
+def test_release_stage_verifier_revalidates_runtime_model_manifest(
+    tmp_path, change, message
+):
+    from scripts.verify_macos_bundle import BundleVerificationError, validate_release_stage
+
+    release = _write_release_stage(tmp_path)
+    model_manifest_path = release / "model" / "manifest.json"
+    model_manifest = json.loads(model_manifest_path.read_text())
+    model_manifest.update(change)
+    _write_json(model_manifest_path, model_manifest)
+    release_manifest_path = release / "release-manifest.json"
+    release_manifest = json.loads(release_manifest_path.read_text())
+    release_manifest["model"]["manifest_sha256"] = _sha256(model_manifest_path)
+    _write_json(release_manifest_path, release_manifest)
+
+    with pytest.raises(BundleVerificationError, match=message):
+        validate_release_stage(release)
+
+
+def test_release_stage_verifier_rejects_boolean_model_parity_metric_aliases(tmp_path):
+    from scripts.verify_macos_bundle import BundleVerificationError, validate_release_stage
+
+    release = _write_release_stage(tmp_path)
+    model_manifest_path = release / "model" / "manifest.json"
+    model_manifest = json.loads(model_manifest_path.read_text())
+    model_manifest["metrics"]["parity"] = {
+        "reference_images": True,
+        "top1_matches": True,
+        "max_probability_delta": False,
+    }
+    _write_json(model_manifest_path, model_manifest)
+    release_manifest_path = release / "release-manifest.json"
+    release_manifest = json.loads(release_manifest_path.read_text())
+    release_manifest["model"]["manifest_sha256"] = _sha256(model_manifest_path)
+    _write_json(release_manifest_path, release_manifest)
+
+    with pytest.raises(BundleVerificationError, match="parity metrics"):
         validate_release_stage(release)
 
 
@@ -388,7 +522,11 @@ def test_bundle_verifier_rejects_non_arm64_executable(tmp_path):
         "scripts.train_classifier",
         "server.app",
         "server.app.admin",
+        "server.classifier",
         "tests.test_server",
+        "torch",
+        "torch.nn",
+        "torchvision.models",
     ),
 )
 def test_bundle_verifier_rejects_forbidden_embedded_python_modules(tmp_path, module_name):
@@ -470,6 +608,9 @@ def test_build_script_refuses_dirty_source_before_creating_outputs(tmp_path, dir
         ROOT / "packaging" / "release-manifest.schema.json",
         project / "packaging" / "release-manifest.schema.json",
     )
+    (project / "server").mkdir()
+    for filename in ("__init__.py", "imaging.py", "model_bundle.py"):
+        shutil.copy2(ROOT / "server" / filename, project / "server" / filename)
     subprocess.run(["/usr/bin/git", "init", "-q", str(project)], check=True)
     subprocess.run(["/usr/bin/git", "-C", str(project), "add", "."], check=True)
     subprocess.run(
@@ -492,7 +633,6 @@ def test_build_script_refuses_dirty_source_before_creating_outputs(tmp_path, dir
             handle.write("\n# uncommitted source change\n")
     else:
         dirty_source = project / "server" / "uncommitted.py"
-        dirty_source.parent.mkdir()
         dirty_source.write_text("SHOULD_NOT_SHIP = True\n", encoding="utf-8")
         if dirty_kind == "staged":
             subprocess.run(
@@ -559,3 +699,4 @@ def test_app_and_build_dependencies_are_pinned_without_onnx_runtime_downgrade():
         "onnxruntime==1.29.0",
     } <= requirements
     assert {"psutil==7.0.0", "qrcode==8.2", "pywebview==6.2.1"} <= app_requirements
+    assert not {"torch==2.13.0", "torchvision==0.28.0"} & app_requirements

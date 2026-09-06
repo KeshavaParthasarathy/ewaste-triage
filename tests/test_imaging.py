@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from PIL import Image
+from torchvision.transforms import functional as vision_functional
 
 import server.imaging as imaging
 from server.imaging import (ImageTooLarge, normalize_image, preprocess_array,
@@ -29,6 +30,23 @@ def test_preprocess_image_has_release_crop_dimensions():
 
     assert value.size == (224, 224)
     assert value.mode == "RGB"
+
+
+def test_release_preprocessing_matches_the_training_transform_contract():
+    pixels = np.arange(317 * 241 * 3, dtype=np.uint32).reshape(241, 317, 3)
+    source = Image.fromarray((pixels % 256).astype(np.uint8), mode="RGB")
+    expected_crop = vision_functional.center_crop(
+        vision_functional.resize(source, 256),
+        [224, 224],
+    )
+    expected_tensor = vision_functional.normalize(
+        vision_functional.to_tensor(expected_crop),
+        imaging.MEAN,
+        imaging.STD,
+    ).unsqueeze(0)
+
+    assert np.array_equal(np.asarray(preprocess_image(source)), np.asarray(expected_crop))
+    assert preprocess_array(source) == pytest.approx(expected_tensor.numpy(), abs=1e-7)
 
 
 def test_normalize_converts_non_rgb_images_to_rgb():

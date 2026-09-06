@@ -10,10 +10,11 @@
     "model": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model_id", "artifact_sha256", "labels_sha256", "schema_version"],
+      "required": ["model_id", "artifact_sha256", "manifest_sha256", "labels_sha256", "schema_version"],
       "properties": {
         "model_id": {"type": "string", "minLength": 1},
         "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "labels_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "schema_version": {"const": 1}
       }

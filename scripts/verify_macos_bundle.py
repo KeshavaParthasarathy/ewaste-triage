@@ -17,6 +17,13 @@ from typing import Any, Callable, Mapping, Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from server.imaging import SUPPORTED_PREPROCESSING_VERSION
+from server.model_bundle import ModelBundleError, load_model_bundle
+
+
 RELEASE_SCHEMA = ROOT / "packaging" / "release-manifest.schema.json"
 PRODUCT_NAME = "E-Waste Triage"
 BUNDLE_IDENTIFIER = "com.ewastetriage.desktop"
@@ -36,7 +43,14 @@ RELEASE_RESOURCE_FILES = {
 BUILD_METADATA_FIELDS = frozenset(
     {"schema_version", "app_version", "source_revision", "release_manifest_sha256"}
 )
-FORBIDDEN_PYTHON_MODULE_PREFIXES = ("scripts", "server.app", "tests")
+FORBIDDEN_PYTHON_MODULE_PREFIXES = (
+    "scripts",
+    "server.app",
+    "server.classifier",
+    "tests",
+    "torch",
+    "torchvision",
+)
 _BUNDLE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 _SOURCE_REVISION = re.compile(r"[0-9a-f]{40}")
 
@@ -72,8 +86,35 @@ def _schema_type_matches(value: object, expected: str) -> bool:
     raise BundleVerificationError(f"release schema uses unsupported type {expected!r}")
 
 
+def _json_equal(value: object, expected: object) -> bool:
+    """Compare values using JSON Schema equality rather than Python coercion."""
+    if isinstance(value, bool) or isinstance(expected, bool):
+        return isinstance(value, bool) and isinstance(expected, bool) and value is expected
+    if isinstance(value, (int, float)) or isinstance(expected, (int, float)):
+        return (
+            isinstance(value, (int, float))
+            and isinstance(expected, (int, float))
+            and value == expected
+        )
+    if isinstance(value, (list, tuple)) or isinstance(expected, (list, tuple)):
+        return (
+            isinstance(value, (list, tuple))
+            and isinstance(expected, (list, tuple))
+            and len(value) == len(expected)
+            and all(_json_equal(left, right) for left, right in zip(value, expected))
+        )
+    if isinstance(value, Mapping) or isinstance(expected, Mapping):
+        return (
+            isinstance(value, Mapping)
+            and isinstance(expected, Mapping)
+            and set(value) == set(expected)
+            and all(_json_equal(value[key], expected[key]) for key in value)
+        )
+    return type(value) is type(expected) and value == expected
+
+
 def _validate_schema(value: object, schema: Mapping[str, Any], path: str = "$") -> None:
-    if "const" in schema and value != schema["const"]:
+    if "const" in schema and not _json_equal(value, schema["const"]):
         raise BundleVerificationError(f"{path} must equal {schema['const']!r}")
 
     expected_type = schema.get("type")
@@ -138,6 +179,52 @@ def _resolve_release_directory(release_dir: Path) -> Path:
     return resolved
 
 
+def _validate_runtime_model_bundle(
+    bundle_dir: Path,
+    release_manifest: Mapping[str, Any],
+    *,
+    label: str,
+) -> None:
+    model_release = release_manifest["model"]
+    manifest_path = bundle_dir / "manifest.json"
+    actual_manifest_sha = _sha256_file(manifest_path)
+    if actual_manifest_sha != model_release["manifest_sha256"]:
+        raise BundleVerificationError(
+            f"{label} model manifest checksum mismatch: expected "
+            f"{model_release['manifest_sha256']}, got {actual_manifest_sha}"
+        )
+    try:
+        model_manifest, _ = load_model_bundle(bundle_dir)
+    except ModelBundleError as error:
+        raise BundleVerificationError(
+            f"{label} model bundle validation failed: {error}"
+        ) from error
+
+    if model_manifest.preprocessing_version != SUPPORTED_PREPROCESSING_VERSION:
+        raise BundleVerificationError(
+            f"{label} model preprocessing_version is unsupported"
+        )
+    if model_manifest.model_id != model_release["model_id"]:
+        raise BundleVerificationError(f"{label} model_id does not match release manifest")
+    if model_manifest.schema_version != model_release["schema_version"]:
+        raise BundleVerificationError(
+            f"{label} model schema_version does not match release manifest"
+        )
+    if model_manifest.artifact_sha256 != model_release["artifact_sha256"]:
+        raise BundleVerificationError(
+            f"{label} model artifact checksum does not match release manifest"
+        )
+    if model_manifest.classes != tuple(release_manifest["parity"]["labels"]):
+        raise BundleVerificationError(f"{label} model classes do not match release labels")
+    model_parity = model_manifest.metrics.get("parity")
+    if not isinstance(model_parity, Mapping) or not _json_equal(
+        model_parity, release_manifest["parity"]["metrics"]
+    ):
+        raise BundleVerificationError(
+            f"{label} model parity metrics do not match release manifest"
+        )
+
+
 def _assert_closed_release_files(release_dir: Path) -> None:
     expected = set(RELEASE_RESOURCE_FILES)
     actual: set[str] = set()
@@ -184,6 +271,10 @@ def validate_release_stage(
             release_dir / "model" / "model.onnx",
             manifest["model"]["artifact_sha256"],
         ),
+        "model manifest": (
+            release_dir / "model" / "manifest.json",
+            manifest["model"]["manifest_sha256"],
+        ),
         "labels": (release_dir / "labels.json", manifest["model"]["labels_sha256"]),
         "component database": (
             release_dir / "components.sqlite",
@@ -198,7 +289,7 @@ def validate_release_stage(
             )
 
     parity = _read_json(release_dir / "parity-report.json", "parity-report.json")
-    if parity != manifest["parity"]:
+    if not _json_equal(parity, manifest["parity"]):
         raise BundleVerificationError("parity-report.json does not match release manifest parity")
     metrics = parity["metrics"]
     if metrics["top1_matches"] != metrics["reference_images"]:
@@ -216,17 +307,11 @@ def validate_release_stage(
     if labels != parity["labels"]:
         raise BundleVerificationError("labels.json does not match the approved parity labels")
 
-    model_manifest = _read_json(release_dir / "model" / "manifest.json", "model manifest")
-    expected_model_values = {
-        "model_id": manifest["model"]["model_id"],
-        "schema_version": manifest["model"]["schema_version"],
-        "artifact_sha256": manifest["model"]["artifact_sha256"],
-    }
-    for name, expected in expected_model_values.items():
-        if model_manifest.get(name) != expected:
-            raise BundleVerificationError(f"model manifest {name} does not match release manifest")
-    if model_manifest.get("classes") != labels:
-        raise BundleVerificationError("model manifest classes do not match labels.json")
+    _validate_runtime_model_bundle(
+        release_dir / "model",
+        manifest,
+        label="staged",
+    )
     return manifest
 
 
@@ -375,6 +460,12 @@ def _verify_bundled_resources(resources: Path, release_dir: Path, manifest: Mapp
     )
     if embedded_manifest != manifest:
         raise BundleVerificationError("bundled release manifest differs from staged manifest")
+
+    _validate_runtime_model_bundle(
+        resources / "models" / "production",
+        manifest,
+        label="bundled",
+    )
 
     metadata = _read_json(resources / "build-metadata.json", "build metadata")
     if set(metadata) != BUILD_METADATA_FIELDS:

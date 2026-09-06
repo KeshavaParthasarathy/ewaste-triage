@@ -5,7 +5,6 @@ Class folder names must start with a 4-digit UNU-KEY (e.g. "0306_mobile_phone") 
 value chain can join. Anything before the first underscore is treated as the key.
 """
 import pathlib
-from collections.abc import Sequence
 
 import numpy as np
 import torch
@@ -17,6 +16,7 @@ from server.imaging import (
     preprocess_image,
     register_image_formats,
 )
+from server.prediction import prediction_from_probabilities
 
 DEFAULT_CONFIDENCE_FLOOR = 0.60
 
@@ -38,29 +38,6 @@ def _build(arch, n_classes):
     else:
         raise ValueError(f"unknown arch {arch}")
     return m
-
-
-def prediction_from_probabilities(probabilities, classes: Sequence[str], confidence_floor):
-    """Build the stable prediction response shared by every inference backend."""
-    probabilities = np.asarray(probabilities)
-    order = np.argsort(-probabilities, kind="stable")[:min(3, len(classes))]
-    top_index = int(order[0])
-    top = classes[top_index]
-    top_confidence = float(probabilities[top_index])
-    key = top.split("_")[0]
-    return {
-        "class_name": top,
-        "unu_key": key if (key.isdigit() and len(key) == 4) else None,
-        "confidence": round(top_confidence, 4),
-        "low_confidence": top_confidence < confidence_floor,
-        "topk": [
-            {
-                "class_name": classes[int(index)],
-                "confidence": round(float(probabilities[index]), 4),
-            }
-            for index in order
-        ],
-    }
 
 
 class Classifier:
