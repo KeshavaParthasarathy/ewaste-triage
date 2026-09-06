@@ -99,6 +99,9 @@ def test_start_canonicalizes_safe_lan_ip_literals(host, expected):
         "::",
         "ff02::1",
         "2001:db8::1",
+        "fec0::1",
+        "::ffff:8.8.8.8",
+        "64:ff9b::1",
     ],
 )
 def test_start_rejects_non_lan_or_nonliteral_hosts(host):

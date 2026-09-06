@@ -17,7 +17,9 @@ _PRIVATE_IPV4_NETWORKS = (
     ipaddress.IPv4Network("172.16.0.0/12"),
     ipaddress.IPv4Network("192.168.0.0/16"),
 )
+_GLOBAL_IPV6_NETWORK = ipaddress.IPv6Network("2000::/3")
 _PRIVATE_IPV6_NETWORK = ipaddress.IPv6Network("fc00::/7")
+_DOCUMENTATION_IPV6_NETWORK = ipaddress.IPv6Network("2001:db8::/32")
 
 
 def _canonical_lan_host(host: str) -> str:
@@ -29,10 +31,12 @@ def _canonical_lan_host(host: str) -> str:
         raise ValueError("host must be a safe LAN IP literal") from exc
     if address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified:
         raise ValueError("host must be a safe LAN IP literal")
+    if address in _DOCUMENTATION_IPV6_NETWORK:
+        raise ValueError("host must be a safe LAN IP literal")
     if address.version == 4:
         if not any(address in network for network in _PRIVATE_IPV4_NETWORKS):
             raise ValueError("host must be a safe LAN IP literal")
-    elif not (address.is_global or address in _PRIVATE_IPV6_NETWORK):
+    elif not (address in _GLOBAL_IPV6_NETWORK or address in _PRIVATE_IPV6_NETWORK):
         raise ValueError("host must be a safe LAN IP literal")
     return str(address)
 
