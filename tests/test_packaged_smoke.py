@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -18,9 +19,11 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 import pytest
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request as WerkzeugRequest
 
 
-pytestmark = pytest.mark.skipif(
+requires_packaged_app = pytest.mark.skipif(
     "EWASTE_PACKAGED_APP" not in os.environ,
     reason="set EWASTE_PACKAGED_APP to a frozen E-Waste Triage.app to run packaged smoke coverage",
 )
@@ -34,8 +37,8 @@ EXPECTED_CLASSES = [
     "0401_headphones",
 ]
 FIXTURE = Path(__file__).parent / "fixtures" / "packaged-smoke.jpg"
-HEX_40 = re.compile(r"[0-9a-f]{40}\\Z")
-HEX_64 = re.compile(r"[0-9a-f]{64}\\Z")
+HEX_40 = re.compile(r"[0-9a-f]{40}\Z")
+HEX_64 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def _app_executable() -> Path:
@@ -145,17 +148,17 @@ def _multipart_image(*, token: str, code: str, image: Path) -> tuple[bytes, str]
     fields = (("token", token), ("code", code))
     body = bytearray()
     for name, value in fields:
-        body.extend(f"--{boundary}\\r\\n".encode())
-        body.extend(f'Content-Disposition: form-data; name="{name}"\\r\\n\\r\\n'.encode())
+        body.extend(f"--{boundary}\r\n".encode())
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
         body.extend(value.encode())
-        body.extend(b"\\r\\n")
-    body.extend(f"--{boundary}\\r\\n".encode())
+        body.extend(b"\r\n")
+    body.extend(f"--{boundary}\r\n".encode())
     body.extend(
-        b'Content-Disposition: form-data; name="image"; filename="packaged-smoke.jpg"\\r\\n'
+        b'Content-Disposition: form-data; name="image"; filename="packaged-smoke.jpg"\r\n'
     )
-    body.extend(b"Content-Type: image/jpeg\\r\\n\\r\\n")
+    body.extend(b"Content-Type: image/jpeg\r\n\r\n")
     body.extend(image.read_bytes())
-    body.extend(f"\\r\\n--{boundary}--\\r\\n".encode())
+    body.extend(f"\r\n--{boundary}--\r\n".encode())
     return bytes(body), f"multipart/form-data; boundary={boundary}"
 
 
@@ -215,6 +218,33 @@ def _cleanup_child(
         pytest.fail("\n".join(failures))
 
 
+def test_release_digest_matchers_accept_only_exact_lowercase_hex() -> None:
+    assert HEX_40.fullmatch("a" * 40)
+    assert HEX_64.fullmatch("b" * 64)
+    assert HEX_40.fullmatch(("a" * 40) + "suffix") is None
+    assert HEX_64.fullmatch(("b" * 64) + "suffix") is None
+
+
+def test_multipart_helper_produces_a_real_image_form() -> None:
+    body, content_type = _multipart_image(
+        token="capability",
+        code="123456",
+        image=FIXTURE,
+    )
+    environ = EnvironBuilder(
+        method="POST",
+        input_stream=BytesIO(body),
+        content_length=len(body),
+        content_type=content_type,
+    ).get_environ()
+    request = WerkzeugRequest(environ)
+
+    assert request.form.to_dict() == {"token": "capability", "code": "123456"}
+    assert request.files["image"].filename == "packaged-smoke.jpg"
+    assert request.files["image"].read() == FIXTURE.read_bytes()
+
+
+@requires_packaged_app
 def test_frozen_app_exercises_desktop_and_phone_paths(tmp_path: Path) -> None:
     executable = _app_executable()
     assert FIXTURE.is_file(), f"missing checked-in smoke fixture: {FIXTURE}"

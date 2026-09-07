@@ -29,6 +29,12 @@
     recall: "Known recall"
   };
   const MAX_KNOWN_ISSUE_NOTES_CODE_POINTS = 500;
+  const CLEAR_HISTORY_CONFIRMATION =
+    "Delete every locally saved scan? You will have a brief chance to undo before deletion completes.";
+
+  function confirmClearHistory(confirmImpl) {
+    return Boolean(confirmImpl(CLEAR_HISTORY_CONFIRMATION));
+  }
 
   function isSupportedImage(file) {
     if (!file || !file.name) return false;
@@ -2007,7 +2013,7 @@
       if (event.target.id !== "assessment-category") controller.markAssessmentEditing();
     });
     document.getElementById("clear-history").addEventListener("click", () => {
-      if (global.confirm("Delete every locally saved scan? This cannot be undone.")) {
+      if (confirmClearHistory(message => global.confirm(message))) {
         void controller.clearHistory();
       }
     });
@@ -2020,6 +2026,7 @@
     assessmentPayloadFromValues,
     bootstrap,
     buildAssessmentPresentation,
+    confirmClearHistory,
     createController,
     createReleaseAboutController,
     createDomView,

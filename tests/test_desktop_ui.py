@@ -125,6 +125,36 @@ def test_scan_page_exposes_an_initially_closed_accessible_phone_pairing_sheet():
     assert controls["phone-incoming-result"][1].get("aria-live") == "polite"
 
 
+def test_phone_pairing_copy_discloses_the_local_http_security_boundary():
+    page = _page()
+
+    assert "same-network HTTP" in page.text
+    assert "not TLS" in page.text
+    assert "memory-only capability URL" in page.text
+    assert "six-digit code" in page.text
+    assert "Pair securely" not in page.text
+
+
+def test_clear_history_confirmation_describes_the_brief_undo_window():
+    result = _run_ui_contract(r"""
+const UI = require(process.argv[1]);
+let message = null;
+const accepted = UI.confirmClearHistory(value => {
+  message = value;
+  return true;
+});
+process.stdout.write(JSON.stringify({accepted, message}));
+""")
+
+    assert result == {
+        "accepted": True,
+        "message": (
+            "Delete every locally saved scan? "
+            "You will have a brief chance to undo before deletion completes."
+        ),
+    }
+
+
 def test_phone_pairing_styles_use_staggered_functional_motion_and_reduced_motion():
     css = STATIC.joinpath("app.css").read_text()
 

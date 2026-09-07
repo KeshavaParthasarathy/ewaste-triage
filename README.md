@@ -62,6 +62,13 @@ keeps item-specific assessment/history data on the Mac. Training, model selectio
 component-reference preparation remain administrator-only release work; they are not
 user-app features. The first release targets unsigned arm64 macOS 14 or later.
 
+Version 0.1.0 is a deliberately local internal milestone. It imports Mac files and can
+receive one photo through temporary same-network HTTP phone capture; it does not yet
+provide TLS transport, signing/notarization, automatic updates, direct Mac-camera
+capture, clickable external reference links, assessment export, retained-original or
+history-disable controls, Open Logs, Intel/Windows/Linux packages, hardware diagnostics,
+or internal-part detection.
+
 - [Mac app tester checklist](docs/MAC_APP_TESTING.md)
 - [Mac app release runbook](docs/RELEASING_MAC_APP.md)
 

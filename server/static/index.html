@@ -76,7 +76,7 @@
             <div class="import-divider" aria-hidden="true"><span>or</span></div>
             <button class="phone-card" type="button" data-phone-action>
               <span class="phone-card-icon" aria-hidden="true">▯</span>
-              <span><strong>Capture from your phone</strong><small>Pair securely over the same Wi-Fi network.</small></span>
+              <span><strong>Capture from your phone</strong><small>Send one photo over temporary same-network HTTP.</small></span>
               <span aria-hidden="true">›</span>
             </button>
           </section>
@@ -381,16 +381,16 @@
       <header class="phone-dialog-header">
         <span class="dialog-icon" aria-hidden="true">▯</span>
         <div>
-          <p class="eyebrow">Private phone handoff</p>
+          <p class="eyebrow">Temporary phone handoff</p>
           <h2 id="phone-dialog-title">Take the photo on your phone.</h2>
-          <p id="phone-dialog-description">Your Mac opens a temporary connection on this Wi-Fi network. It closes when you stop, leave, or the timer expires.</p>
+          <p id="phone-dialog-description">Your Mac opens a temporary same-network HTTP connection. It is not TLS-encrypted; access is protected by a memory-only capability URL and six-digit code. The listener closes when you stop, leave, or the timer expires.</p>
         </div>
       </header>
 
       <section class="phone-starting phone-state-panel" aria-label="Starting phone capture">
         <span class="phone-orbit" aria-hidden="true"><i></i><i></i><i></i></span>
         <div>
-          <strong>Opening a private handoff</strong>
+          <strong>Opening a temporary handoff</strong>
           <p>Preparing a one-time address on your local network…</p>
         </div>
       </section>
@@ -422,7 +422,7 @@
             <strong>Waiting for one photo</strong>
             <p>Session closes in <time id="phone-countdown" datetime="PT10M">10:00</time>. Valid phone activity refreshes the timer.</p>
           </div>
-          <span class="phone-private-badge"><i aria-hidden="true"></i> Local only</span>
+          <span class="phone-private-badge"><i aria-hidden="true"></i> Local HTTP</span>
         </div>
       </section>
 

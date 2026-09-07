@@ -98,6 +98,10 @@ To roll back, select a prior reviewed model bundle and its matching reviewed com
 Remove only exact ignored, version-specific outputs after confirming the version value; do not use broad home-directory or repository cleanup:
 
 ```sh
+if ! /usr/bin/printf '%s\n' "${APP_VERSION-}" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo "APP_VERSION must be an exact X.Y.Z release version" >&2
+  exit 1
+fi
 rm -rf -- "build/macos/$APP_VERSION"
 rm -rf -- ".release-staging/release-$APP_VERSION"
 rm -f -- "dist/E-Waste Triage-$APP_VERSION-arm64.dmg" \
