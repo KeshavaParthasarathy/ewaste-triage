@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-06
 
-**Status:** Approved section by section in conversation; awaiting written-spec review
+**Status:** Approved by the product owner on 2026-09-07
 
 **Audience:** Product owner, internal prototype testers, and administrators who prepare model and reference releases
 
