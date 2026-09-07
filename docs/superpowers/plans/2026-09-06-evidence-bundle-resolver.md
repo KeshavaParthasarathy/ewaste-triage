@@ -1849,50 +1849,530 @@ git commit -m "feat: validate knowledge authoring sources"
 **Files:**
 - Create: `scripts/knowledge_compiler.py`
 - Create: `scripts/build_knowledge_bundle.py`
+- Create: `scripts/evidence_coverage.py`
+- Create: `packaging/evidence-coverage.schema.json`
 - Create: `tests/test_knowledge_compiler.py`
+- Create: `tests/test_evidence_coverage.py`
 
 **Interfaces:**
 - Consumes: `load_evidence_documents(source_dir: Path) -> EvidenceDocuments`
 - Consumes only the canonical category fields `specific_lifecycles`, `component_definitions`, `component_templates`, and `component_associations`; it does not look for `lifecycles`, `components`, or `templates` aliases
-- Produces the testable pure projection `normalized_sql_rows(documents: EvidenceDocuments) -> Mapping[str, tuple[tuple[object, ...], ...]]`; keys are every table below and tuple fields follow `EXPECTED_TABLE_COLUMNS`. Its `metadata` rows are the four semantic release values; the two computed hash rows are appended only after their inputs exist
+- Produces: `KnowledgeCompilationError` for stable compiler/path/promotion failures
+- Produces: `CoverageError` for closed full-report validation failures
+- Produces the testable pure projection `normalized_sql_rows(documents: EvidenceDocuments) -> Mapping[str, tuple[tuple[object, ...], ...]]`; keys, columns, rows, SQLite scalar conversion, and primary-key ordering are the exact contracts below. Its `metadata` rows are the four semantic release values; the two computed hash rows are appended only after their inputs exist
 - Produces `logical_content_sha256(rows: Mapping[str, tuple[tuple[object, ...], ...]]) -> str`; the compiler writes and hashes the same projected rows
+- Produces `build_coverage(documents: EvidenceDocuments, content_sha256: str) -> dict[str, object]`
+- Produces `validate_coverage_report(report: Mapping[str, object]) -> None`
+- Produces `coverage_json_bytes(report: Mapping[str, object]) -> bytes`
 - Produces: `compile_knowledge_bundle(source_dir: Path, destination_dir: Path) -> KnowledgeManifest`
 - Produces fixed files: `<destination_dir>/knowledge.sqlite` and `<destination_dir>/evidence-coverage.json`
 - Produces CLI: `python scripts/build_knowledge_bundle.py --source PATH --out DIRECTORY --print-summary`
 
-- [ ] **Step 1: Write failing schema, digest, output, and atomicity tests**
+#### Frozen SQLite wire schema
 
-In `tests/test_knowledge_compiler.py`, define `EXPECTED_TABLE_COLUMNS` as the
-exact table/column mapping in **Normalized documents and compiler conversion**.
-Assert `sqlite_master` and `PRAGMA table_info` equal it with no extra table or
-column. Define `AUTHORING_FIELD_TARGETS` with a key for every root/record field
-in Task 2's `ROOT_VALUE_TYPES` and `FIELD_TYPES`; each value names every SQL
-`(table, column)` and coverage-JSON field derived from it, including flattened
-scope fields, derived tier/release order/casefold fields, list child rows, and
-ordinals. The two validation-only constants
-`Unknown.evidence_level=null`/`Unknown.source_ids=[]` are explicitly marked as
-reconstructible from a `coverage_unknowns` row and are still exercised by Task
-2 invalid mutations; they are not silently exempted. Assert the mapping key set
-equals the complete authored-field set and that every non-computed SQL column
-and coverage semantic field has at least one mapped authoring or documented
-derived-value source.
+The database has exactly 26 application tables in this exact `TABLE_ORDER`;
+SQLite internal tables are forbidden because none of these declarations uses
+`AUTOINCREMENT`:
 
-The test oracle `expected_normalized_sql_rows(documents)` must be independent
-of the compiler projection and return every parent and child table, every
-column, every list item, and every ordinal in exact normalized order.
-`read_normalized_sql_rows(database)` reads those same tables/columns in their
-normative primary-key order and deliberately omits only the two computed
-metadata hash rows. A separate assertion requires the database's complete
-metadata mapping to contain exactly the four projected release rows plus
-`content_sha256` and `coverage_sha256` equal to the returned manifest.
-`semantic_authoring_mutations()` supplies a valid,
-referentially consistent mutation for every authored field whose value is not
-a frozen release constant, and declares the exact `AUTHORING_FIELD_TARGETS`
-covered. `semantic_sql_column_mutations(rows)` mutates each semantic SQL column
-in turn, including derived and ordinal columns; it excludes only the
-`content_sha256` and `coverage_sha256` metadata rows because hashes cannot
-contain themselves. Coverage assertions compare the exact field/target and
-table/column sets rather than merely a table-name class set.
+```python
+TABLE_ORDER = (
+    "metadata",
+    "sources",
+    "categories",
+    "subtypes",
+    "variants",
+    "identities",
+    "identity_aliases",
+    "identity_tokens",
+    "identity_variants",
+    "lifecycle_records",
+    "lifecycle_required_variants",
+    "lifecycle_excluded_variants",
+    "lifecycle_assumptions",
+    "industry_averages",
+    "lifecycle_limitations",
+    "components",
+    "component_templates",
+    "component_associations",
+    "component_association_notes",
+    "hazards",
+    "hazard_triggers",
+    "hazard_actions",
+    "policy_rules",
+    "policy_predicates",
+    "coverage_unknowns",
+    "claim_sources",
+)
+
+EXPECTED_TABLE_COLUMNS = {
+    "metadata": ("key", "value"),
+    "sources": (
+        "source_id", "title", "publisher", "canonical_url",
+        "publication_or_revision_date", "accessed_on",
+        "license_or_use_basis", "reviewed_by", "reviewed_on",
+    ),
+    "categories": ("category_id", "display_name", "release_order"),
+    "subtypes": (
+        "subtype_id", "category_id", "display_name", "market_state",
+        "battery_architecture", "evidence_level",
+    ),
+    "variants": (
+        "variant_id", "category_id", "subtype_id", "display_name",
+        "battery_architecture", "evidence_level",
+    ),
+    "identities": (
+        "identity_id", "identity_kind", "category_id", "subtype_id",
+        "manufacturer_id", "manufacturer_name", "family_id", "family_name",
+        "model_id", "model_name", "display_name", "model_year_from",
+        "model_year_to", "applicable_from", "applicable_to", "market_state",
+        "battery_architecture", "evidence_level",
+    ),
+    "identity_aliases": ("identity_id", "ordinal", "alias", "alias_casefold"),
+    "identity_tokens": ("identity_id", "ordinal", "token", "token_casefold"),
+    "identity_variants": ("identity_id", "ordinal", "variant_id"),
+    "lifecycle_records": (
+        "record_id", "category_id", "resolution_tier", "scope_kind",
+        "scope_id", "subject", "endpoint", "endpoint_kind", "metric", "unit",
+        "lower_bound", "upper_bound", "endpoint_qualification",
+        "applicable_from", "applicable_to", "model_year_from", "model_year_to",
+        "precedence", "evidence_level",
+    ),
+    "lifecycle_required_variants": ("record_id", "ordinal", "variant_id"),
+    "lifecycle_excluded_variants": ("record_id", "ordinal", "variant_id"),
+    "lifecycle_assumptions": ("record_id", "ordinal", "assumption"),
+    "industry_averages": (
+        "record_id", "population_definition", "publication_period",
+        "methodology", "uncertainty",
+    ),
+    "lifecycle_limitations": ("record_id", "ordinal", "limitation"),
+    "components": ("category_id", "component_id", "display_name"),
+    "component_templates": (
+        "template_id", "category_id", "template_kind", "scope_kind",
+        "scope_id", "application_order",
+    ),
+    "component_associations": (
+        "association_id", "category_id", "template_id", "component_id",
+        "position", "status", "applicability", "evidence_level",
+    ),
+    "component_association_notes": ("association_id", "ordinal", "note"),
+    "hazards": (
+        "hazard_id", "category_id", "component_id", "scope_kind", "scope_id",
+        "applicability", "severity", "evidence_level",
+    ),
+    "hazard_triggers": ("hazard_id", "ordinal", "observation_key"),
+    "hazard_actions": (
+        "hazard_id", "action_kind", "ordinal", "action_text",
+    ),
+    "policy_rules": (
+        "rule_id", "priority", "outcome", "rationale", "evidence_level",
+    ),
+    "policy_predicates": (
+        "rule_id", "predicate_group", "ordinal", "predicate",
+    ),
+    "coverage_unknowns": (
+        "category_id", "claim_kind", "claim_id", "reason", "evidence_request",
+    ),
+    "claim_sources": (
+        "claim_kind", "category_key", "claim_id", "ordinal", "source_id",
+    ),
+}
+
+EXPECTED_PRIMARY_KEY_COLUMNS = {
+    "metadata": ("key",),
+    "sources": ("source_id",),
+    "categories": ("category_id",),
+    "subtypes": ("subtype_id",),
+    "variants": ("variant_id",),
+    "identities": ("identity_id",),
+    "identity_aliases": ("identity_id", "ordinal"),
+    "identity_tokens": ("identity_id", "ordinal"),
+    "identity_variants": ("identity_id", "ordinal"),
+    "lifecycle_records": ("record_id",),
+    "lifecycle_required_variants": ("record_id", "ordinal"),
+    "lifecycle_excluded_variants": ("record_id", "ordinal"),
+    "lifecycle_assumptions": ("record_id", "ordinal"),
+    "industry_averages": ("record_id",),
+    "lifecycle_limitations": ("record_id", "ordinal"),
+    "components": ("category_id", "component_id"),
+    "component_templates": ("template_id",),
+    "component_associations": ("association_id",),
+    "component_association_notes": ("association_id", "ordinal"),
+    "hazards": ("hazard_id",),
+    "hazard_triggers": ("hazard_id", "ordinal"),
+    "hazard_actions": ("hazard_id", "action_kind", "ordinal"),
+    "policy_rules": ("rule_id",),
+    "policy_predicates": ("rule_id", "predicate_group", "ordinal"),
+    "coverage_unknowns": ("category_id", "claim_kind", "claim_id"),
+    "claim_sources": (
+        "claim_kind", "category_key", "claim_id", "ordinal",
+    ),
+}
+```
+
+Every projected tuple follows `EXPECTED_TABLE_COLUMNS[table]`, and every table's
+tuple sequence is sorted by `EXPECTED_PRIMARY_KEY_COLUMNS[table]` using the
+normalized SQLite wire values. Dates become ISO strings, enums become `.value`,
+finite numeric bounds become `float`, integer fields remain exact `int`, and
+nullable fields become `None`. Every authored list becomes zero-based ordinal
+rows in authored order; there is no one-based ordinal anywhere. Categories are
+projected in this exact zero-based mapping, never by discovery or locale order:
+
+```python
+CATEGORY_RELEASE_ORDER = {
+    "0301_computer_mouse": 0,
+    "0301_keyboard": 1,
+    "0303_laptop": 2,
+    "0306_mobile_phone": 3,
+    "0401_headphones": 4,
+}
+```
+
+Column affinity is also closed. `lower_bound` and `upper_bound` are `REAL`;
+`release_order`, every `ordinal`, `precedence`, `application_order`, `position`,
+`priority`, and every `model_year_from`/`model_year_to` are `INTEGER`; every
+other column is `TEXT`. Every column is declared `NOT NULL`, including every
+text primary key, except exactly these nullable semantic fields:
+
+```text
+identities.model_id
+identities.model_name
+identities.model_year_from
+identities.model_year_to
+identities.applicable_from
+identities.applicable_to
+lifecycle_records.applicable_from
+lifecycle_records.applicable_to
+lifecycle_records.model_year_from
+lifecycle_records.model_year_to
+component_associations.evidence_level
+```
+
+The compiler enables `PRAGMA foreign_keys = ON` before starting the write
+transaction. Every foreign key below is `DEFERRABLE INITIALLY DEFERRED` with
+SQLite's default `NO ACTION`; compilation must commit successfully and the
+reopened database must return no rows from `PRAGMA foreign_key_check`:
+
+```text
+subtypes.category_id -> categories.category_id
+variants.category_id -> categories.category_id
+variants.(category_id, subtype_id) -> subtypes.(category_id, subtype_id)
+identities.category_id -> categories.category_id
+identities.(category_id, subtype_id) -> subtypes.(category_id, subtype_id)
+identity_aliases.identity_id -> identities.identity_id
+identity_tokens.identity_id -> identities.identity_id
+identity_variants.identity_id -> identities.identity_id
+identity_variants.variant_id -> variants.variant_id
+lifecycle_records.category_id -> categories.category_id
+lifecycle_required_variants.record_id -> lifecycle_records.record_id
+lifecycle_required_variants.variant_id -> variants.variant_id
+lifecycle_excluded_variants.record_id -> lifecycle_records.record_id
+lifecycle_excluded_variants.variant_id -> variants.variant_id
+lifecycle_assumptions.record_id -> lifecycle_records.record_id
+industry_averages.record_id -> lifecycle_records.record_id
+lifecycle_limitations.record_id -> industry_averages.record_id
+components.category_id -> categories.category_id
+component_templates.category_id -> categories.category_id
+component_associations.(category_id, template_id) -> component_templates.(category_id, template_id)
+component_associations.(category_id, component_id) -> components.(category_id, component_id)
+component_association_notes.association_id -> component_associations.association_id
+hazards.(category_id, component_id) -> components.(category_id, component_id)
+hazard_triggers.hazard_id -> hazards.hazard_id
+hazard_actions.hazard_id -> hazards.hazard_id
+policy_predicates.rule_id -> policy_rules.rule_id
+coverage_unknowns.category_id -> categories.category_id
+claim_sources.source_id -> sources.source_id
+```
+
+The DDL, not merely Task 2's validator, enforces these row-local integrity
+rules. Tests inspect the PK ordinals, `NOT NULL` flags, unique indexes, foreign
+keys, and execute invalid inserts inside a deferred transaction:
+
+- `metadata.key` is one of exactly `schema_version`, `bundle_version`,
+  `identity_catalog_version`, `policy_revision`, `content_sha256`, or
+  `coverage_sha256`.
+- `categories.release_order` is unique and in `0..4`;
+  `(category_id, release_order)` must equal the exact
+  `CATEGORY_RELEASE_ORDER` mapping after reopen.
+- `subtypes` has `UNIQUE(category_id, subtype_id)`; market state and battery
+  architecture use the Task 1 enums; subtype evidence is exactly B.
+- `variants` uses the battery enum and evidence exactly B.
+- `identities` checks market/battery enums and nullable year/date ordering. A
+  family row has `identity_id=family_id`, null model ID/name, and evidence B; a
+  model row has non-null `model_id`/`model_name`, `identity_id=model_id`, and
+  evidence A.
+- Every ordinal is non-negative. Alias, token, identity-variant, lifecycle
+  variant, assumption, limitation, association-note, hazard-trigger,
+  hazard-action, policy-predicate, and claim-source child tables reject a
+  duplicate value under the same owning parent (under the same action kind for
+  hazard actions). Alias and token tables additionally reject duplicate
+  normalized casefold values.
+- `lifecycle_records` checks positive `lower_bound <= upper_bound`, non-negative
+  precedence, nullable year/date ordering, the four scope/tier/evidence triples
+  `(model, exact_model, A)`, `(family, family, B)`, `(subtype, subtype, B)`, and
+  `(category, industry_average, C)`, plus endpoint-kind coupling:
+  `service_life -> total_life`, `capacity_threshold -> capacity_threshold`, and
+  every other endpoint -> `operating_endurance`. An industry-average base row
+  additionally has subject `device`, endpoint `service_life`, kind `total_life`,
+  metric `elapsed_time`, unit `years`, strict `lower_bound < upper_bound`, and
+  null year/date bounds.
+- `component_templates` has `UNIQUE(category_id, template_id)` and
+  `UNIQUE(category_id, scope_kind, scope_id, application_order)`, a non-negative
+  application order, and the exact three template kinds. A standard template is
+  category-scoped with `scope_id=category_id` and order 0; modern and legacy
+  overlays are subtype-, family-, or model-scoped.
+- `component_associations` has `UNIQUE(template_id, position)`, a non-negative
+  position, and the authored association statuses excluding `user_confirmed`.
+  `unknown` requires null evidence; every other status requires A, B, or C.
+- `hazards` checks the scope/severity enums and accepts exactly these
+  scope/evidence pairs: model/A, family/B, subtype/B, or category/C-or-D.
+  `hazard_triggers.observation_key` is one of the exact four
+  `HazardTriggerKey` values, and `hazard_actions.action_kind` is exactly
+  `immediate`, `follow_up`, `handling`, or `disposal`.
+- `policy_rules.priority` is unique and non-negative; its outcome is one of the
+  exact six `RecommendationValue` strings and its evidence is A, B, C, or D.
+  `policy_predicates.predicate_group` is `all` or `any`, its predicate is one of
+  the exact strings in **Closed policy predicates and hazard triggers**, and
+  `UNIQUE(rule_id, predicate)` rejects duplication across both groups.
+- `coverage_unknowns.claim_kind` is exactly `subtype`, `variant`, `identity`,
+  `specific_lifecycle`, `industry_average`, `component_association`, or
+  `hazard`.
+- `claim_sources.claim_kind` is those seven values plus `policy`. Its
+  `category_key` is the empty string if and only if the kind is `policy`, and
+  is otherwise a non-empty released category ID. Its full primary key is
+  `(claim_kind, category_key, claim_id, ordinal)`, and
+  `UNIQUE(claim_kind, category_key, claim_id, source_id)` rejects duplicate
+  sources for one claim.
+
+The following are deliberately validator/compiler checks rather than fake SQL
+foreign keys, triggers, or synthetic supertables: NFC/ID/URL/date/SemVer/text
+syntax; exact five-category closure; family ancestry/name consistency;
+identity-to-variant category/subtype and battery equality; display/alias
+collisions; resolution of polymorphic lifecycle/template/hazard scopes in the
+same category; scoped lifecycle variant ancestry and required/excluded
+disjointness; existence of exactly one industry extension and its non-empty
+limitations; absence of industry variant child rows; contiguous ordinals and
+positions; required non-empty child lists; exactly one standard template (the
+modern/legacy release overlay floor is added only in Task 6); association
+scope/evidence/template restrictions and
+source cardinality; the one-to-one authored `unknown` association to Unknown
+row; hazard source cardinality; shared-versus-category source locality;
+Unknown/reviewed-claim collision; polymorphic `claim_sources` parent existence
+and ownership; policy shared-source-only rules; and mutually exclusive policy
+predicate families. Each check is run before promotion and receives a named
+negative test.
+
+#### One logical digest, with no recursive hash input
+
+`normalized_sql_rows()` is the only production traversal from normalized
+documents to SQL semantics. `logical_content_sha256()` validates the exact
+26-key mapping and serializes this one payload:
+
+```json
+{"format":"ewaste-knowledge-logical-v1","tables":[{"columns":["key","value"],"name":"metadata","rows":[["bundle_version","3.0.0"],["identity_catalog_version","1.0.0"],["policy_revision","2.0.0"],["schema_version","3"]]}]}
+```
+
+The example shows the complete metadata table and abbreviates the remaining 25
+table objects; the real array contains one object for every table in
+`TABLE_ORDER`, every full column list from
+`EXPECTED_TABLE_COLUMNS`, and every row as a JSON array in declared primary-key
+order. Serialization is exactly:
+
+```python
+json.dumps(
+    payload,
+    ensure_ascii=False,
+    allow_nan=False,
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8")
+```
+
+There is no trailing LF in the logical payload. The `metadata` table participates
+in its ordinary position, but the rows keyed `content_sha256` and
+`coverage_sha256` are the only rows omitted. No table, column, empty child
+table, semantic null, row boundary, derived value, or ordinal is omitted. The
+function does not read SQLite, walk documents again, include a raw database
+hash, include coverage bytes, or hash a hash-containing payload.
+
+The compile order is exact:
+
+1. validate safe source/destination paths, then load and validate all documents;
+2. call `normalized_sql_rows()` once, with exactly the four semantic metadata
+   rows, and calculate `content_sha256` from the logical payload;
+3. call `build_coverage(documents, content_sha256)`, validate the report, produce
+   its final canonical bytes, and hash those exact bytes as `coverage_sha256`;
+4. write the projected SQL rows, then append exactly the two computed metadata
+   rows, commit, close SQLite, write the already-final coverage bytes, and fsync
+   both files;
+5. reopen the database read-only and the coverage file read-only; require the
+   exact schema/metadata/category order, `quick_check == [("ok",)]`, no foreign
+   key errors, oracle-equal SQL rows, the recomputed logical digest, byte-for-byte
+   canonical coverage encoding, the recomputed coverage hash, and exact
+   report-to-database bundle/content linkage; and
+6. fsync the completed stage directory and only then begin promotion.
+
+Thus content identity precedes coverage construction, coverage identity is over
+the final bytes including their LF, both artifacts are closed and independently
+reopened, and neither hash recursively contains itself.
+
+#### Final immutable full-coverage report
+
+Task 3, not Task 6, owns the final `scripts/evidence_coverage.py`,
+`packaging/evidence-coverage.schema.json`, full-report builder, validator,
+canonical serializer, and full-report tests. The coverage schema version is 1.
+The in-memory report has exactly this key insertion order and recursively closed
+shape:
+
+```text
+CoverageReport = {
+  schema_version: 1,
+  bundle_version: SemVer,
+  knowledge_content_sha256: lowercase SHA-256,
+  summary: {
+    categories: nonnegative int,
+    canonical_identities: nonnegative int,
+    subtypes: nonnegative int,
+    lifecycle_records: nonnegative int,
+    industry_averages: nonnegative int,
+    component_templates: nonnegative int,
+    modern_overlays: nonnegative int,
+    legacy_overlays: nonnegative int,
+    hazard_records: nonnegative int,
+    reviewed_claims: nonnegative int,
+    unknown_claims: nonnegative int,
+  },
+  claims: list[CoverageClaim],
+}
+
+CoverageClaim = {
+  category_id: released category ID,
+  claim_kind: subtype | variant | identity | specific_lifecycle |
+              industry_average | component_association | hazard,
+  claim_id: Id,
+  evidence_level: A | B | C | D | null,
+  source_state: reviewed | unknown,
+  source_ids: list[Id],
+  unknown_reason: Text | null,
+}
+```
+
+The summary mapping uses exactly the displayed 11-key order. Its meanings are
+closed: `categories` counts category records; `canonical_identities` identities;
+`subtypes` subtypes; `lifecycle_records` specific lifecycle records only;
+`industry_averages` industry-average records only; `component_templates` all
+templates; `modern_overlays` and `legacy_overlays` those exact template kinds;
+`hazard_records` hazards; and the last two fields count claim rows by
+`source_state`. No count includes an Unknown placeholder as a reviewed record,
+and an industry average is never double-counted as a specific lifecycle.
+`validate_coverage_report()` itself requires `reviewed_claims` and
+`unknown_claims` to equal their claim-row state counts; requires the identity,
+subtype, specific-lifecycle, industry-average, and hazard summary counts to
+equal their respective reviewed claim-row counts. Category and template counts
+cannot always be reconstructed from claim rows in a valid under-floor authoring
+tree, so their exact derivation is proved by the independent
+documents-to-report oracle rather than reinterpreted later.
+
+Emit one reviewed claim for every authored subtype, variant, identity, specific
+lifecycle, industry average, non-`unknown` component association, and hazard.
+Definitions, templates, policies, and source records are not coverage claims.
+An authored component association with status `unknown` emits no reviewed row;
+its required matching Unknown emits the sole Unknown row. Every other authored
+Unknown emits one Unknown row directly under its three-part key. A reviewed row
+has non-null evidence, non-empty source IDs sorted bytewise, and null
+`unknown_reason`; an Unknown row has null evidence, `source_state="unknown"`,
+exactly `source_ids=[]`, and the authored reason. Claims are sorted exactly by
+the Python string tuple `(category_id, claim_kind, claim_id)`; duplicates are an
+error rather than last-write-wins behavior.
+
+The schema file uses JSON Schema draft 2020-12, has `additionalProperties: false`
+at every object level, fixes all required/property sets to the shapes above,
+fixes `schema_version` to 1 and category/kind/state/evidence enums to the values
+above, rejects booleans as counts, and expresses the reviewed-versus-Unknown
+field coupling with `oneOf`. Semantic count equality, source sorting, claim
+sorting, duplicate claim keys, and authored source ownership remain explicit
+Python validation because JSON Schema cannot prove them.
+
+`coverage_json_bytes()` first calls `validate_coverage_report()` and returns
+exactly:
+
+```python
+json.dumps(
+    report,
+    ensure_ascii=False,
+    allow_nan=False,
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8") + b"\n"
+```
+
+This is the immutable full-report byte contract. Task 6 may add release-floor
+validation and comparison, but may not add, remove, rename, reorder, or reinterpret
+a full-report field or change `build_coverage()`/`coverage_json_bytes()` output
+for the same normalized documents and content hash.
+
+#### Exhaustive independent oracles
+
+`tests/test_knowledge_compiler.py` repeats `TABLE_ORDER`,
+`EXPECTED_TABLE_COLUMNS`, and `EXPECTED_PRIMARY_KEY_COLUMNS` as test-owned
+literals; it does not import a production table/column/PK constant. Its
+`expected_normalized_sql_rows(documents)` independently visits every normalized
+record and list, without calling `normalized_sql_rows()`, any production row
+helper, or `logical_content_sha256()`. `read_normalized_sql_rows(database)`
+selects the test-owned columns ordered by the test-owned PKs and omits only the
+two computed metadata rows. The core equality is always:
+
+```python
+assert expected_normalized_sql_rows(documents) == normalized_sql_rows(documents)
+assert read_normalized_sql_rows(database) == expected_normalized_sql_rows(documents)
+```
+
+`tests/test_evidence_coverage.py` similarly implements
+`expected_coverage_report(documents, content_sha256)` without calling the
+production coverage builder, projection, claim iterator, summary helper, or
+serializer. It asserts whole-object equality, exact insertion orders, and exact
+canonical bytes.
+
+Define `AUTHORING_FIELD_TARGETS` with a key for every root/record field in Task
+2's `ROOT_VALUE_TYPES` and `FIELD_TYPES`, including nested `Scope` fields. Each
+entry names all affected SQL `(table, column)` targets and full-coverage field
+targets. Define a separate exhaustive `DERIVED_TARGETS` for metadata keys,
+zero-based category release order, flattened/current-category scope columns,
+derived lifecycle tier, alias/token casefolds, every child ordinal, hazard
+action kind, policy predicate group, every `claim_sources` ownership/key/ordinal
+column, coverage schema/state/null fields, and every summary counter. The two
+validation-only authored constants `Unknown.evidence_level=null` and
+`Unknown.source_ids=[]` are explicitly mapped as reconstructible from a
+`coverage_unknowns` row and still receive Task 2 negative mutations.
+
+Assertions compare exact sets, not table-name classes:
+
+- mapping keys equal every normative authored field;
+- SQL targets equal every non-computed SQL column and each computed key's
+  documented derivation;
+- coverage targets equal all five top-level fields, all 11 summary fields, and
+  all seven claim-row fields;
+- referentially valid `semantic_authoring_mutations()` change every mutable
+  authored value at every concrete value path (relative file, record path,
+  field, and optional list index) and exactly its declared SQL/coverage targets;
+  its enumerated value-path set must equal an independent walk of the valid source
+  fixture. Frozen release constants are instead asserted at their exact
+  projected targets and retain their Task 2 rejection tests;
+- list insert/reorder cases prove the child value and its zero-based ordinal are
+  retained, including all four hazard action lists and both policy predicate
+  groups;
+- `semantic_sql_cell_mutations()` changes every semantic SQL column, including
+  each derived/ordinal column, and every case changes the logical digest; only
+  the two computed metadata values are excluded from this mutation loop; and
+- validity-preserving `semantic_coverage_field_mutations()` covers every mutable
+  scalar, list item, null, claim key, source ID, and counter, coordinating claim
+  rows and counters where required; every case changes canonical coverage bytes.
+  Closed constants that cannot form a second valid report are pinned in the
+  independent whole-object and exact-byte oracle instead of being exempted.
+
+- [ ] **Step 1: Write failing schema, projection, digest, coverage, CLI, and atomicity tests**
+
+Write the independent oracles and exhaustive target/mutation matrices above,
+then add at least these whole-contract tests:
 
 ```python
 def test_compile_emits_the_fixed_bundle_files(tmp_path):
@@ -1908,7 +2388,20 @@ def test_compile_emits_the_fixed_bundle_files(tmp_path):
     assert manifest.policy_revision == "2.0.0"
 
 
-def test_every_parent_child_value_and_ordinal_round_trips_exactly(tmp_path):
+def test_schema_columns_types_nullability_primary_keys_and_foreign_keys_are_exact(
+    tmp_path,
+):
+    source = make_valid_knowledge_source(tmp_path / "source")
+    compile_knowledge_bundle(source, tmp_path / "bundle")
+    database = tmp_path / "bundle/knowledge.sqlite"
+    assert application_tables(database) == TABLE_ORDER
+    assert table_info_contract(database) == EXPECTED_TABLE_INFO
+    assert primary_key_contract(database) == EXPECTED_PRIMARY_KEY_COLUMNS
+    assert foreign_key_contract(database) == EXPECTED_DEFERRED_FOREIGN_KEYS
+    assert every_declared_constraint_rejects_its_invalid_insert(database)
+
+
+def test_every_parent_child_value_and_zero_based_ordinal_round_trips_exactly(tmp_path):
     source = make_valid_knowledge_source(tmp_path / "source")
     documents = load_evidence_documents(source)
     expected = expected_normalized_sql_rows(documents)
@@ -1925,35 +2418,88 @@ def test_every_parent_child_value_and_ordinal_round_trips_exactly(tmp_path):
     }
 
 
-def test_semantic_coverage_is_exact_per_authored_field_and_sql_column(tmp_path):
+def test_logical_payload_is_exact_nonrecursive_canonical_json(valid_documents):
+    rows = expected_normalized_sql_rows(valid_documents)
+    payload = expected_logical_payload(rows)
+    expected_bytes = json.dumps(
+        payload, ensure_ascii=False, allow_nan=False, sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert payload["format"] == "ewaste-knowledge-logical-v1"
+    assert [item["name"] for item in payload["tables"]] == list(TABLE_ORDER)
+    assert not expected_bytes.endswith(b"\n")
+    assert logical_content_sha256(rows) == hashlib.sha256(expected_bytes).hexdigest()
+
+
+def test_semantic_targets_are_exact_per_authored_derived_sql_and_coverage_field(
+    tmp_path,
+):
     source = make_valid_knowledge_source(tmp_path / "source")
     assert set(AUTHORING_FIELD_TARGETS) == all_normative_authoring_fields()
-    authoring_mutations = semantic_authoring_mutations()
+    assert set(DERIVED_TARGETS) == all_documented_derived_targets()
+    authoring_mutations = semantic_authoring_mutations(source)
     assert mutation_targets(authoring_mutations) == mutable_authoring_field_targets()
-    baseline_rows = expected_normalized_sql_rows(load_evidence_documents(source))
-    sql_mutations = semantic_sql_column_mutations(baseline_rows)
-    assert mutation_columns(sql_mutations) == all_semantic_sql_columns()
+    assert mutation_value_paths(authoring_mutations) == (
+        all_mutable_authoring_value_paths(source)
+    )
+    assert mapped_sql_columns() == all_noncomputed_sql_columns()
+    assert mapped_coverage_fields() == all_coverage_semantic_fields()
 
 
-def test_every_authored_semantic_value_changes_rows_and_logical_digest(tmp_path):
+def test_every_mutable_authored_value_changes_its_exact_targets_and_hashes(tmp_path):
     source = make_valid_knowledge_source(tmp_path / "source")
     baseline_documents = load_evidence_documents(source)
     baseline_rows = normalized_sql_rows(baseline_documents)
     baseline_hash = logical_content_sha256(baseline_rows)
-    for mutation_name, targets, mutation in semantic_authoring_mutations():
+    baseline_report = build_coverage(baseline_documents, baseline_hash)
+    for mutation_name, targets, mutation in semantic_authoring_mutations(source):
         changed_source = clone_and_mutate(source, tmp_path / mutation_name, mutation)
-        changed_rows = normalized_sql_rows(load_evidence_documents(changed_source))
-        assert changed_sql_targets(baseline_rows, changed_rows) == targets
-        assert logical_content_sha256(changed_rows) != baseline_hash
+        changed_documents = load_evidence_documents(changed_source)
+        changed_rows = normalized_sql_rows(changed_documents)
+        changed_hash = logical_content_sha256(changed_rows)
+        changed_report = build_coverage(changed_documents, changed_hash)
+        assert changed_sql_targets(baseline_rows, changed_rows) == targets.sql
+        assert changed_coverage_targets(baseline_report, changed_report) == (
+            targets.coverage
+        )
+        assert changed_hash != baseline_hash
+        if targets.coverage:
+            assert coverage_json_bytes(changed_report) != coverage_json_bytes(
+                baseline_report
+            )
 
 
-def test_every_semantic_sql_column_is_in_the_logical_digest(tmp_path):
+def test_every_semantic_sql_cell_including_derived_ordinals_is_hash_bound(tmp_path):
     source = make_valid_knowledge_source(tmp_path / "source")
     rows = normalized_sql_rows(load_evidence_documents(source))
     baseline_hash = logical_content_sha256(rows)
-    for table, column, changed_rows in semantic_sql_column_mutations(rows):
+    for table, column, changed_rows in semantic_sql_cell_mutations(rows):
         assert changed_rows != rows
         assert logical_content_sha256(changed_rows) != baseline_hash
+
+
+def test_full_coverage_matches_independent_oracle_and_exact_bytes(valid_documents):
+    report = build_coverage(valid_documents, "a" * 64)
+    expected = expected_coverage_report(valid_documents, "a" * 64)
+    assert report == expected
+    assert list(report) == [
+        "schema_version", "bundle_version", "knowledge_content_sha256",
+        "summary", "claims",
+    ]
+    assert list(report["summary"]) == SUMMARY_FIELDS
+    assert coverage_json_bytes(report) == json.dumps(
+        expected, ensure_ascii=False, allow_nan=False, sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8") + b"\n"
+
+
+def test_every_full_coverage_field_and_counter_changes_canonical_bytes(valid_report):
+    baseline = coverage_json_bytes(valid_report)
+    mutations = semantic_coverage_field_mutations(valid_report)
+    assert coverage_mutation_targets(mutations) == MUTABLE_COVERAGE_FIELDS
+    assert FROZEN_COVERAGE_FIELDS <= ALL_COVERAGE_FIELDS
+    for _target, changed_report in mutations:
+        assert coverage_json_bytes(changed_report) != baseline
 
 
 def test_failed_rebuild_preserves_the_previous_complete_directory(tmp_path):
@@ -1974,53 +2520,228 @@ def test_two_rebuilds_have_the_same_logical_identity_and_coverage_bytes(tmp_path
     assert (tmp_path / "first/evidence-coverage.json").read_bytes() == (
         tmp_path / "second/evidence-coverage.json"
     ).read_bytes()
+
+
+@pytest.mark.parametrize(
+    "destination_kind",
+    ("same_as_source", "inside_source", "ancestor_of_source"),
+)
+def test_source_and_destination_may_not_overlap(tmp_path, destination_kind):
+    source, destination = overlapping_paths(tmp_path, destination_kind)
+    before = snapshot_tree(source)
+    with pytest.raises(KnowledgeCompilationError, match="must not overlap"):
+        compile_knowledge_bundle(source, destination)
+    assert snapshot_tree(source) == before
+
+
+def test_failed_promotion_restores_old_bundle_and_cleans_only_its_own_stage(
+    tmp_path, monkeypatch,
+):
+    source = make_valid_knowledge_source(tmp_path / "source")
+    output = tmp_path / "bundle"
+    compile_knowledge_bundle(source, output)
+    old_bytes = snapshot_tree(output)
+    unrelated = output.parent / f".{output.name}-unrelated.stage"
+    unrelated.mkdir()
+    fail_stage_to_destination_once(monkeypatch, output)
+    with pytest.raises(OSError, match="promotion failed"):
+        compile_knowledge_bundle(source, output)
+    assert snapshot_tree(output) == old_bytes
+    assert unrelated.is_dir()
+    assert current_invocation_siblings(output) == []
 ```
 
 - [ ] **Step 2: Run compiler tests and verify RED**
 
-Run: `.venv/bin/python -c 'import sys, types; sys.modules["readline"] = types.ModuleType("readline"); import pytest; raise SystemExit(pytest.main(sys.argv[1:]))' tests/test_knowledge_compiler.py -v`
+Run: `.venv/bin/python -c 'import sys, types; sys.modules["readline"] = types.ModuleType("readline"); import pytest; raise SystemExit(pytest.main(sys.argv[1:]))' tests/test_knowledge_compiler.py tests/test_evidence_coverage.py -v`
 
-Expected: FAIL during collection because `scripts.knowledge_compiler` does not exist.
+Expected: FAIL during collection because the compiler and Task 3 full-coverage
+modules do not exist.
 
-- [ ] **Step 3: Implement the normalized schema and logical digest**
+- [ ] **Step 3: Implement the exact projection, DDL, and one logical digest**
 
-Create exactly the tables and columns listed in **Normalized documents and
-compiler conversion**, including variants, every ordered child row, policy
-predicates, and the three separately normalized component types. Enable foreign
-keys and use deterministic primary keys and insertion order. Implement one pure
-`normalized_sql_rows` traversal; the SQLite writer inserts exactly those
-semantic rows, `logical_content_sha256` hashes exactly those rows serialized as
-canonical JSON with explicit table names, column names, row boundaries, nulls,
-and ordinals, and the writer then appends the two computed metadata rows. Do not
-maintain a second semantic digest traversal. The independent expected-
-row oracle must round-trip every normalized authoring value through the emitted
-database for every parent/child table. The authored-field target matrix and
-per-SQL-column semantic mutations must prove that no value is discarded and no
-semantic or ordinal column is omitted from the hash. Assert the database has
-that exact table/column surface and no legacy alias table.
+Implement the frozen schema, row-local DDL constraints, deferred relationships,
+pure row projection, and exact nonrecursive payload above. Insert only the
+projection returned by `normalized_sql_rows()`; do not duplicate its traversal
+inside either the database writer or digest function. The only post-projection
+SQL rows are the two computed metadata rows after both hashes exist.
 
-Computed metadata keys are exactly `schema_version`, `bundle_version`, `identity_catalog_version`, `policy_revision`, `content_sha256`, and `coverage_sha256`. Exclude the two computed hashes from their own logical-digest input.
+- [ ] **Step 4: Implement and freeze the full coverage report**
 
-- [ ] **Step 4: Emit coverage and promote the directory atomically**
+Implement the closed schema, independent semantic validator, builder, and exact
+canonical bytes above. Keep source metadata hash-bound through SQL and claim
+source IDs visible in coverage; do not enlarge a coverage claim with source
+metadata, policy, template, or component-definition fields. Task 3 tests own all
+full-report behavior so Task 6 can add gates without redefining the artifact.
 
-Write both outputs below a sibling temporary directory, fsync each file and the temporary directory, reopen the SQLite file read-only, verify `PRAGMA quick_check`, foreign keys, logical digest, and coverage linkage, then promote. If the destination exists, move it to a sibling backup, replace it with the completed temporary directory, restore the backup after any promotion failure, and remove the backup only after success.
+- [ ] **Step 5: Make compiler path handling and promotion exact**
 
-The CLI summary has stable ordering and prints bundle/catalog/policy/schema versions, counts by category and claim kind, reviewed/Unknown totals, logical SHA-256, and coverage SHA-256.
+This is the safety contract for `compile_knowledge_bundle()` and
+`build_knowledge_bundle.py`; do not copy the later model-oriented
+`prepare_release.py` CLI or its repository-specific `.release-staging` policy.
 
-- [ ] **Step 5: Run deterministic compilation twice**
+Convert source and destination to normalized absolute lexical paths without
+using `resolve()` to bless a symlink. Before opening a source document or
+writing anything, walk every existing path component with `lstat`. The source
+must be an existing non-symlink directory; every authoring subdirectory visited
+by the closed loader must be a non-symlink directory; and every authoring file
+opened by it must be a non-symlink regular file. Every existing destination
+ancestor and an existing destination must be non-symlink directories. Reject a
+regular file, directory, socket, FIFO, device, or symlink whenever the contract
+requires a different kind. Resolve only the now-verified locations and reject
+equality or containment in either direction. Load, validate, project, hash,
+build coverage, and (after Task 6) enforce the floor before creating missing
+destination parents. Immediately before stage creation, create each missing
+parent component one at a time, re-run the `lstat`/non-overlap checks, and then
+proceed. Invalid source content therefore creates neither an output parent nor a
+stage.
+
+The hostile-path test matrix is exhaustive over: a symlinked source root;
+symlink/non-directory source ancestors; symlink, directory, or special-file
+authoring files; symlink/non-directory destination ancestors; an existing
+destination that is a symlink or any non-directory; source/destination equality
+and containment in both directions; a colliding stage/backup candidate of every
+file kind; either staged artifact replaced by a symlink or non-regular file; and
+every forbidden SQLite sidecar or extra stage entry. Where the host cannot make
+a device, the test supplies its `lstat` mode through the path-inspection seam.
+Every case asserts that no source byte changes, no invalid output parent is
+created, an old destination is unchanged, and unrelated sibling lookalikes are
+untouched.
+
+Create one private directory on the destination filesystem with basename
+matching `.<destination-name>-<32 lowercase hex>.stage`: generate
+`uuid4().hex`, call `Path.mkdir(mode=0o700, exist_ok=False)`, and retry only a
+name collision. If an old destination exists, choose an absent
+`.<destination-name>-<32 lowercase hex>.backup` beside it using a separate
+fresh `uuid4().hex`; `os.replace(destination, backup)` creates that path during
+promotion. Both are never descendants of the source or destination. A compiler
+invocation records its exact stage/backup paths and never glob-deletes a
+lookalike or stale sibling from another run.
+
+Write only `knowledge.sqlite` and `evidence-coverage.json` below the stage. Set
+SQLite journal mode to `DELETE`, close the connection before file fsync, and
+reject any journal, sidecar, or extra entry. Immediately before fsync and again
+before reopen, use `lstat` to require both named artifacts to be non-symlink
+regular files. File and directory fsync failures are fatal rather than silently
+ignored. After the reopen verification in the compile-order contract, fsync the
+stage directory.
+Promotion is then:
+
+1. if present, `os.replace(destination, backup)` and fsync the parent;
+2. `os.replace(stage, destination)` and fsync the parent;
+3. remove this invocation's backup only after the new destination is durable,
+   then fsync the parent again.
+
+Any failure before the destination-to-backup rename leaves the old destination
+untouched and removes only this invocation's stage. Before recursively removing
+a recorded stage or backup, `lstat` must confirm that it is either absent or a
+real directory with this invocation's exact parent and generated basename; an
+absent path is already clean, while a symlink, non-directory, or mismatched path
+is preserved and reported. If cleanup fails, raise `KnowledgeCompilationError`
+with the original and cleanup failures plus every preserved recovery path. No
+cleanup follows a symlink. Any failure after the destination-to-backup rename
+but before the new destination and its parent fsync both succeed enters rollback;
+the recorded backup keeps the old destination recoverable. If the stage has
+already become the destination, first move it back to the recorded stage path;
+then restore with `os.replace(backup, destination)`
+and fsync the parent. A destination that did not previously exist is rolled back
+to absence by moving the promoted directory back to the stage path and fsyncing
+the parent. After successful rollback, remove the stage and re-raise the
+original failure. If moving the new destination aside, restoring the backup, or
+the rollback fsync fails, raise `KnowledgeCompilationError` containing the
+original and rollback failures plus the exact preserved backup/stage paths and
+do not delete either recovery artifact. If backup deletion fails after a
+successful durable promotion, keep the valid new destination, preserve whatever
+remains at the exact backup path, and raise a cleanup error naming it. On
+failure of the parent fsync after backup deletion, keep the valid new
+destination, report that durability fsync failure, and do not claim the removed
+backup is recoverable. On success no stage or backup from that invocation
+remains. Tests inject failures at every write, fsync, reopen, rename, rollback,
+and cleanup boundary and assert the exact old/new/absent bundle state plus
+unrelated sibling preservation.
+
+- [ ] **Step 6: Freeze the compiler CLI contract**
+
+`scripts/build_knowledge_bundle.py` inserts the repository root in `sys.path`,
+defines `main(argv: Sequence[str] | None = None) -> int`, and exposes only
+`-h/--help`, required `--source PATH`, required `--out DIRECTORY`, and optional
+`--print-summary`. Set the parser's `prog` and literal usage so help is exactly:
+
+```text
+usage: build_knowledge_bundle.py --source PATH --out DIRECTORY [--print-summary]
+
+Compile reviewed schema-3 knowledge YAML into one atomic bundle directory.
+
+options:
+  -h, --help       show this help message and exit
+  --source PATH    reviewed schema-3 source directory
+  --out DIRECTORY  destination bundle directory
+  --print-summary  print the deterministic bundle summary
+```
+
+Help exits 0, writes that text plus its final LF to stdout, writes nothing to
+stderr, and performs no filesystem mutation. Argument errors use argparse exit
+2, empty stdout, and its deterministic `usage: ...` plus
+`build_knowledge_bundle.py: error: ...` on stderr. Expected validation,
+path-safety, SQLite, coverage, and promotion failures exit 1, write no stdout,
+write exactly `error: <public error message>\n` to stderr, and never emit a
+traceback. A successful call without `--print-summary` exits 0 with empty stdout
+and stderr.
+
+With `--print-summary`, stdout is produced only after successful promotion. It
+has one final LF, contains no absolute path or timestamp, and uses exactly this
+line order:
+
+```text
+knowledge bundle summary
+schema_version=<value>
+bundle_version=<value>
+identity_catalog_version=<value>
+policy_revision=<value>
+summary.categories=<value>
+summary.canonical_identities=<value>
+summary.subtypes=<value>
+summary.lifecycle_records=<value>
+summary.industry_averages=<value>
+summary.component_templates=<value>
+summary.modern_overlays=<value>
+summary.legacy_overlays=<value>
+summary.hazard_records=<value>
+summary.reviewed_claims=<value>
+summary.unknown_claims=<value>
+claims <category_id> <claim_kind> reviewed=<value> unknown=<value>
+content_sha256=<64 lowercase hex>
+coverage_sha256=<64 lowercase hex>
+```
+
+The `claims ...` line repeats for every Cartesian pair: categories in
+`RELEASED_CATEGORY_IDS` order, then claim kinds in exact order `subtype`,
+`variant`, `identity`, `specific_lifecycle`, `industry_average`,
+`component_association`, `hazard`. Zero counts are printed. The two hash lines
+come last. `summary.*` values are the exact report values; claim counts are
+computed only from the final report. Two builds at different output paths must
+have byte-identical stdout.
+
+- [ ] **Step 7: Run focused tests and deterministic compilation twice**
 
 Run:
 
 ```bash
-.venv/bin/python -c 'import sys, types; sys.modules["readline"] = types.ModuleType("readline"); import pytest; raise SystemExit(pytest.main(sys.argv[1:]))' tests/test_knowledge_compiler.py -v
+.venv/bin/python -c 'import sys, types; sys.modules["readline"] = types.ModuleType("readline"); import pytest; raise SystemExit(pytest.main(sys.argv[1:]))' tests/test_evidence_types.py tests/test_knowledge_schema.py tests/test_knowledge_compiler.py tests/test_evidence_coverage.py -v
 ```
 
-Expected: tests PASS; the two summaries, logical hashes, and `evidence-coverage.json` bytes match. Raw SQLite hashes are recorded but are not used as the platform-independent logical identity.
+Expected: tests PASS; exact DDL/PK/FK/nullability and every invalid insert are
+covered; oracle/projection/database rows match; every authored, derived, child,
+ordinal, SQL, and coverage target is retained; every semantic mutation changes
+the correct canonical hash; all hostile paths and injected failures preserve
+the previous bundle; and two output locations produce identical summaries,
+logical hashes, and coverage bytes. Raw SQLite hashes are not the
+platform-independent logical identity.
 
-- [ ] **Step 6: Commit the compiler and CLI**
+- [ ] **Step 8: Commit the compiler, full coverage artifact, and CLI**
 
 ```bash
-git add scripts/knowledge_compiler.py scripts/build_knowledge_bundle.py tests/test_knowledge_compiler.py
+git add scripts/knowledge_compiler.py scripts/build_knowledge_bundle.py scripts/evidence_coverage.py packaging/evidence-coverage.schema.json tests/test_knowledge_compiler.py tests/test_evidence_coverage.py
 git commit -m "feat: compile atomic knowledge bundles"
 ```
 
@@ -2413,39 +3134,36 @@ git add server/evidence_resolver.py tests/test_evidence_resolver.py
 git commit -m "feat: resolve reviewed evidence records"
 ```
 
-### Task 6: Publish deterministic evidence coverage and release changes
+### Task 6: Enforce release floors and publish coverage changes
 
 **Files:**
-- Create: `scripts/evidence_coverage.py`
+- Modify: `scripts/evidence_coverage.py`
 - Create: `scripts/compare_evidence_coverage.py`
-- Create: `packaging/evidence-coverage.schema.json`
 - Create: `packaging/evidence-coverage-change.schema.json`
-- Create: `tests/test_evidence_coverage.py`
+- Modify: `tests/test_evidence_coverage.py`
+- Modify: `tests/test_knowledge_compiler.py`
 - Modify: `scripts/knowledge_compiler.py`
 
 **Interfaces:**
-- Produces: `build_coverage(documents: EvidenceDocuments, content_sha256: str) -> dict[str, object]`
-- Consumes reviewed claims from `subtypes`, `variants`, `identities`, `specific_lifecycles`, `industry_averages`, `component_associations`, and `hazards`, plus the canonical `unknowns` tuples; component templates are counted from `component_templates`
+- Consumes without modification Task 3's `build_coverage(...)`,
+  `validate_coverage_report(...)`, `coverage_json_bytes(...)`, full-report schema,
+  exact full-report semantics, and canonical bytes
 - Produces: `validate_release_floor(report: Mapping[str, object]) -> None`
+- Produces: `validate_release_floor_inputs(documents: EvidenceDocuments) -> None`
 - Produces: `compare_coverage(previous: Mapping[str, object] | None, current: Mapping[str, object]) -> dict[str, object]`
 - Produces CLI: `python scripts/compare_evidence_coverage.py --current PATH (--previous PATH | --initial) --out PATH`
 
-- [ ] **Step 1: Write failing closed-shape and floor tests**
+- [ ] **Step 1: Write failing floor, immutability, and change tests**
 
 ```python
-def test_coverage_has_the_closed_sorted_shape(valid_documents):
+def test_floor_validation_cannot_mutate_task3_full_report_bytes(valid_documents):
     report = build_coverage(valid_documents, "a" * 64)
-    assert set(report) == {
-        "schema_version", "bundle_version", "knowledge_content_sha256", "summary", "claims"
-    }
-    assert list(report["summary"]) == [
-        "categories", "canonical_identities", "subtypes", "lifecycle_records",
-        "industry_averages", "component_templates", "modern_overlays",
-        "legacy_overlays", "hazard_records", "reviewed_claims", "unknown_claims",
-    ]
-    assert report["claims"] == sorted(
-        report["claims"], key=lambda row: (row["category_id"], row["claim_kind"], row["claim_id"])
-    )
+    before_object = copy.deepcopy(report)
+    before_bytes = coverage_json_bytes(report)
+    validate_release_floor_inputs(valid_documents)
+    validate_release_floor(report)
+    assert report == before_object
+    assert coverage_json_bytes(report) == before_bytes
 
 
 def test_floor_rejects_one_missing_category_average(valid_documents):
@@ -2460,40 +3178,109 @@ def test_initial_change_lists_every_current_claim_as_added(valid_report):
     assert change["to_bundle_version"] == "3.0.0"
     assert len(change["added"]) == len(valid_report["claims"])
     assert change["known_limitations"] == limitations_from_unknown_rows(valid_report)
+
+
+def test_task3_full_report_schema_and_golden_semantics_are_unchanged(
+    valid_documents,
+):
+    report = build_coverage(valid_documents, "a" * 64)
+    assert report == expected_coverage_report(valid_documents, "a" * 64)
+    assert coverage_json_bytes(report) == expected_coverage_bytes(
+        valid_documents, "a" * 64,
+    )
 ```
 
 - [ ] **Step 2: Run coverage tests and verify RED**
 
 Run: `.venv/bin/python -c 'import sys, types; sys.modules["readline"] = types.ModuleType("readline"); import pytest; raise SystemExit(pytest.main(sys.argv[1:]))' tests/test_evidence_coverage.py -v`
 
-Expected: FAIL because the coverage modules and JSON schemas do not exist.
+Expected: Task 3 full-report tests remain PASS; new tests FAIL because the
+release-floor and comparison functions/change schema do not exist.
 
-- [ ] **Step 3: Implement canonical full and change artifacts**
+- [ ] **Step 3: Add the release floor without changing a valid full report**
 
-Each full claim row contains exactly `category_id`, `claim_kind`, `claim_id`,
-`evidence_level`, `source_state`, `source_ids`, and `unknown_reason`;
-`source_state` is `reviewed` or `unknown`. A reviewed row has non-null
-`evidence_level`, non-empty sorted `source_ids`, and `unknown_reason=null`. An
-Unknown row is keyed directly by `(category_id, claim_kind, claim_id)`, has
-`evidence_level=null`, `source_ids=[]`, and `unknown_reason` equal to the
-authored `reason`; the compiler never emits a synthetic Unknown ID. Serialize
-with sorted keys, no NaN, UTF-8, and one trailing newline.
+Keep the public `validate_release_floor(report)` interface. It first calls Task
+3's full-report validator, does not mutate or reinterpret the mapping, and
+enforces for each exact released category at least ten reviewed identities,
+four reviewed subtypes, three reviewed specific lifecycle records, and one
+reviewed industry average. It also requires `summary.categories == 5`, at least
+15 total component templates, at least five modern overlays, and at least five
+legacy overlays. An Unknown never satisfies a reviewed floor.
+
+The immutable public report intentionally does not expose manufacturer IDs,
+market state, battery architecture, or template-to-category ownership. Add
+`validate_release_floor_inputs(documents: EvidenceDocuments) -> None` rather
+than smuggling those fields into the report. It enforces, for each
+category, at least two manufacturers, at least four subtypes including one
+current and one discontinued-or-legacy subtype, exactly one standard category
+template, at least one modern overlay, at least one legacy overlay, and the
+battery-bearing/battery-free variant distinction for headphones, mice, and
+keyboards. Task 2's semantic validation remains authoritative for proper broad
+service-life endpoints, reviewed sources, exact template shape, and all other
+claim correctness. Both floor functions raise `CoverageError` with the exact
+category ID and failed requirement and leave their inputs unchanged.
+
+Do not edit `build_coverage`, `validate_coverage_report`,
+`coverage_json_bytes`, `packaging/evidence-coverage.schema.json`, the report
+shape, the summary meanings, claim inclusion, claim sorting, or encoding. The
+Task 3 independent oracle/golden-byte tests run in this task and make this a
+release gate rather than a prose promise.
+
+- [ ] **Step 4: Implement only the canonical change artifact**
 
 The change artifact contains exactly `schema_version`, `from_bundle_version`, `to_bundle_version`, `added`, `removed`, `changed`, and `known_limitations`. `added` and `removed` are sorted claim keys. Each changed row contains `claim_key`, `before_source_state`, `after_source_state`, `before_evidence_level`, and `after_evidence_level`. Each limitation contains `claim_key` and `reason` and is derived from current Unknown rows rather than free-form release copy.
 
-- [ ] **Step 4: Integrate the release floor before bundle promotion**
+`schema_version` is 1. A `claim_key` is the closed object
+`{"category_id": Id, "claim_kind": ClaimKind, "claim_id": Id}`, where
+`ClaimKind` is Task 3's exact seven-value enum. Key arrays and changed rows are
+sorted by the same
+`(category_id, claim_kind, claim_id)` tuple as the full report. Comparison first
+validates both input reports, rejects a previous report when its
+`knowledge_content_sha256` equals the current hash but its canonical bytes
+differ, and classifies additions/removals by claim key. `changed` contains keys
+present in both reports whose evidence level or source state changed. Current
+Unknown rows alone produce `known_limitations`, sorted by claim key. The initial
+comparison uses `previous=None`, emits `from_bundle_version=null`, and lists all
+current keys as added.
 
-Call `validate_release_floor()` inside `compile_knowledge_bundle()` before writing computed metadata or promoting output. Hash the exact coverage bytes, store that hash as `coverage_sha256`, and verify that `knowledge_content_sha256` matches the database logical digest.
+`packaging/evidence-coverage-change.schema.json` uses draft 2020-12, closes
+every object recursively, fixes schema version 1 and all exact property sets,
+and applies the same category/kind/evidence/source-state constraints as the
+Task 3 schema. Serialize the change mapping with UTF-8, `allow_nan=False`,
+`sort_keys=True`, separators `(",", ":")`, and one trailing LF. The CLI requires
+exactly one of `--previous` and `--initial`, validates canonical current/previous
+full-report bytes before comparing, writes through a same-directory temporary
+regular file with file and parent-directory fsync, and atomically replaces only
+the requested output file.
 
-- [ ] **Step 5: Run coverage/compiler tests and commit**
+- [ ] **Step 5: Integrate the release floor before computed metadata or staging**
+
+Inside `compile_knowledge_bundle()`, after the Task 3 projection/content hash
+and full report are built but before canonical coverage bytes are accepted,
+before either computed metadata row is added, and before a stage directory is
+created, call `validate_release_floor_inputs(documents)` and
+`validate_release_floor(report)`. A floor failure therefore preserves an old
+destination and leaves no compiler stage/backup. For the same valid documents
+and content hash, the report object, report bytes, coverage hash, database rows,
+logical hash, manifest, and compiler summary must be byte-for-byte identical to
+Task 3 behavior; this task changes only which under-floor inputs are rejected.
+
+- [ ] **Step 6: Run coverage/compiler regression tests and commit**
 
 Run: `.venv/bin/python -c 'import sys, types; sys.modules["readline"] = types.ModuleType("readline"); import pytest; raise SystemExit(pytest.main(sys.argv[1:]))' tests/test_evidence_coverage.py tests/test_knowledge_compiler.py -v`
 
-Expected: PASS for exact counts, each category floor, battery-bearing/free variants, deterministic bytes, initial comparison, changed comparison, schema rejection, and compiler failure preservation.
+Expected: PASS for Task 3's independent full-report oracle and bytes, every
+report-visible and document-only category floor, non-mutating validation,
+initial/changed comparison, closed change schema, deterministic change bytes,
+and compiler failure preservation. Confirm the full-report schema is untouched:
 
 ```bash
-git add scripts/evidence_coverage.py scripts/compare_evidence_coverage.py scripts/knowledge_compiler.py packaging/evidence-coverage.schema.json packaging/evidence-coverage-change.schema.json tests/test_evidence_coverage.py
-git commit -m "feat: publish evidence coverage artifacts"
+git diff --exit-code HEAD -- packaging/evidence-coverage.schema.json
+```
+
+```bash
+git add scripts/evidence_coverage.py scripts/compare_evidence_coverage.py scripts/knowledge_compiler.py packaging/evidence-coverage-change.schema.json tests/test_evidence_coverage.py tests/test_knowledge_compiler.py
+git commit -m "feat: enforce evidence coverage release gates"
 ```
 
 ### Task 7: Author bundle metadata, shared sources, and policy records
@@ -3059,7 +3846,7 @@ Expected: FAIL during collection because `scripts.knowledge_release` does not ex
 
 - [ ] **Step 3: Implement the closed approval trust record**
 
-Accept exactly these top-level approval keys: `approval_schema_version`, `schema_version`, `bundle_version`, `identity_catalog_version`, `policy_revision`, `knowledge_sha256`, `content_sha256`, `coverage_sha256`, `coverage_change_sha256`, `corpus_counts`, `reviewed_by`, and `reviewed_on`. Require approval schema 1, knowledge schema 3, bundle `3.0.0`, catalog `1.0.0`, policy `2.0.0`, lowercase SHA-256 strings, a non-empty reviewer, and an ISO review date. `corpus_counts` has the exact summary keys emitted by Task 6 and positive integer values.
+Accept exactly these top-level approval keys: `approval_schema_version`, `schema_version`, `bundle_version`, `identity_catalog_version`, `policy_revision`, `knowledge_sha256`, `content_sha256`, `coverage_sha256`, `coverage_change_sha256`, `corpus_counts`, `reviewed_by`, and `reviewed_on`. Require approval schema 1, knowledge schema 3, bundle `3.0.0`, catalog `1.0.0`, policy `2.0.0`, lowercase SHA-256 strings, a non-empty reviewer, and an ISO review date. `corpus_counts` has the exact immutable full-report summary keys emitted by Task 3 and positive integer values; Task 6 validates those counts without changing their names, meanings, order, or bytes.
 
 Before opening any input, inspect every path component without following links.
 The candidate must be a real directory rather than a symlink; each of its three
