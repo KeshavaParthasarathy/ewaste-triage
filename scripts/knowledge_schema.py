@@ -14,7 +14,7 @@ import unicodedata
 from urllib.parse import urlsplit, urlunsplit
 
 import yaml
-from yaml.nodes import MappingNode, ScalarNode
+from yaml.nodes import MappingNode, Node, ScalarNode
 from yaml.tokens import AliasToken, AnchorToken, DirectiveToken, ScalarToken, TagToken
 
 from server.evidence_types import (
@@ -617,7 +617,17 @@ class _CheckedPath:
 
 
 class _ClosedLoader(yaml.SafeLoader):
-    pass
+    def construct_object(self, node: Node, deep: bool = False) -> object:
+        try:
+            return super().construct_object(node, deep=deep)
+        except (ValueError, OverflowError) as exc:
+            if not isinstance(node, ScalarNode):
+                raise
+            raise _YamlRuleError(
+                "invalid YAML scalar at "
+                f"line {node.start_mark.line + 1}, "
+                f"column {node.start_mark.column + 1}"
+            ) from exc
 
 
 def _construct_closed_mapping(

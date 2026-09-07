@@ -1698,6 +1698,59 @@ def test_lifecycle_numeric_overflow_is_a_location_bearing_validation_error(tmp_p
     assert "finite" in caught.value.message
 
 
+def test_yaml_integer_digit_limit_is_a_location_bearing_validation_error(tmp_path):
+    source = make_valid_category_knowledge_source(tmp_path, TEST_CATEGORY_ID)
+    path = source / f"categories/{TEST_CATEGORY_ID}/lifecycles.yaml"
+    original = b"  lower_bound: 4.0\n"
+    replacement = b"  lower_bound: " + (b"9" * 5_000) + b"\n"
+    raw = path.read_bytes()
+    assert raw.count(original) == 1
+    path.write_bytes(raw.replace(original, replacement))
+
+    with pytest.raises(EvidenceValidationError) as caught:
+        _load_mouse_category(source)
+    assert caught.value.filename == f"categories/{TEST_CATEGORY_ID}/lifecycles.yaml"
+    assert caught.value.record_path == "document root"
+    assert "invalid YAML scalar" in caught.value.message
+    assert "line 11, column 16" in caught.value.message
+
+
+def test_normal_yaml_integer_scalar_remains_a_valid_number(tmp_path):
+    source = make_valid_category_knowledge_source(tmp_path, TEST_CATEGORY_ID)
+    mutate_yaml(
+        source / f"categories/{TEST_CATEGORY_ID}/lifecycles.yaml",
+        lambda document: document["lifecycles"][0].update({"lower_bound": 5}),
+    )
+
+    category = _load_mouse_category(source)
+    assert category.specific_lifecycles[0].lower_bound == 5.0
+
+
+def test_yaml_scalar_guard_does_not_mask_programmer_exceptions(
+    tmp_path, monkeypatch
+):
+    source = make_valid_category_knowledge_source(tmp_path, TEST_CATEGORY_ID)
+    mutate_yaml(
+        source / f"categories/{TEST_CATEGORY_ID}/lifecycles.yaml",
+        lambda document: document["lifecycles"][0].update({"lower_bound": 5001}),
+    )
+    integer_tag = "tag:yaml.org,2002:int"
+    original = knowledge_schema._ClosedLoader.yaml_constructors[integer_tag]
+
+    def raise_programmer_error(loader, node):
+        if node.value == "5001":
+            raise RuntimeError("synthetic constructor bug")
+        return original(loader, node)
+
+    monkeypatch.setitem(
+        knowledge_schema._ClosedLoader.yaml_constructors,
+        integer_tag,
+        raise_programmer_error,
+    )
+    with pytest.raises(RuntimeError, match="synthetic constructor bug"):
+        _load_mouse_category(source)
+
+
 def test_specific_lifecycle_may_preserve_positive_sourced_point_records(tmp_path):
     source = make_valid_category_knowledge_source(tmp_path, TEST_CATEGORY_ID)
     path = source / f"categories/{TEST_CATEGORY_ID}/lifecycles.yaml"
