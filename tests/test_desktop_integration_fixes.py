@@ -32,12 +32,25 @@ PREDICTION = {
         {"class_name": "0303_laptop", "confidence": 0.09},
     ],
 }
+MODEL_IDENTITY = {
+    "model_id": "release-model-2026-09",
+    "architecture": "fake-onnx",
+    "preprocessing_version": "rgb-224-v1",
+    "artifact_sha256": "a" * 64,
+    "schema_version": 1,
+}
 
 
 class FakeClassifier:
     arch = "fake-onnx"
     classes = ["0306_mobile_phone", "0303_laptop"]
-    manifest = SimpleNamespace(artifact_sha256="a" * 64)
+    manifest = SimpleNamespace(
+        model_id="release-model-2026-09",
+        architecture="fake-onnx",
+        preprocessing_version="rgb-224-v1",
+        artifact_sha256="a" * 64,
+        schema_version=1,
+    )
 
     def classify(self, image):
         image.load()
@@ -128,7 +141,7 @@ def test_product_factory_persists_validated_user_correction_without_mutating_mod
     )
 
     assert corrected.status_code == 200
-    assert corrected.json["prediction"] == PREDICTION
+    assert corrected.json["prediction"] == {**PREDICTION, "model": MODEL_IDENTITY}
     assert corrected.json["confirmation"] == {
         "accepted_class_name": "0303_laptop",
         "source": "user",
@@ -136,6 +149,21 @@ def test_product_factory_persists_validated_user_correction_without_mutating_mod
     assert reopened.json == corrected.json
     assert invalid.status_code == 400
     assert invalid.json["error"] == "accepted category was not offered by the model"
+
+
+def test_product_history_persists_the_exact_model_identity_for_each_scan(tmp_path):
+    app = _desktop_app(tmp_path)
+    response = app.test_client().post(
+        "/api/v1/classify",
+        data={"image": (_jpeg_bytes(), "device.jpg")},
+        content_type="multipart/form-data",
+    )
+
+    record = app.config["HISTORY_STORE"].get_scan(response.json["scan_id"])
+
+    assert response.status_code == 200
+    assert response.json["model"] == MODEL_IDENTITY
+    assert record["prediction"]["model"] == MODEL_IDENTITY
 
 
 def test_product_factory_rejects_oversized_request_with_plain_json_error(tmp_path):

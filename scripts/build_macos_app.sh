@@ -91,6 +91,8 @@ BUILT_APP="${PYINSTALLER_DIST}/E-Waste Triage.app"
 FINAL_APP="${DIST_DIR}/E-Waste Triage.app"
 DMG_PATH="${DIST_DIR}/E-Waste Triage-${VERSION}-arm64.dmg"
 RELEASE_JSON="${DIST_DIR}/E-Waste Triage-${VERSION}-arm64.json"
+RELEASE_NOTES="${DIST_DIR}/E-Waste Triage-${VERSION}-release-notes.md"
+GENERATED_RELEASE_NOTES="${BUILD_ROOT}/generated/release-notes.md"
 
 case "${BUILD_ROOT}" in
   "${BUILD_BASE}"/*) ;;
@@ -116,6 +118,11 @@ with path.open("w", encoding="utf-8") as handle:
     json.dump(payload, handle, indent=2, sort_keys=True)
     handle.write("\n")
 PY
+
+"${PYTHON_BIN}" "${PROJECT_ROOT}/scripts/render_release_notes.py" \
+  --release-dir "${RELEASE_DIR}" \
+  --version "${VERSION}" \
+  --output "${GENERATED_RELEASE_NOTES}"
 
 "${PYTHON_BIN}" "${PROJECT_ROOT}/scripts/render_app_icon.py" \
   --source "${PROJECT_ROOT}/desktop/assets/app-icon.svg" \
@@ -156,7 +163,9 @@ DMG_SOURCE="${BUILD_ROOT}/dmg-source"
 /bin/mkdir -p "${DMG_SOURCE}"
 /usr/bin/ditto "${FINAL_APP}" "${DMG_SOURCE}/E-Waste Triage.app"
 /bin/ln -s /Applications "${DMG_SOURCE}/Applications"
-/bin/rm -f -- "${DMG_PATH}" "${RELEASE_JSON}"
+/bin/rm -f -- "${DMG_PATH}" "${RELEASE_JSON}" "${RELEASE_NOTES}"
+/usr/bin/ditto "${GENERATED_RELEASE_NOTES}" "${RELEASE_NOTES}"
+/usr/bin/ditto "${GENERATED_RELEASE_NOTES}" "${DMG_SOURCE}/Release Notes.md"
 /usr/bin/hdiutil create \
   -volname "E-Waste Triage ${VERSION}" \
   -srcfolder "${DMG_SOURCE}" \
@@ -191,3 +200,4 @@ PY
 echo "Built ${FINAL_APP}"
 echo "Built ${DMG_PATH}"
 echo "Wrote ${RELEASE_JSON}"
+echo "Wrote ${RELEASE_NOTES}"

@@ -656,7 +656,7 @@
       activeResult = withModelEvidence(result);
       if (typeof view.showSection === "function") view.showSection("scan");
       if (typeof view.clearPreview === "function") {
-        view.clearPreview("This photo arrived securely from your phone. The full-resolution image was not retained.");
+        view.clearPreview("This photo arrived from your phone over temporary same-network HTTP. The full-resolution image was not retained.");
       }
       view.transition(result.low_confidence ? "review" : "result", activeResult);
       if (typeof view.renderPhoneIncomingResult === "function") {

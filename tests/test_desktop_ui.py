@@ -287,7 +287,10 @@ const controller = UI.createController({
     assert result["incoming"] == "phone-scan-1"
     assert result["remaining"] == 599
     assert result["assessment"]["scan_id"] == "phone-scan-1"
-    assert "phone" in result["previewMessage"].lower()
+    assert result["previewMessage"] == (
+        "This photo arrived from your phone over temporary same-network HTTP. "
+        "The full-resolution image was not retained."
+    )
     assert 1000 in result["scheduled"]
 
 

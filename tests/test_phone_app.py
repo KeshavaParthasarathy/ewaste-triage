@@ -327,6 +327,10 @@ def test_phone_page_has_local_accessible_capture_states(client, active_session):
     assert "fetch(" in javascript
     assert "https://" not in html + css + javascript
     assert "http://" not in html + css + javascript
+    assert "Temporary local HTTP session" in html
+    assert "Local analysis on your paired Mac" in html
+    assert "secure" not in html.lower()
+    assert "private local session" not in html.lower()
 
 
 def test_phone_result_presenter_consumes_production_classifier_schema():

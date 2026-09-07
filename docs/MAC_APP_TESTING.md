@@ -1,6 +1,8 @@
 # E-Waste Triage Mac app tester checklist
 
 Record a pass/fail result and evidence (screenshot, short note, or issue link) for every item. Open **About this release**, record its app version, source revision, model SHA-256, component-database SHA-256, and component-database version, and compare all five values with the release JSON and staged release manifest.
+Also compare the app, model, preprocessing, component-reference, and target versions in
+the versioned release-notes Markdown file with the immutable release stage.
 
 ## Version 0.1.0 boundaries
 
@@ -33,6 +35,10 @@ This internal milestone imports files on the Mac and can open the phone's camera
 - [ ] Check the 760 px minimum window width and normal resizing; content must remain readable and actionable.
 
 ## Evidence record
+
+Automated verification does not replace the fresh-account, offline, real-phone-network,
+Gatekeeper, VoiceOver, or Local Network permission checks above. Leave the overall result
+unset until those checks have been performed on the distributed DMG.
 
 Tester: __________  Date/time: __________  App version: __________  Source revision: __________
 

@@ -63,7 +63,7 @@ RELEASE_DIR=.release-staging/release-$APP_VERSION
 
 ## Build, verify, and smoke-test
 
-Use a clean source checkout. The packaging script verifies the staged release before building, creates the app/DMG/checksum JSON, and verifies the app bundle:
+Use a clean source checkout. The packaging script verifies the staged release before building, creates the app/DMG/checksum JSON and versioned release notes, and verifies the app bundle:
 
 ```sh
 git status --porcelain=v1
@@ -90,6 +90,10 @@ PY
 ```
 
 The two printed SHA-256 values must match exactly. Archive the release record, validation output, checksums, source revision, approved model ID, and component version together.
+Review and distribute `dist/E-Waste Triage-$APP_VERSION-release-notes.md` with the DMG.
+The same notes are included at the top level of the DMG as `Release Notes.md`; they are
+generated from the verified model and release manifests and identify preprocessing
+version `rgb-224-v1` for the current approved model.
 
 ## Rollback, cleanup, and signing boundary
 
@@ -105,7 +109,8 @@ fi
 rm -rf -- "build/macos/$APP_VERSION"
 rm -rf -- ".release-staging/release-$APP_VERSION"
 rm -f -- "dist/E-Waste Triage-$APP_VERSION-arm64.dmg" \
-  "dist/E-Waste Triage-$APP_VERSION-arm64.json"
+  "dist/E-Waste Triage-$APP_VERSION-arm64.json" \
+  "dist/E-Waste Triage-$APP_VERSION-release-notes.md"
 ```
 
 Developer ID signing and notarization are future release steps and are explicitly unavailable in this unsigned milestone. Do not imply Gatekeeper trust, signing, notarization, or TLS-based phone transport before those capabilities exist.

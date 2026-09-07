@@ -711,11 +711,71 @@ def test_build_script_uses_clean_tools_and_emits_versioned_unsigned_distribution
     assert "--workpath" in text
     assert "/usr/bin/hdiutil" in text
     assert "E-Waste Triage-${VERSION}-arm64.dmg" in text
+    assert "E-Waste Triage-${VERSION}-release-notes.md" in text
+    assert "render_release_notes.py" in text
     assert "/usr/bin/shasum" in text
     assert "release_manifest_sha256" in text
     assert text.index("status --porcelain") < text.index("/bin/rm -rf")
     assert "codesign " not in text
     assert "notarytool" not in text
+
+
+def test_release_notes_renderer_emits_the_human_release_identity(tmp_path):
+    release = _write_release_stage(tmp_path)
+    output = tmp_path / "E-Waste Triage-1.2.3-release-notes.md"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "render_release_notes.py"),
+            "--release-dir",
+            str(release),
+            "--version",
+            "1.2.3",
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    notes = output.read_text(encoding="utf-8")
+    assert "# E-Waste Triage 1.2.3" in notes
+    assert "- App version: `1.2.3`" in notes
+    assert "- Model: `release-model-1` (`test-onnx`, schema `1`)" in notes
+    assert "- Preprocessing: `rgb-224-v1`" in notes
+    assert "- Component references: `2.0.0` (schema `2`)" in notes
+    assert "- Target: Apple Silicon (`arm64`), macOS `14.0` or later" in notes
+    assert "- ONNX parity: 5/5 top-1 matches" in notes
+    assert "same-network HTTP and is not TLS-encrypted" in notes
+    assert "Administrator training tools and training photos are not included" in notes
+
+
+def test_release_notes_renderer_rejects_a_version_mismatch_without_output(tmp_path):
+    release = _write_release_stage(tmp_path, version="1.2.3")
+    output = tmp_path / "notes.md"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "render_release_notes.py"),
+            "--release-dir",
+            str(release),
+            "--version",
+            "1.2.4",
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert completed.returncode != 0
+    assert "version" in completed.stderr.lower()
+    assert not output.exists()
 
 
 def test_app_and_build_dependencies_are_pinned_without_onnx_runtime_downgrade():

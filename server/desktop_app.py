@@ -39,6 +39,13 @@ KNOWN_ISSUE_FIELDS = {
     "recall",
 }
 MAX_KNOWN_ISSUE_NOTES = 500
+MODEL_HISTORY_FIELDS = (
+    "model_id",
+    "architecture",
+    "preprocessing_version",
+    "artifact_sha256",
+    "schema_version",
+)
 
 
 class _PhoneResultInbox:
@@ -69,6 +76,20 @@ def _phone_qr_data_url(url: str) -> str:
     qrcode.make(url).save(output, format="PNG")
     encoded = base64.b64encode(output.getvalue()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
+
+
+def _model_history_identity(classifier) -> dict[str, object] | None:
+    """Return immutable release-model provenance for a persisted prediction."""
+    manifest = getattr(classifier, "manifest", None)
+    if manifest is None:
+        return None
+    identity = {field: getattr(manifest, field, None) for field in MODEL_HISTORY_FIELDS}
+    text_fields = MODEL_HISTORY_FIELDS[:-1]
+    if any(not isinstance(identity[field], str) or not identity[field] for field in text_fields):
+        return None
+    if isinstance(identity["schema_version"], bool) or not isinstance(identity["schema_version"], int):
+        return None
+    return identity
 
 
 def create_desktop_app(
@@ -427,6 +448,9 @@ def create_desktop_app(
 
     def persist_classification(result, image, *, retain_original=False):
         result = dict(result)
+        model_identity = _model_history_identity(app.config["CLASSIFIER"])
+        if model_identity is not None:
+            result["model"] = model_identity
         scan_id = None
         store = app.config["HISTORY_STORE"]
         if store is not None:
