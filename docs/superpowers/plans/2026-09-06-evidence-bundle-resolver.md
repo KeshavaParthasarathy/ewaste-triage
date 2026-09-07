@@ -420,6 +420,524 @@ git add server/evidence_types.py tests/test_evidence_types.py
 git commit -m "feat: define evidence bundle contracts"
 ```
 
+## Normative Authoring YAML Contract
+
+This section is the sole schema for the schema-3 administrator source tree. An
+implementer must not infer fields from the frozen-v1 YAML, a corpus narrative,
+or a compiler table. Every mapping is closed: every listed key is required,
+unknown keys are rejected, and a key may be `null` only where its type below
+explicitly includes `null`. A `list[T]` is always present and may be empty; a
+`nonempty list[T]` is always present and has at least one item. YAML defaults,
+anchors, aliases, merge keys, explicit tags, duplicate keys, and non-scalar map
+keys are rejected before record validation.
+
+### Fixed paths and document roots
+
+The tree has ten fixed paths using nine document schemas because the shared and
+category source files reuse the same closed `Source` schema. Their exact
+top-level keys are:
+
+| Relative path | Exact root keys |
+|---|---|
+| `bundle.yaml` | `bundle` |
+| `common/sources.yaml` | `sources` |
+| `common/policies.yaml` | `policy_revision`, `policies` |
+| `categories/<category_id>/sources.yaml` | `sources` |
+| `categories/<category_id>/identities.yaml` | `category`, `subtypes`, `variants`, `identities` |
+| `categories/<category_id>/lifecycles.yaml` | `lifecycles` |
+| `categories/<category_id>/industry_averages.yaml` | `industry_averages` |
+| `categories/<category_id>/components.yaml` | `components`, `templates`, `associations` |
+| `categories/<category_id>/hazards.yaml` | `hazards` |
+| `categories/<category_id>/coverage.yaml` | `unknowns` |
+
+`sources` has one schema in both source files. The shared source list must be
+non-empty; a category source list may be empty when every category claim uses a
+shared source. All other root list values are lists rather than `null`; Task 6,
+not the scalar parser, enforces the release-count floor. `bundle` and `category`
+are mappings. `policy_revision` is a scalar and `policies` is a non-empty list.
+
+The only schema-3 entries directly below `source_dir` are `bundle.yaml`,
+`common/`, and optional `categories/`. While the frozen-v1 path coexists,
+`source_dir/sources.yaml` and `source_dir/device_components.yaml` are permitted
+but never opened by these loaders. No other root or `common/` entry is accepted.
+Each requested category directory contains exactly the seven category files
+above, all regular files. No loader follows a symlink at any path component.
+`category_id` is first checked against `RELEASED_CATEGORY_IDS` as a scalar ID,
+then joined as one path component, resolved, and checked for containment. The
+directory name, its `category.category_id`, and every authored `category_id`
+must match exactly.
+
+`load_shared_evidence_documents` validates only `bundle.yaml` and `common/` and
+does not require or enumerate `categories/`. `load_category_evidence_documents`
+validates only the requested category against shared records and does not
+enumerate siblings. `load_evidence_documents` calls those two stages, requires
+exactly the five category directories in `RELEASED_CATEGORY_IDS`, and performs
+the cross-category uniqueness checks. Thus the shared, single-category, and
+complete-tree validators remain independently green.
+
+### Scalar, ID, ordering, and reference rules
+
+- `Id` is an NFC YAML string matching `[a-z0-9][a-z0-9_.-]*`. IDs and references
+  are case-sensitive and are never repaired or case-folded.
+- `Text` is a non-empty, trimmed NFC YAML string without NUL or Unicode control
+  characters. Nullable text is either `Text` or YAML `null`, never `""`.
+- `Date` is a quoted YAML string in canonical `YYYY-MM-DD` form that round-trips
+  through `datetime.date.isoformat()`. Native YAML timestamps are rejected.
+- `SemVer` is a YAML string matching
+  `(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)`; prerelease/build forms
+  are not used by this bundle. The first values remain exactly `3.0.0`, `1.0.0`,
+  and `2.0.0`.
+- `int` means `type(value) is int`; `number` means an `int` or `float`, excluding
+  booleans, normalized to `float`, finite, and not NaN or infinity.
+- Record-list sort keys are exact: sources by `source_id`; policies by
+  `(priority, rule_id)`; subtypes by `subtype_id`; variants by `variant_id`;
+  identities by `identity_id`; both lifecycle lists by `record_id`; component
+  definitions by `component_id`; templates by `template_id`; associations by
+  `(template_id, position, association_id)`; hazards by `hazard_id`; and
+  Unknowns by `(category_id, claim_kind, claim_id)`. `category_ids` has the
+  released order rather than lexical order. Reference-ID lists are sorted by ID
+  and have no duplicates. Predicates are sorted bytewise. Display-order lists
+  (`assumptions`, `limitations`, association `notes`, and hazard action/guidance
+  lists) preserve authored order but reject exact duplicate strings.
+- Identity aliases are normalized only for collision checks by NFC, trimming,
+  collapsing internal Unicode whitespace to one ASCII space, and `casefold()`.
+  That key must be unique across every identity display name and alias in one
+  category. Distinguishing tokens use the same normalization and must be unique
+  within their identity. Stored display text remains the authored NFC text.
+- Shared `source_id` values and all category `source_id` values are globally
+  unique. Policy rules may reference shared sources only. A category claim may
+  reference shared sources or sources from its own category, never a sibling
+  category. References do not inherit: every claim-bearing record owns its
+  exact `source_ids` list.
+- `subtype_id`, `variant_id`, `identity_id`, lifecycle `record_id`,
+  `template_id`, `association_id`, and `hazard_id` are globally unique in a
+  complete tree. `component_id` is unique within a category because generic
+  component IDs such as `storage` may validly recur across categories. A
+  `(manufacturer_id, manufacturer_name)` and `(family_id, family_name)` pair
+  must be consistent everywhere it occurs in a category.
+- All nullable `from`/`to` pairs permit either open end; when both are present,
+  `from <= to`. Source publication/revision date must be on or before access
+  date, and review date must be on or after access date.
+- A canonical URL is an NFC `Text` parsed with no whitespace or user-info,
+  lowercase `https` scheme, non-empty host, and no fragment. Its parsed and
+  reserialized value must equal the authored value. `https://example.invalid/`
+  and descendants are valid only for synthetic test fixtures.
+
+### Exact record shapes
+
+The notation below is normative. Fields appear in this order in normalized
+frozen authoring records, although YAML mapping order is not semantic.
+
+```text
+BundleMetadata = {
+  schema_version: int, bundle_version: SemVer,
+  identity_catalog_version: SemVer, policy_revision: SemVer,
+  category_ids: nonempty list[Id]
+}
+
+Source = {
+  source_id: Id, title: Text, publisher: Text, canonical_url: HTTPS URL,
+  publication_or_revision_date: Date, accessed_on: Date,
+  license_or_use_basis: Text, reviewed_by: Text, reviewed_on: Date
+}
+
+Policy = {
+  rule_id: Id, priority: int, outcome: RecommendationValue,
+  when_all: list[PolicyPredicate], when_any: list[PolicyPredicate],
+  rationale: Text, evidence_level: EvidenceLevel,
+  source_ids: nonempty list[Id]
+}
+
+Category = {category_id: Id, display_name: Text}
+
+Subtype = {
+  subtype_id: Id, category_id: Id, display_name: Text,
+  market_state: MarketState, battery_architecture: BatteryArchitecture,
+  evidence_level: EvidenceLevel, source_ids: nonempty list[Id]
+}
+
+Variant = {
+  variant_id: Id, category_id: Id, subtype_id: Id, display_name: Text,
+  battery_architecture: BatteryArchitecture,
+  evidence_level: EvidenceLevel, source_ids: nonempty list[Id]
+}
+
+Identity = {
+  identity_id: Id, identity_kind: IdentityKind, category_id: Id,
+  subtype_id: Id, manufacturer_id: Id, manufacturer_name: Text,
+  family_id: Id, family_name: Text, model_id: Id | null,
+  model_name: Text | null, display_name: Text,
+  aliases: nonempty list[Text], distinguishing_tokens: nonempty list[Text],
+  model_year_from: int | null, model_year_to: int | null,
+  applicable_from: Date | null, applicable_to: Date | null,
+  variant_ids: list[Id], market_state: MarketState,
+  battery_architecture: BatteryArchitecture,
+  evidence_level: EvidenceLevel, source_ids: nonempty list[Id]
+}
+
+Scope = {kind: ScopeKind, id: Id}
+
+SpecificLifecycle = {
+  record_id: Id, scope: Scope, subject: Id, endpoint: Id,
+  endpoint_kind: LifecycleEndpointKind, metric: Id, unit: Id,
+  lower_bound: number, upper_bound: number, endpoint_qualification: Text,
+  applicable_from: Date | null, applicable_to: Date | null,
+  model_year_from: int | null, model_year_to: int | null,
+  required_variant_ids: list[Id], excluded_variant_ids: list[Id],
+  precedence: int, evidence_level: EvidenceLevel,
+  assumptions: list[Text], source_ids: nonempty list[Id]
+}
+
+IndustryAverage = {
+  record_id: Id, scope: Scope, subject: Id, endpoint: Id,
+  endpoint_kind: LifecycleEndpointKind, metric: Id, unit: Id,
+  lower_bound: number, upper_bound: number, endpoint_qualification: Text,
+  applicable_from: Date | null, applicable_to: Date | null,
+  model_year_from: int | null, model_year_to: int | null,
+  required_variant_ids: list[Id], excluded_variant_ids: list[Id],
+  precedence: int, evidence_level: EvidenceLevel,
+  assumptions: list[Text], population_definition: Text,
+  publication_period: Text, methodology: Text, uncertainty: Text,
+  limitations: nonempty list[Text], source_ids: nonempty list[Id]
+}
+
+ComponentDefinition = {component_id: Id, display_name: Text}
+
+ComponentTemplate = {
+  template_id: Id,
+  template_kind: standard | modern_overlay | legacy_overlay,
+  scope: Scope, application_order: int
+}
+
+ComponentAssociation = {
+  association_id: Id, template_id: Id, component_id: Id, position: int,
+  status: AssociationStatus, applicability: Text, notes: list[Text],
+  evidence_level: EvidenceLevel | null, source_ids: list[Id]
+}
+
+Hazard = {
+  hazard_id: Id, component_id: Id, scope: Scope, applicability: Text,
+  trigger_observation_keys: nonempty list[HazardTriggerKey],
+  severity: HazardSeverity, immediate_actions: nonempty list[Text],
+  follow_up_actions: nonempty list[Text],
+  handling_guidance: nonempty list[Text],
+  disposal_guidance: nonempty list[Text],
+  evidence_level: EvidenceLevel, source_ids: nonempty list[Id]
+}
+
+Unknown = {
+  category_id: Id, claim_kind: UnknownClaimKind, claim_id: Id,
+  evidence_level: null, source_ids: list[Id],
+  reason: Text, evidence_request: Text
+}
+```
+
+`Unknown.source_ids` must be exactly `[]`; its stable identity is exactly the
+tuple `(category_id, claim_kind, claim_id)`, and no `unknown_id` or generated ID
+exists. `UnknownClaimKind` is exactly `subtype`, `variant`, `identity`,
+`specific_lifecycle`, `industry_average`, `component_association`, or `hazard`.
+An Unknown row describes an unsupported intended claim; it neither creates the
+referenced domain record nor proves absence. Unknown stable keys are unique and
+must not collide with a reviewed claim of the same key. The coverage compiler
+emits it as `source_state="unknown"`, `evidence_level=null`, and
+`unknown_reason=reason`.
+
+### Hierarchy, scope, endpoint, component, and evidence rules
+
+- `bundle.category_ids` equals `RELEASED_CATEGORY_IDS` exactly. Bundle schema is
+  `3`, bundle version is `3.0.0`, identity catalog version is `1.0.0`, and its
+  policy revision is `2.0.0`. `common/policies.yaml.policy_revision` must equal
+  the bundle value. Policy priorities are non-negative and unique; rules are
+  evaluated by `(priority, rule_id)`, and the first matching rule supplies the
+  outcome.
+- A subtype belongs to its authored category. A variant references a subtype in
+  that category. An identity references a subtype and only variants owned by
+  that subtype. Its battery architecture equals its subtype and every referenced
+  variant. A family identity has `identity_id == family_id`,
+  `identity_kind=family`, and null model fields. A model identity has
+  `identity_id == model_id`, `identity_kind=model`, and non-null model fields.
+  A model's family need not have a separate search-result row, but every use of
+  that `family_id` must have identical category, subtype, manufacturer, and
+  family-name ancestry.
+- A `Scope` has exactly `kind` and `id`. Its ID resolves inside the current
+  category: category → category ID, subtype → `subtype_id`, family → a
+  `family_id` present in identities, and model → a non-null `model_id` present in
+  identities. No redundant `category_id`, `subtype_id`, `family_id`, or
+  `model_id` is accepted inside a scope.
+- A specific lifecycle permits only model, family, or subtype scope. Its
+  resolution tier is derived, never authored: model → `exact_model`, family →
+  `family`, subtype → `subtype`. Model records require evidence A; family and
+  subtype records require evidence B. An industry average requires exact scope
+  `{kind: category, id: <current category>}`, evidence C, endpoint
+  `service_life`, endpoint kind `total_life`, subject `device`, metric
+  `elapsed_time`, and unit `years`; its year/date constraints are all `null`,
+  its required/excluded variant lists are both empty, and its tier is derived as
+  `industry_average`.
+- `endpoint_kind` is separate from the endpoint label. `endpoint=service_life`
+  requires `total_life`; `endpoint=capacity_threshold` requires
+  `capacity_threshold`; every other first-bundle endpoint requires
+  `operating_endurance`. A threshold/endurance row cannot satisfy the broad
+  total-life floor. All bounds are finite and positive. A specific lifecycle
+  permits `lower_bound <= upper_bound`, including a sourced point threshold;
+  an industry average requires the proper interval `lower_bound < upper_bound`
+  and can never publish a point estimate.
+  Precedence is a non-negative integer; equal precedence remains legal so the
+  resolver can return the specified same-tier conflict. Required and excluded
+  variants are sorted, disjoint, and valid for the scoped subtype/family/model.
+- Applicability uses only the immutable `CanonicalIdentityScope`; there is no
+  wall-clock input and no range endpoint, midpoint, or current date is guessed.
+  As frozen by Slice 2's **Closed Wire Contracts**, confirmed/edited decisions
+  contain only `identity_id`, reject client-authored scope fields, and obtain
+  their entire scope from `KnowledgeStore.identity_scope(identity_id)`.
+  Therefore that method copies `category_id`, `subtype_id`, `family_id`,
+  `model_id`, and the identity's exact ordered `variant_ids`; it sets
+  `model_year` to the one bound only when `model_year_from` and
+  `model_year_to` are both non-null and equal, otherwise `None`; and it sets
+  `applicable_on` to the one date only when `applicable_from` and
+  `applicable_to` are both non-null and equal, otherwise `None`. Slice 2 has no
+  user decision field from which either singular value could otherwise come.
+- Lifecycle year and date bounds are inclusive. If a candidate has either
+  model-year bound while `scope.model_year is None`, it is ineligible with
+  trace reason `model year unavailable`; a present value outside either bound
+  is ineligible with `model year out of range`. The identical rule for
+  applicability dates uses `applicability date unavailable` and
+  `applicability date out of range`. An unconstrained candidate (both bounds
+  null) remains eligible when the corresponding singular scope value is
+  missing. Required variants must be a subset of `scope.variant_ids`; otherwise
+  the candidate is ineligible with `required variant missing`. Any intersection
+  with excluded variants makes it ineligible with `excluded variant present`.
+  Category-only constructs exactly `CanonicalIdentityScope(category_id)`, so
+  subtype/family/model/year/date are `None` and variants are empty; it can
+  select only category-scoped records with null year/date bounds and empty
+  variant filters. The preceding industry-average rule guarantees those
+  constraints for every authored average.
+- Component definitions are structural and carry no evidence/source fields.
+  Each category has exactly one `standard` template with category scope and
+  `application_order=0`. Modern/legacy templates are overlays scoped only to a
+  subtype, family, or model. `application_order` is non-negative and unique
+  within one `(scope.kind, scope.id)`; eligible templates apply by fixed scope
+  order category → subtype → family → model, then by
+  `(application_order, template_id)` within a scope. Task 6 enforces at least one
+  modern and one legacy overlay for release.
+- An association references one same-category template and component. Positions
+  are the contiguous integers `0..n-1` within a template and determine display
+  order. `user_confirmed` is never authored. A more-specific/later eligible
+  association replaces the prior association for that component, including an
+  explicit `not_present` or `unknown`; omitting a component from an overlay
+  preserves the previous association. Category-only resolution applies only the
+  standard category template. `exact_model_confirmed` is valid only on a model
+  template and `legacy_specific` only on a `legacy_overlay`.
+- Final component order is deterministic and does not add a field to the Task 1
+  snapshot. Visit eligible templates in the layer order just specified and
+  visit each template's associations by ascending `position`. Maintain an
+  ordered slot list plus a `component_id → slot` index. The first occurrence of
+  a component appends a slot. A later occurrence of that component replaces the
+  association in its established slot; it never moves the slot. A component
+  first introduced by an overlay appends when first encountered. Omission from
+  an overlay is a no-op. Explicit `not_present` and `unknown` associations are
+  ordinary replacements and retain the established slot. Return
+  `ComponentResolution.components` as the resulting tuple and
+  `applied_template_ids` in the same template visitation order.
+- A non-Unknown association requires non-null evidence and non-empty sources:
+  category scope → C, family/subtype → B, model → A. An authored association
+  with status `unknown` requires `evidence_level=null` and `source_ids=[]`; its
+  development/release gap is represented by exactly one `Unknown` row with
+  `claim_kind=component_association` and `claim_id=association_id`. That
+  association does not emit a reviewed coverage row.
+- A hazard references a component definition and a valid same-category scope.
+  Model hazards use A, family/subtype hazards use B, and category hazards use C
+  or process/context D. Grade D never supports lifecycle, subtype, variant,
+  identity, or component-association claims. Hazard sources are authored and
+  compiled independently of lifecycle sources; neither list is copied or
+  inherited from the other.
+- Source-bearing subtype and variant rows use B; family identity rows use B;
+  model identity rows use A; industry averages use C. Every non-Unknown
+  claim-bearing row has at least one resolvable source ID. License/use basis is
+  never inferred from publisher or URL.
+
+### Closed policy predicates and hazard triggers
+
+`PolicyPredicate` is one exact string from the list below. There is no `not`,
+comparison, wildcard, path lookup, interpolation, or executable expression
+syntax.
+
+```text
+identity.state=canonical
+identity.state=unknown
+observations.age_months=present
+observations.age_months=missing
+observations.full_charge_cycles=present
+observations.full_charge_cycles=missing
+observations.operational_state=unknown
+observations.operational_state=working
+observations.operational_state=intermittent
+observations.operational_state=not_working
+observations.issue_flags.overheating=true
+observations.issue_flags.overheating=false
+observations.issue_flags.odor=true
+observations.issue_flags.odor=false
+observations.issue_flags.swelling_or_battery_damage=true
+observations.issue_flags.swelling_or_battery_damage=false
+observations.issue_flags.recall=true
+observations.issue_flags.recall=false
+visible_condition.grade=excellent
+visible_condition.grade=good
+visible_condition.grade=fair
+visible_condition.grade=poor
+visible_condition.grade=critical
+visible_condition.grade=unknown
+visible_condition.image_sufficiency=sufficient
+visible_condition.image_sufficiency=insufficient
+visible_condition.image_sufficiency=unknown
+lifecycle.resolution=resolved
+lifecycle.resolution=unknown
+lifecycle.resolution=unavailable
+lifecycle.required_usage=present
+lifecycle.required_usage=missing
+lifecycle.position=within_reference
+lifecycle.position=at_or_beyond_reference
+lifecycle.position=not_calculable
+component_decisions.any_present=true
+component_decisions.any_present=false
+hazards.triggered_severity=none
+hazards.triggered_severity=advisory
+hazards.triggered_severity=caution
+hazards.triggered_severity=urgent
+```
+
+The first four observation families map directly to Slice 2's closed
+`UserObservations` keys. `lifecycle.required_usage` means `age_months` for
+`elapsed_time` or `full_charge_cycles` for that metric; unsupported metrics are
+`missing`. `lifecycle.position` comes only from Slice 2's endpoint-compatible
+calculation. `component_decisions.any_present` inspects only user decisions with
+status `present`. `hazards.triggered_severity` is the greatest severity among
+applicable hazards whose trigger matches, or `none`. A rule matches when every
+`when_all` predicate is true and `when_any` is empty or at least one `when_any`
+predicate is true. A predicate may occur only once per rule and not in both
+groups; mutually exclusive values for one family in `when_all` are rejected.
+
+`HazardTriggerKey` is exactly one of:
+
+```text
+observations.issue_flags.overheating
+observations.issue_flags.odor
+observations.issue_flags.swelling_or_battery_damage
+observations.issue_flags.recall
+```
+
+Trigger keys are sorted and unique. A hazard is triggered when any listed flag
+is true. The list is deliberately non-empty: the approved hazard contract ties
+every conditional safety action to an explicit user observation. An applicable
+but untriggered hazard may still be displayed as a sourced possibility; it does
+not select hazard policy action. General process guidance with no observation
+trigger remains source/policy context rather than a synthetic triggered hazard.
+`issue_flags.notes`, visible findings/grades, OCR, and image-model output are
+deliberately absent from this vocabulary: a photograph never triggers a hazard
+claim.
+
+### Normalized documents and compiler conversion
+
+`scripts.knowledge_schema` produces frozen authoring records and these exact
+aggregate fields; it exposes no aliases such as `lifecycles`, `components`, or
+`templates` on `CategoryEvidenceDocuments`:
+
+```text
+SharedEvidenceDocuments = {bundle, sources, policies}
+CategoryEvidenceDocuments = {
+  category, sources, subtypes, variants, identities, specific_lifecycles,
+  industry_averages, component_definitions, component_templates,
+  component_associations, hazards, unknowns
+}
+EvidenceDocuments = {shared, categories}
+```
+
+YAML root `lifecycles` normalizes to `specific_lifecycles`; YAML roots
+`components`, `templates`, and `associations` normalize respectively to
+`component_definitions`, `component_templates`, and `component_associations`.
+All list values normalize to immutable tuples, dates to `date`, enums to the
+Task 1 enums, and bounds to `float`. `EvidenceDocuments.categories` is ordered
+exactly as `RELEASED_CATEGORY_IDS`.
+
+Compiler/store conversion is exact:
+
+- `Source` becomes `SourceSnapshot`; `Category` becomes `CategorySnapshot`.
+- `Identity` becomes `IdentityRecordSnapshot` after its evidence level is kept
+  for coverage and each `source_id` is expanded to a complete `SourceSnapshot`.
+- Both lifecycle authoring types become `LifecycleRecordSnapshot`. Scope is
+  flattened to `scope_kind/scope_id`; tier is derived as above. A specific row
+  sets `population_definition`, `publication_period`, `methodology`, and
+  `uncertainty` to `None` and `limitations` to `()`. An average populates all
+  five industry fields. Sources are expanded independently per row.
+- A component association joins its template and definition to form
+  `ComponentAssociationSnapshot`: template ID, component ID/display name,
+  template-derived scope, association fields, and that association's expanded
+  sources. Resolver layer order is the template order specified above.
+- `Hazard` flattens its scope and independently expands its sources into
+  `HazardSnapshot`. Policy rows expand to `PolicyRuleSnapshot` and the root
+  revision plus sorted rules become `PolicyBundleSnapshot`.
+- Bundle metadata plus the compiler digest/report hashes becomes
+  `KnowledgeManifest`; `.stamp` remains the Task 1 five-field `BundleStamp`.
+  Unknown rows never become runtime evidence snapshots.
+
+The schema-3 database tables and semantic columns are exactly:
+
+```text
+metadata(key, value)
+sources(source_id, title, publisher, canonical_url,
+        publication_or_revision_date, accessed_on, license_or_use_basis,
+        reviewed_by, reviewed_on)
+categories(category_id, display_name, release_order)
+subtypes(subtype_id, category_id, display_name, market_state,
+         battery_architecture, evidence_level)
+variants(variant_id, category_id, subtype_id, display_name,
+         battery_architecture, evidence_level)
+identities(identity_id, identity_kind, category_id, subtype_id,
+           manufacturer_id, manufacturer_name, family_id, family_name,
+           model_id, model_name, display_name, model_year_from, model_year_to,
+           applicable_from, applicable_to, market_state,
+           battery_architecture, evidence_level)
+identity_aliases(identity_id, ordinal, alias, alias_casefold)
+identity_tokens(identity_id, ordinal, token, token_casefold)
+identity_variants(identity_id, ordinal, variant_id)
+lifecycle_records(record_id, category_id, resolution_tier, scope_kind,
+                  scope_id, subject, endpoint, endpoint_kind, metric, unit,
+                  lower_bound, upper_bound, endpoint_qualification,
+                  applicable_from, applicable_to, model_year_from,
+                  model_year_to, precedence, evidence_level)
+lifecycle_required_variants(record_id, ordinal, variant_id)
+lifecycle_excluded_variants(record_id, ordinal, variant_id)
+lifecycle_assumptions(record_id, ordinal, assumption)
+industry_averages(record_id, population_definition, publication_period,
+                  methodology, uncertainty)
+lifecycle_limitations(record_id, ordinal, limitation)
+components(category_id, component_id, display_name)
+component_templates(template_id, category_id, template_kind, scope_kind,
+                    scope_id, application_order)
+component_associations(association_id, category_id, template_id, component_id,
+                       position, status, applicability, evidence_level)
+component_association_notes(association_id, ordinal, note)
+hazards(hazard_id, category_id, component_id, scope_kind, scope_id,
+        applicability, severity, evidence_level)
+hazard_triggers(hazard_id, ordinal, observation_key)
+hazard_actions(hazard_id, action_kind, ordinal, action_text)
+policy_rules(rule_id, priority, outcome, rationale, evidence_level)
+policy_predicates(rule_id, predicate_group, ordinal, predicate)
+coverage_unknowns(category_id, claim_kind, claim_id, reason, evidence_request)
+claim_sources(claim_kind, category_key, claim_id, ordinal, source_id)
+```
+
+Primary/foreign keys follow the authored identities: components use
+`(category_id, component_id)`; coverage Unknowns use their three-field stable
+key; ordinal child tables use `(parent_id, ordinal)` and also reject duplicate
+values. `hazard_actions.action_kind` is exactly `immediate`, `follow_up`,
+`handling`, or `disposal`; `policy_predicates.predicate_group` is `all` or
+`any`. `claim_sources.category_key` is the released category ID for category
+claims and the empty string for a shared policy. Its `claim_kind` is exactly
+`subtype`, `variant`, `identity`, `specific_lifecycle`, `industry_average`,
+`component_association`, `hazard`, or `policy`. All semantic columns and ordinal
+rows participate in canonical JSON and `content_sha256`; no YAML-only semantic
+value is discarded.
+
 ### Task 2: Validate the administrator authoring tree
 
 **Files:**
@@ -430,16 +948,669 @@ git commit -m "feat: define evidence bundle contracts"
 **Interfaces:**
 - Produces: `EvidenceValidationError(filename: str, record_path: str, message: str)`
 - Produces frozen `SharedEvidenceDocuments`, `CategoryEvidenceDocuments`, and `EvidenceDocuments`
-- `SharedEvidenceDocuments` owns exactly `bundle`, `sources`, and `policies`; `CategoryEvidenceDocuments` owns exactly `category`, `sources`, `subtypes`, `identities`, `lifecycles`, `industry_averages`, `components`, `hazards`, and `unknowns`; `EvidenceDocuments` combines one shared value with the complete ordered category tuple
+- `SharedEvidenceDocuments` owns exactly `bundle`, `sources`, and `policies`
+- `CategoryEvidenceDocuments` owns exactly `category`, `sources`, `subtypes`, `variants`, `identities`, `specific_lifecycles`, `industry_averages`, `component_definitions`, `component_templates`, `component_associations`, `hazards`, and `unknowns`; there are no `lifecycles`, `components`, or `templates` aliases
+- `EvidenceDocuments` owns exactly `shared` and the complete `categories` tuple ordered by `RELEASED_CATEGORY_IDS`
 - Produces: `load_shared_evidence_documents(source_dir: Path) -> SharedEvidenceDocuments`
 - Produces: `load_category_evidence_documents(source_dir: Path, category_id: str, *, shared: SharedEvidenceDocuments | None = None) -> CategoryEvidenceDocuments`
 - Produces: `load_evidence_documents(source_dir: Path) -> EvidenceDocuments`
-- Consumes: the exact source-tree layout from the File Structure section
+- `tests/knowledge_helpers.py` produces `make_valid_shared_knowledge_source(root: Path) -> Path`, `make_valid_category_knowledge_source(root: Path, category_id: str) -> Path`, `make_valid_knowledge_source(root: Path) -> Path`, `mutate_yaml(path: Path, mutation: Callable[[dict[str, object]], None]) -> None`, `mutate_document_root(source: Path, relative_path: str, expected_keys: set[str], mutation_kind: str) -> None`, `replace_with_non_mapping_yaml_root(source: Path, relative_path: str) -> None`, `root_key_sets(source: Path) -> dict[str, set[str]]`, `root_value_type_sets(source: Path) -> dict[str, dict[str, str]]`, `record_key_sets(source: Path) -> dict[str, set[str]]`, `record_field_type_sets(source: Path) -> dict[str, dict[str, str]]`, `root_schema_mutations() -> tuple[SchemaMutation, ...]`, `all_closed_record_cases() -> tuple[SchemaCase, ...]`, `closed_schema_mutations(case: SchemaCase) -> tuple[SchemaMutation, ...]`, `all_closed_schema_mutations() -> tuple[SchemaMutation, ...]`, `shared_raw_yaml_mutations() -> tuple[SchemaMutation, ...]`, `category_raw_yaml_mutations(category_id: str) -> tuple[SchemaMutation, ...]`, `shared_path_mutations() -> tuple[SchemaMutation, ...]`, `category_path_mutations(category_id: str) -> tuple[SchemaMutation, ...]`, and `complete_tree_mutations() -> tuple[SchemaMutation, ...]`
+- Consumes: the exact fixed-path and authoring contract above
+
+`SchemaCase` is frozen and has exactly `name`, `relative_path`, `selector`,
+`expected_keys`, `field_types`, `required_nonnull_fields`, `nullable_fields`,
+`nullable_underlying_types`, `list_fields`, `list_item_types`, `integer_fields`,
+`number_fields`, `enum_fields`, `id_fields`, `text_fields`, `date_fields`,
+`semver_fields`, `https_url_fields`, `nested_mapping_fields`, and
+`reference_fields`.
+`SchemaMutation` is frozen and has exactly `name`, `kind`, `target_field`,
+`type_contract`, `apply`, and `expected_error`. `field_types`, nullable
+underlying types, list item types, and nested-map case names use the exact type
+tokens below. The cases repeat the normative field contract in machine-checkable
+test data; mutation generation is driven by those cases, not by a hand-picked
+list of a few representative records.
 
 - [ ] **Step 1: Write failing closed-schema, provenance, hierarchy, and path tests**
 
 ```python
-import shutil
+from dataclasses import fields
+
+
+ROOT_KEYS = {
+    "bundle.yaml": {"bundle"},
+    "common/sources.yaml": {"sources"},
+    "common/policies.yaml": {"policy_revision", "policies"},
+    "categories/{category_id}/sources.yaml": {"sources"},
+    "categories/{category_id}/identities.yaml": {
+        "category", "subtypes", "variants", "identities",
+    },
+    "categories/{category_id}/lifecycles.yaml": {"lifecycles"},
+    "categories/{category_id}/industry_averages.yaml": {"industry_averages"},
+    "categories/{category_id}/components.yaml": {
+        "components", "templates", "associations",
+    },
+    "categories/{category_id}/hazards.yaml": {"hazards"},
+    "categories/{category_id}/coverage.yaml": {"unknowns"},
+}
+
+ROOT_VALUE_TYPES = {
+    "bundle.yaml": {"bundle": "mapping:bundle"},
+    "common/sources.yaml": {"sources": "nonempty_list:source"},
+    "common/policies.yaml": {
+        "policy_revision": "semver", "policies": "nonempty_list:policy",
+    },
+    "categories/{category_id}/sources.yaml": {"sources": "list:source"},
+    "categories/{category_id}/identities.yaml": {
+        "category": "mapping:category", "subtypes": "list:subtype",
+        "variants": "list:variant", "identities": "list:identity",
+    },
+    "categories/{category_id}/lifecycles.yaml": {
+        "lifecycles": "list:specific_lifecycle",
+    },
+    "categories/{category_id}/industry_averages.yaml": {
+        "industry_averages": "list:industry_average",
+    },
+    "categories/{category_id}/components.yaml": {
+        "components": "list:component_definition",
+        "templates": "list:component_template",
+        "associations": "list:component_association",
+    },
+    "categories/{category_id}/hazards.yaml": {"hazards": "list:hazard"},
+    "categories/{category_id}/coverage.yaml": {"unknowns": "list:unknown"},
+}
+
+RECORD_KEYS = {
+    "bundle": {
+        "schema_version", "bundle_version", "identity_catalog_version",
+        "policy_revision", "category_ids",
+    },
+    "source": {
+        "source_id", "title", "publisher", "canonical_url",
+        "publication_or_revision_date", "accessed_on", "license_or_use_basis",
+        "reviewed_by", "reviewed_on",
+    },
+    "policy": {
+        "rule_id", "priority", "outcome", "when_all", "when_any",
+        "rationale", "evidence_level", "source_ids",
+    },
+    "category": {"category_id", "display_name"},
+    "subtype": {
+        "subtype_id", "category_id", "display_name", "market_state",
+        "battery_architecture", "evidence_level", "source_ids",
+    },
+    "variant": {
+        "variant_id", "category_id", "subtype_id", "display_name",
+        "battery_architecture", "evidence_level", "source_ids",
+    },
+    "identity": {
+        "identity_id", "identity_kind", "category_id", "subtype_id",
+        "manufacturer_id", "manufacturer_name", "family_id", "family_name",
+        "model_id", "model_name", "display_name", "aliases",
+        "distinguishing_tokens", "model_year_from", "model_year_to",
+        "applicable_from", "applicable_to", "variant_ids", "market_state",
+        "battery_architecture", "evidence_level", "source_ids",
+    },
+    "specific_lifecycle": {
+        "record_id", "scope", "subject", "endpoint", "endpoint_kind",
+        "metric", "unit", "lower_bound", "upper_bound",
+        "endpoint_qualification", "applicable_from", "applicable_to",
+        "model_year_from", "model_year_to", "required_variant_ids",
+        "excluded_variant_ids", "precedence", "evidence_level", "assumptions",
+        "source_ids",
+    },
+    "industry_average": {
+        "record_id", "scope", "subject", "endpoint", "endpoint_kind",
+        "metric", "unit", "lower_bound", "upper_bound",
+        "endpoint_qualification", "applicable_from", "applicable_to",
+        "model_year_from", "model_year_to", "required_variant_ids",
+        "excluded_variant_ids", "precedence", "evidence_level", "assumptions",
+        "population_definition", "publication_period", "methodology",
+        "uncertainty", "limitations", "source_ids",
+    },
+    "component_definition": {"component_id", "display_name"},
+    "component_template": {
+        "template_id", "template_kind", "scope", "application_order",
+    },
+    "component_association": {
+        "association_id", "template_id", "component_id", "position", "status",
+        "applicability", "notes", "evidence_level", "source_ids",
+    },
+    "hazard": {
+        "hazard_id", "component_id", "scope", "applicability",
+        "trigger_observation_keys", "severity", "immediate_actions",
+        "follow_up_actions", "handling_guidance", "disposal_guidance",
+        "evidence_level", "source_ids",
+    },
+    "unknown": {
+        "category_id", "claim_kind", "claim_id", "evidence_level",
+        "source_ids", "reason", "evidence_request",
+    },
+    "scope": {"kind", "id"},
+}
+
+FIELD_TYPES = {
+    "bundle": {
+        "schema_version": "int", "bundle_version": "semver",
+        "identity_catalog_version": "semver", "policy_revision": "semver",
+        "category_ids": "nonempty_list:id",
+    },
+    "source": {
+        "source_id": "id", "title": "text", "publisher": "text",
+        "canonical_url": "https_url",
+        "publication_or_revision_date": "date", "accessed_on": "date",
+        "license_or_use_basis": "text", "reviewed_by": "text",
+        "reviewed_on": "date",
+    },
+    "policy": {
+        "rule_id": "id", "priority": "int",
+        "outcome": "enum:RecommendationValue",
+        "when_all": "list:policy_predicate",
+        "when_any": "list:policy_predicate", "rationale": "text",
+        "evidence_level": "enum:EvidenceLevel",
+        "source_ids": "nonempty_list:id",
+    },
+    "category": {"category_id": "id", "display_name": "text"},
+    "subtype": {
+        "subtype_id": "id", "category_id": "id", "display_name": "text",
+        "market_state": "enum:MarketState",
+        "battery_architecture": "enum:BatteryArchitecture",
+        "evidence_level": "enum:EvidenceLevel",
+        "source_ids": "nonempty_list:id",
+    },
+    "variant": {
+        "variant_id": "id", "category_id": "id", "subtype_id": "id",
+        "display_name": "text",
+        "battery_architecture": "enum:BatteryArchitecture",
+        "evidence_level": "enum:EvidenceLevel",
+        "source_ids": "nonempty_list:id",
+    },
+    "identity": {
+        "identity_id": "id", "identity_kind": "enum:IdentityKind",
+        "category_id": "id", "subtype_id": "id", "manufacturer_id": "id",
+        "manufacturer_name": "text", "family_id": "id",
+        "family_name": "text", "model_id": "nullable:id",
+        "model_name": "nullable:text", "display_name": "text",
+        "aliases": "nonempty_list:text",
+        "distinguishing_tokens": "nonempty_list:text",
+        "model_year_from": "nullable:int", "model_year_to": "nullable:int",
+        "applicable_from": "nullable:date", "applicable_to": "nullable:date",
+        "variant_ids": "list:id", "market_state": "enum:MarketState",
+        "battery_architecture": "enum:BatteryArchitecture",
+        "evidence_level": "enum:EvidenceLevel",
+        "source_ids": "nonempty_list:id",
+    },
+    "specific_lifecycle": {
+        "record_id": "id", "scope": "mapping:scope", "subject": "id",
+        "endpoint": "id", "endpoint_kind": "enum:LifecycleEndpointKind",
+        "metric": "id", "unit": "id", "lower_bound": "number",
+        "upper_bound": "number", "endpoint_qualification": "text",
+        "applicable_from": "nullable:date", "applicable_to": "nullable:date",
+        "model_year_from": "nullable:int", "model_year_to": "nullable:int",
+        "required_variant_ids": "list:id", "excluded_variant_ids": "list:id",
+        "precedence": "int", "evidence_level": "enum:EvidenceLevel",
+        "assumptions": "list:text", "source_ids": "nonempty_list:id",
+    },
+    "industry_average": {
+        "record_id": "id", "scope": "mapping:scope", "subject": "id",
+        "endpoint": "id", "endpoint_kind": "enum:LifecycleEndpointKind",
+        "metric": "id", "unit": "id", "lower_bound": "number",
+        "upper_bound": "number", "endpoint_qualification": "text",
+        "applicable_from": "nullable:date", "applicable_to": "nullable:date",
+        "model_year_from": "nullable:int", "model_year_to": "nullable:int",
+        "required_variant_ids": "list:id", "excluded_variant_ids": "list:id",
+        "precedence": "int", "evidence_level": "enum:EvidenceLevel",
+        "assumptions": "list:text", "population_definition": "text",
+        "publication_period": "text", "methodology": "text",
+        "uncertainty": "text", "limitations": "nonempty_list:text",
+        "source_ids": "nonempty_list:id",
+    },
+    "component_definition": {"component_id": "id", "display_name": "text"},
+    "component_template": {
+        "template_id": "id", "template_kind": "enum:TemplateKind",
+        "scope": "mapping:scope", "application_order": "int",
+    },
+    "component_association": {
+        "association_id": "id", "template_id": "id", "component_id": "id",
+        "position": "int", "status": "enum:AssociationStatus",
+        "applicability": "text", "notes": "list:text",
+        "evidence_level": "nullable:enum:EvidenceLevel",
+        "source_ids": "list:id",
+    },
+    "hazard": {
+        "hazard_id": "id", "component_id": "id", "scope": "mapping:scope",
+        "applicability": "text",
+        "trigger_observation_keys": "nonempty_list:hazard_trigger_key",
+        "severity": "enum:HazardSeverity",
+        "immediate_actions": "nonempty_list:text",
+        "follow_up_actions": "nonempty_list:text",
+        "handling_guidance": "nonempty_list:text",
+        "disposal_guidance": "nonempty_list:text",
+        "evidence_level": "enum:EvidenceLevel",
+        "source_ids": "nonempty_list:id",
+    },
+    "unknown": {
+        "category_id": "id", "claim_kind": "enum:UnknownClaimKind",
+        "claim_id": "id", "evidence_level": "literal:null",
+        "source_ids": "list:id", "reason": "text", "evidence_request": "text",
+    },
+    "scope": {"kind": "enum:ScopeKind", "id": "id"},
+}
+
+
+def test_normalized_document_surfaces_have_no_aliases():
+    assert tuple(field.name for field in fields(SharedEvidenceDocuments)) == (
+        "bundle", "sources", "policies",
+    )
+    assert tuple(field.name for field in fields(CategoryEvidenceDocuments)) == (
+        "category", "sources", "subtypes", "variants", "identities",
+        "specific_lifecycles", "industry_averages", "component_definitions",
+        "component_templates", "component_associations", "hazards", "unknowns",
+    )
+    assert tuple(field.name for field in fields(EvidenceDocuments)) == (
+        "shared", "categories",
+    )
+
+
+def test_helper_fixture_pins_every_root_and_record_shape(tmp_path):
+    source = make_valid_knowledge_source(tmp_path)
+    assert root_key_sets(source) == ROOT_KEYS
+    assert root_value_type_sets(source) == ROOT_VALUE_TYPES
+    assert record_key_sets(source) == RECORD_KEYS
+    assert record_field_type_sets(source) == FIELD_TYPES
+
+
+@pytest.mark.parametrize("relative_path,expected_keys", ROOT_KEYS.items())
+def test_every_document_root_is_closed(tmp_path, relative_path, expected_keys):
+    source = make_valid_knowledge_source(tmp_path / "unknown")
+    mutate_document_root(source, relative_path, expected_keys, "unknown_key")
+    with pytest.raises(EvidenceValidationError, match="document root"):
+        load_evidence_documents(source)
+    for missing_key in expected_keys:
+        source = make_valid_knowledge_source(tmp_path / f"missing-{missing_key}")
+        mutate_document_root(
+            source, relative_path, expected_keys, f"missing_key:{missing_key}"
+        )
+        with pytest.raises(EvidenceValidationError, match="document root"):
+            load_evidence_documents(source)
+
+
+def test_every_root_value_type_and_list_item_type_is_mutated(tmp_path):
+    expected = {
+        ("wrong_type", f"{path}:{key}", contract)
+        for path, fields in ROOT_VALUE_TYPES.items()
+        for key, contract in fields.items()
+    }
+    expected |= {
+        ("wrong_list_item_type", f"{path}:{key}", contract.split(":", 1)[1])
+        for path, fields in ROOT_VALUE_TYPES.items()
+        for key, contract in fields.items()
+        if contract.startswith(("list:", "nonempty_list:"))
+    }
+    expected |= {
+        ("invalid_nested_mapping_shape", f"{path}:{key}", contract.split(":", 1)[1])
+        for path, fields in ROOT_VALUE_TYPES.items()
+        for key, contract in fields.items()
+        if contract.startswith("mapping:")
+    }
+    expected |= {
+        ("invalid_contract_value", f"{path}:{key}", "semver")
+        for path, fields in ROOT_VALUE_TYPES.items()
+        for key, contract in fields.items()
+        if contract == "semver"
+    }
+    mutations = root_schema_mutations()
+    assert {(item.kind, item.target_field, item.type_contract) for item in mutations} == expected
+    for mutation in mutations:
+        source = make_valid_knowledge_source(tmp_path / mutation.name)
+        mutation.apply(source)
+        with pytest.raises(EvidenceValidationError, match=mutation.expected_error):
+            load_evidence_documents(source)
+
+
+@pytest.mark.parametrize("case", all_closed_record_cases())
+def test_every_record_schema_rejects_its_complete_mutation_matrix(tmp_path, case):
+    for mutation in closed_schema_mutations(case):
+        source = make_valid_knowledge_source(tmp_path / mutation.name)
+        mutation.apply(source)
+        with pytest.raises(EvidenceValidationError, match=mutation.expected_error):
+            load_evidence_documents(source)
+
+
+def test_mutation_matrix_covers_every_closed_failure_class():
+    assert {mutation.kind for mutation in all_closed_schema_mutations()} == {
+        "unknown_key", "missing_key", "null_nonnullable", "wrong_type",
+        "invalid_contract_value", "boolean_as_integer", "nonfinite_number",
+        "nullable_wrong_underlying_type", "null_list", "wrong_list_item_type",
+        "invalid_list_item_value", "duplicate_list_item", "unsorted_set_list",
+        "invalid_nested_mapping_shape", "broken_reference",
+        "evidence_scope_mismatch",
+    }
+
+
+def nullable_contracts(field_types):
+    return {
+        (field_name, contract.removeprefix("nullable:"))
+        for field_name, contract in field_types.items()
+        if contract.startswith("nullable:")
+    }
+
+
+def list_contracts(field_types):
+    return {
+        (
+            field_name,
+            contract.removeprefix("nonempty_list:").removeprefix("list:"),
+        )
+        for field_name, contract in field_types.items()
+        if contract.startswith(("list:", "nonempty_list:"))
+    }
+
+
+def nested_contracts(field_types):
+    return {
+        (field_name, contract.removeprefix("mapping:"))
+        for field_name, contract in field_types.items()
+        if contract.startswith("mapping:")
+    }
+
+
+def fields_with_atomic_contract(field_types, atomic_contract):
+    result = set()
+    for field_name, contract in field_types.items():
+        unwrapped = contract
+        for prefix in ("nullable:", "nonempty_list:", "list:"):
+            if unwrapped.startswith(prefix):
+                unwrapped = unwrapped.removeprefix(prefix)
+                break
+        if unwrapped == atomic_contract:
+            result.add(field_name)
+    return result
+
+
+def fields_with_prefix_contract(field_types, prefix):
+    return {
+        field_name
+        for field_name, contract in field_types.items()
+        if contract.startswith(prefix) or contract.startswith(f"nullable:{prefix}")
+    }
+
+
+@pytest.mark.parametrize("case", all_closed_record_cases())
+def test_each_case_mutates_every_required_key_and_typed_field(case):
+    mutations = closed_schema_mutations(case)
+    assert case.expected_keys == RECORD_KEYS[case.name]
+    assert dict(case.field_types) == FIELD_TYPES[case.name]
+    assert set(case.nullable_underlying_types) == nullable_contracts(
+        FIELD_TYPES[case.name]
+    )
+    assert set(case.list_item_types) == list_contracts(FIELD_TYPES[case.name])
+    assert set(case.nested_mapping_fields) == nested_contracts(
+        FIELD_TYPES[case.name]
+    )
+    assert case.id_fields == fields_with_atomic_contract(FIELD_TYPES[case.name], "id")
+    assert case.text_fields == fields_with_atomic_contract(
+        FIELD_TYPES[case.name], "text"
+    )
+    assert case.date_fields == fields_with_atomic_contract(
+        FIELD_TYPES[case.name], "date"
+    )
+    assert case.semver_fields == fields_with_atomic_contract(
+        FIELD_TYPES[case.name], "semver"
+    )
+    assert case.https_url_fields == fields_with_atomic_contract(
+        FIELD_TYPES[case.name], "https_url"
+    )
+    assert case.nullable_fields == {
+        field_name
+        for field_name, contract in FIELD_TYPES[case.name].items()
+        if contract.startswith("nullable:") or contract == "literal:null"
+    }
+    assert case.required_nonnull_fields == case.expected_keys - case.nullable_fields
+    assert case.list_fields == fields_with_prefix_contract(
+        FIELD_TYPES[case.name], "list:"
+    ) | fields_with_prefix_contract(FIELD_TYPES[case.name], "nonempty_list:")
+    assert case.integer_fields == fields_with_atomic_contract(
+        FIELD_TYPES[case.name], "int"
+    )
+    assert case.number_fields == fields_with_atomic_contract(
+        FIELD_TYPES[case.name], "number"
+    )
+    assert case.enum_fields == fields_with_prefix_contract(
+        FIELD_TYPES[case.name], "enum:"
+    )
+    assert {item.target_field for item in mutations if item.kind == "missing_key"} == (
+        case.expected_keys
+    )
+    assert {
+        item.target_field for item in mutations if item.kind == "null_nonnullable"
+    } == case.required_nonnull_fields
+    assert case.required_nonnull_fields | case.nullable_fields == case.expected_keys
+    assert case.required_nonnull_fields.isdisjoint(case.nullable_fields)
+    assert {
+        (item.target_field, item.type_contract)
+        for item in mutations if item.kind == "wrong_type"
+    } == set(FIELD_TYPES[case.name].items())
+    assert {
+        (item.target_field, item.type_contract)
+        for item in mutations if item.kind == "nullable_wrong_underlying_type"
+    } == set(case.nullable_underlying_types)
+    assert {
+        (item.target_field, item.type_contract)
+        for item in mutations if item.kind == "wrong_list_item_type"
+    } == set(case.list_item_types)
+    assert {
+        item.target_field for item in mutations if item.kind == "null_list"
+    } == case.list_fields
+    assert {
+        (item.target_field, item.type_contract)
+        for item in mutations if item.kind == "invalid_list_item_value"
+    } == set(case.list_item_types)
+    assert {
+        (item.target_field, item.type_contract)
+        for item in mutations if item.kind == "invalid_nested_mapping_shape"
+    } == set(case.nested_mapping_fields)
+    assert {
+        item.target_field for item in mutations if item.kind == "boolean_as_integer"
+    } == case.integer_fields | case.number_fields
+    assert {
+        item.target_field for item in mutations if item.kind == "nonfinite_number"
+    } == case.number_fields
+    assert all(
+        any(
+            item.target_field == field_name
+            and item.kind in {"invalid_contract_value", "invalid_list_item_value"}
+            for item in mutations
+        )
+        for field_name in (
+            case.id_fields | case.text_fields | case.date_fields
+            | case.semver_fields | case.https_url_fields | case.enum_fields
+        )
+    )
+
+
+RAW_YAML_REJECTIONS = {
+    "duplicate_key", "anchor_definition", "alias_reference", "merge_key",
+    "explicit_tag", "non_scalar_mapping_key", "non_mapping_document_root",
+    "non_nfc_text", "untrimmed_text", "control_character_text",
+    "native_yaml_timestamp",
+}
+
+SHARED_RAW_YAML_REJECTION_TARGETS = {
+    "duplicate_key": "common/sources.yaml:sources[0].title",
+    "anchor_definition": "common/sources.yaml:sources[0]",
+    "alias_reference": "common/sources.yaml:sources[0]",
+    "merge_key": "common/sources.yaml:sources[0]",
+    "explicit_tag": "bundle.yaml:bundle.schema_version",
+    "non_scalar_mapping_key": "bundle.yaml:document_root",
+    "non_mapping_document_root": "bundle.yaml:document_root",
+    "non_nfc_text": "common/sources.yaml:sources[0].title",
+    "untrimmed_text": "common/sources.yaml:sources[0].title",
+    "control_character_text": "common/sources.yaml:sources[0].title",
+    "native_yaml_timestamp": (
+        "common/sources.yaml:sources[0].publication_or_revision_date"
+    ),
+}
+
+CATEGORY_RAW_YAML_REJECTION_TARGETS = {
+    "duplicate_key": (
+        "categories/0301_computer_mouse/identities.yaml:category.display_name"
+    ),
+    "anchor_definition": (
+        "categories/0301_computer_mouse/identities.yaml:category"
+    ),
+    "alias_reference": (
+        "categories/0301_computer_mouse/identities.yaml:category"
+    ),
+    "merge_key": "categories/0301_computer_mouse/identities.yaml:category",
+    "explicit_tag": (
+        "categories/0301_computer_mouse/identities.yaml:category.category_id"
+    ),
+    "non_scalar_mapping_key": (
+        "categories/0301_computer_mouse/identities.yaml:document_root"
+    ),
+    "non_mapping_document_root": (
+        "categories/0301_computer_mouse/identities.yaml:document_root"
+    ),
+    "non_nfc_text": (
+        "categories/0301_computer_mouse/identities.yaml:category.display_name"
+    ),
+    "untrimmed_text": (
+        "categories/0301_computer_mouse/identities.yaml:category.display_name"
+    ),
+    "control_character_text": (
+        "categories/0301_computer_mouse/identities.yaml:category.display_name"
+    ),
+    "native_yaml_timestamp": (
+        "categories/0301_computer_mouse/identities.yaml:identities[0].applicable_from"
+    ),
+}
+
+SHARED_ROOT_PATHS = (
+    "bundle.yaml", "common/sources.yaml", "common/policies.yaml",
+)
+CATEGORY_ROOT_PATHS = tuple(
+    path.format(category_id="0301_computer_mouse")
+    for path in ROOT_KEYS
+    if path.startswith("categories/")
+)
+
+SHARED_PATH_REJECTION_TARGETS = {
+    ("symlink_source_dir", "."),
+    ("symlink_common_directory", "common"),
+    *{
+        ("symlink_document", path)
+        for path in SHARED_ROOT_PATHS
+    },
+    ("unexpected_root_entry", "unexpected-root.yaml"),
+    ("unexpected_common_entry", "common/unexpected.yaml"),
+}
+
+CATEGORY_PATH_REJECTION_TARGETS = {
+    ("symlink_categories_directory", "categories"),
+    ("symlink_category_directory", "categories/0301_computer_mouse"),
+    *{("symlink_document", path) for path in CATEGORY_ROOT_PATHS},
+    (
+        "unexpected_category_entry",
+        "categories/0301_computer_mouse/unexpected.yaml",
+    ),
+}
+
+COMPLETE_TREE_REJECTION_TARGETS = {
+    ("missing_released_sibling", "categories/0401_headphones"),
+    ("extra_sibling_category", "categories/not_released"),
+    ("symlink_released_sibling", "categories/0401_headphones"),
+}
+
+
+def test_shared_loader_executes_every_hostile_raw_yaml_case(tmp_path):
+    mutations = shared_raw_yaml_mutations()
+    assert {item.name for item in mutations} == RAW_YAML_REJECTIONS
+    assert {
+        (item.kind, item.target_field) for item in mutations
+    } == set(SHARED_RAW_YAML_REJECTION_TARGETS.items())
+    for mutation in mutations:
+        source = make_valid_shared_knowledge_source(tmp_path / mutation.name)
+        mutation.apply(source)
+        with pytest.raises(EvidenceValidationError, match=mutation.expected_error):
+            load_shared_evidence_documents(source)
+
+
+def test_category_loader_executes_every_hostile_raw_yaml_case(tmp_path):
+    mutations = category_raw_yaml_mutations("0301_computer_mouse")
+    assert {item.name for item in mutations} == RAW_YAML_REJECTIONS
+    assert {
+        (item.kind, item.target_field) for item in mutations
+    } == set(CATEGORY_RAW_YAML_REJECTION_TARGETS.items())
+    for mutation in mutations:
+        source = make_valid_category_knowledge_source(
+            tmp_path / mutation.name, "0301_computer_mouse",
+        )
+        shared = load_shared_evidence_documents(source)
+        mutation.apply(source)
+        with pytest.raises(EvidenceValidationError, match=mutation.expected_error):
+            load_category_evidence_documents(
+                source, "0301_computer_mouse", shared=shared,
+            )
+
+
+@pytest.mark.parametrize("relative_path", SHARED_ROOT_PATHS)
+def test_shared_loader_rejects_each_non_mapping_root(tmp_path, relative_path):
+    source = make_valid_shared_knowledge_source(tmp_path / relative_path.replace("/", "-"))
+    replace_with_non_mapping_yaml_root(source, relative_path)
+    with pytest.raises(EvidenceValidationError, match="mapping root"):
+        load_shared_evidence_documents(source)
+
+
+@pytest.mark.parametrize("relative_path", CATEGORY_ROOT_PATHS)
+def test_category_loader_rejects_each_non_mapping_root(tmp_path, relative_path):
+    source = make_valid_category_knowledge_source(tmp_path, "0301_computer_mouse")
+    shared = load_shared_evidence_documents(source)
+    replace_with_non_mapping_yaml_root(source, relative_path)
+    with pytest.raises(EvidenceValidationError, match="mapping root"):
+        load_category_evidence_documents(
+            source, "0301_computer_mouse", shared=shared,
+        )
+
+
+def test_shared_loader_rejects_its_own_hostile_paths(tmp_path):
+    mutations = shared_path_mutations()
+    assert {
+        (item.kind, item.target_field) for item in mutations
+    } == SHARED_PATH_REJECTION_TARGETS
+    for mutation in mutations:
+        source = make_valid_shared_knowledge_source(tmp_path / mutation.name)
+        mutation.apply(source)
+        with pytest.raises(EvidenceValidationError, match=mutation.expected_error):
+            load_shared_evidence_documents(source)
+
+
+def test_category_loader_rejects_its_own_hostile_paths(tmp_path):
+    mutations = category_path_mutations("0301_computer_mouse")
+    assert {
+        (item.kind, item.target_field) for item in mutations
+    } == CATEGORY_PATH_REJECTION_TARGETS
+    for mutation in mutations:
+        source = make_valid_category_knowledge_source(
+            tmp_path / mutation.name, "0301_computer_mouse",
+        )
+        shared = load_shared_evidence_documents(source)
+        mutation.apply(source)
+        with pytest.raises(EvidenceValidationError, match=mutation.expected_error):
+            load_category_evidence_documents(
+                source, "0301_computer_mouse", shared=shared,
+            )
+
+
+def test_complete_loader_enforces_global_sibling_category_closure(tmp_path):
+    mutations = complete_tree_mutations()
+    assert {
+        (item.kind, item.target_field) for item in mutations
+    } == COMPLETE_TREE_REJECTION_TARGETS
+    for mutation in mutations:
+        source = make_valid_knowledge_source(tmp_path / mutation.name)
+        mutation.apply(source)
+        with pytest.raises(EvidenceValidationError, match=mutation.expected_error):
+            load_evidence_documents(source)
 
 
 def test_loader_rejects_unknown_source_fields(tmp_path):
@@ -452,31 +1623,98 @@ def test_loader_rejects_unknown_source_fields(tmp_path):
 def test_grade_d_cannot_support_lifecycle(tmp_path):
     source = make_valid_knowledge_source(tmp_path)
     path = source / "categories/0303_laptop/lifecycles.yaml"
-    mutate_yaml(path, lambda doc: doc["records"][0].update({"evidence_level": "D"}))
+    mutate_yaml(path, lambda doc: doc["lifecycles"][0].update({"evidence_level": "D"}))
     with pytest.raises(EvidenceValidationError, match="grade D cannot support lifecycle"):
+        load_evidence_documents(source)
+
+
+def test_industry_average_rejects_a_point_value(tmp_path):
+    source = make_valid_knowledge_source(tmp_path)
+    path = source / "categories/0303_laptop/industry_averages.yaml"
+    mutate_yaml(
+        path,
+        lambda doc: doc["industry_averages"][0].update(
+            {"lower_bound": 4.0, "upper_bound": 4.0}
+        ),
+    )
+    with pytest.raises(EvidenceValidationError, match="proper interval"):
+        load_evidence_documents(source)
+
+
+def test_specific_lifecycle_may_preserve_a_sourced_point_threshold(tmp_path):
+    source = make_valid_knowledge_source(tmp_path)
+    path = source / "categories/0306_mobile_phone/lifecycles.yaml"
+    mutate_yaml(
+        path,
+        lambda doc: doc["lifecycles"][0].update(
+            {"lower_bound": 800.0, "upper_bound": 800.0}
+        ),
+    )
+    assert load_evidence_documents(source).categories[3].specific_lifecycles[0]
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "root_key"),
+    [
+        ("categories/0303_laptop/lifecycles.yaml", "lifecycles"),
+        (
+            "categories/0303_laptop/industry_averages.yaml",
+            "industry_averages",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("case_name", "lower_bound", "upper_bound", "message"),
+    [
+        ("zero", 0.0, 1.0, "positive"),
+        ("negative", -1.0, 1.0, "positive"),
+        ("reversed", 2.0, 1.0, "bounds"),
+    ],
+)
+def test_both_lifecycle_record_types_reject_invalid_bounds(
+    tmp_path, relative_path, root_key, case_name, lower_bound, upper_bound, message,
+):
+    source = make_valid_knowledge_source(
+        tmp_path / f"{root_key}-{case_name}",
+    )
+    path = source / relative_path
+    mutate_yaml(
+        path,
+        lambda doc: doc[root_key][0].update(
+            {"lower_bound": lower_bound, "upper_bound": upper_bound}
+        ),
+    )
+    with pytest.raises(EvidenceValidationError, match=message):
+        load_evidence_documents(source)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    (
+        ("model_year_from", 2020), ("model_year_to", 2025),
+        ("applicable_from", "2020-01-01"), ("applicable_to", "2025-01-01"),
+        ("required_variant_ids", ["phone_battery_integrated"]),
+        ("excluded_variant_ids", ["phone_battery_integrated"]),
+    ),
+)
+def test_industry_average_must_be_unconstrained(tmp_path, field, value):
+    source = make_valid_knowledge_source(tmp_path)
+    path = source / "categories/0306_mobile_phone/industry_averages.yaml"
+    mutate_yaml(path, lambda doc: doc["industry_averages"][0].update({field: value}))
+    with pytest.raises(EvidenceValidationError, match="industry average.*unconstrained"):
         load_evidence_documents(source)
 
 
 def test_model_scope_must_match_the_canonical_hierarchy(tmp_path):
     source = make_valid_knowledge_source(tmp_path)
     path = source / "categories/0306_mobile_phone/lifecycles.yaml"
-    mutate_yaml(path, lambda doc: doc["records"][0]["scope"].update({"model_id": "0303_laptop_model_00"}))
+    mutate_yaml(path, lambda doc: doc["lifecycles"][0]["scope"].update({"id": "0303_laptop_model_00"}))
     with pytest.raises(EvidenceValidationError, match="scope hierarchy"):
         load_evidence_documents(source)
 
 
-def test_loader_rejects_symlinked_category_documents(tmp_path):
-    source = make_valid_knowledge_source(tmp_path)
-    target = source / "categories/0301_keyboard/sources.yaml"
-    target.unlink()
-    target.symlink_to(source / "common/sources.yaml")
-    with pytest.raises(EvidenceValidationError, match="symbolic links are not accepted"):
-        load_evidence_documents(source)
-
-
 def test_shared_loader_is_green_before_category_authoring(tmp_path):
-    source = make_valid_knowledge_source(tmp_path)
-    shutil.rmtree(source / "categories")
+    source = make_valid_shared_knowledge_source(tmp_path)
     shared = load_shared_evidence_documents(source)
     assert tuple(shared.bundle.category_ids) == RELEASED_CATEGORY_IDS
     assert shared.sources
@@ -484,10 +1722,9 @@ def test_shared_loader_is_green_before_category_authoring(tmp_path):
 
 
 def test_single_category_loader_does_not_require_sibling_categories(tmp_path):
-    source = make_valid_knowledge_source(tmp_path)
-    for path in (source / "categories").iterdir():
-        if path.name != "0301_computer_mouse":
-            shutil.rmtree(path)
+    source = make_valid_category_knowledge_source(
+        tmp_path, "0301_computer_mouse"
+    )
     shared = load_shared_evidence_documents(source)
     category = load_category_evidence_documents(
         source, "0301_computer_mouse", shared=shared
@@ -495,6 +1732,14 @@ def test_single_category_loader_does_not_require_sibling_categories(tmp_path):
     assert category.category.category_id == "0301_computer_mouse"
     with pytest.raises(EvidenceValidationError, match="missing category directory"):
         load_evidence_documents(source)
+
+
+def test_complete_loader_is_green_and_ordered(tmp_path):
+    source = make_valid_knowledge_source(tmp_path)
+    documents = load_evidence_documents(source)
+    assert tuple(
+        item.category.category_id for item in documents.categories
+    ) == RELEASED_CATEGORY_IDS
 ```
 
 - [ ] **Step 2: Run schema tests and verify RED**
@@ -511,7 +1756,21 @@ Implement three explicit validation stages rather than making partial authoring 
 - `load_category_evidence_documents` first accepts or loads the shared documents, verifies that `category_id` is declared by the bundle, and reads only the seven fixed files below that one category. It validates the category against shared sources and policy vocabulary but does not require sibling category directories. Reject an unexpected file or symlink inside the requested category.
 - `load_evidence_documents` is the release-complete entry point. It loads shared documents, calls the single-category loader for every category in `RELEASED_CATEGORY_IDS`, rejects missing or extra category directories, and then applies cross-category checks before returning `EvidenceDocuments`.
 
-Across all three entry points, reject symlinks, duplicate YAML keys, non-mapping roots, unknown fields, booleans used as integers, non-finite numbers, non-NFC text, IDs outside `[a-z0-9][a-z0-9_.-]*`, invalid semantic versions, invalid ISO dates, and non-HTTPS canonical URLs. A missing sibling category is an error only for `load_evidence_documents`, never for the shared or requested-category entry point.
+The shared and category entry points each run their own path-component,
+regular-file, hostile-YAML, and closed-directory checks before decoding a
+record; their safety does not depend on being called through the complete
+loader. The direct shared tests cover the source directory, `bundle.yaml`, and
+all `common/` paths. The direct category tests pass an already-valid shared
+object, then cover the requested `categories/` path, category directory, and
+all seven category documents. Only `load_evidence_documents` enumerates sibling
+categories, so its direct mutation matrix owns missing, extra, and symlinked
+released-sibling closure. Across their respective scopes, reject symlinks,
+duplicate YAML keys, non-mapping roots, unknown fields, booleans used as
+integers, non-finite numbers, non-NFC text, IDs outside
+`[a-z0-9][a-z0-9_.-]*`, invalid semantic versions, invalid ISO dates, and
+non-HTTPS canonical URLs. A missing sibling category is an error only for
+`load_evidence_documents`, never for the shared or requested-category entry
+point.
 
 Each source mapping accepts exactly:
 
@@ -527,17 +1786,56 @@ reviewed_by: release-reviewer
 reviewed_on: "2026-09-07"
 ```
 
-`tests/knowledge_helpers.py` must generate reusable valid shared documents, a requested-category tree, and a fully valid synthetic five-category tree with ten identities, four subtypes, one average, three specific lifecycle/endurance records, three templates, one hazard, and one explicit Unknown per category. Synthetic records use `https://example.invalid/` URLs and are never copied into production `reference/`.
+`tests/knowledge_helpers.py` must define the `SchemaCase`/`SchemaMutation`
+descriptors and helpers used above, generate reusable valid shared documents, a
+requested-category tree, and a fully valid synthetic five-category tree. Every
+synthetic category has ten identities, at least four subtypes, subtype-owned
+variants (including the required battery architectures), one average, three
+specific lifecycle/endurance records, component definitions, exactly three
+component templates with ordered associations, one hazard, and one explicit
+Unknown. The helper writes every nullable field and list explicitly, uses only
+the fixed roots, and uses `https://example.invalid/` URLs; none of its synthetic
+records is copied into production `reference/`.
+
+The raw-YAML mutations splice bytes directly rather than round-tripping through
+`yaml.safe_dump`, so duplicate keys, anchors, aliases, merge keys, tags,
+non-scalar keys, native timestamps, and malformed root kinds reach the loader
+unchanged. Shared/category path mutations exercise every path component and
+document through that exact public loader; complete-tree mutations exercise
+only global sibling closure. `all_closed_schema_mutations()` is the flattened
+record matrix; tests compare its `(case, field, type_contract, rejection class)`
+coverage to `FIELD_TYPES`; root, raw-parser, and filesystem tests compare exact
+targets to `ROOT_VALUE_TYPES`, `RAW_YAML_REJECTIONS`, both scoped raw target
+maps, both scoped path target sets, and `COMPLETE_TREE_REJECTION_TARGETS`. A new
+field, type, fixed path, public-loader scope, or rejection class therefore
+cannot silently lack a negative test.
 
 - [ ] **Step 4: Implement cross-document claim checks**
 
-The shared loader validates shared-source ID uniqueness, policy revision equality, closed policy values/priorities, and policy predicate syntax. The single-category loader validates uniqueness against shared IDs, casefolded alias uniqueness within the requested category, category/subtype/family/model ancestry, model years and applicability ranges, variant references, claim/source references, evidence-level/scope compatibility, endpoint qualification, finite positive ordered ranges, required industry population/methodology/period/uncertainty/limitations, component overlay scope, authored association statuses excluding `user_confirmed`, hazard component IDs, trigger keys, severity, immediate/follow-up actions, handling/disposal guidance, independent source IDs, and deliberate Unknown reason/evidence-request fields. The complete loader additionally validates IDs that must be unique across categories and exact category-directory closure.
+The shared loader validates shared-source ID uniqueness, policy revision equality,
+unique non-negative priorities, the exact predicate vocabulary/group semantics,
+policy source references, and all closed source/policy fields. The
+single-category loader constructs all twelve canonical
+`CategoryEvidenceDocuments` fields and validates uniqueness against shared IDs,
+casefolded identity-display/alias uniqueness, category/subtype/variant/family/
+model ancestry, year/date ranges, scoped variant references, per-claim source
+references, scope-derived evidence tiers, endpoint-kind separation, finite
+positive ordered bounds, all industry methodology fields, the three distinct
+component record types and their overlay/position rules, authored association
+statuses excluding `user_confirmed`, hazard component/scope references, the
+four exact trigger keys, ordered actions/guidance, independent hazard
+provenance, and stable deliberate-Unknown keys/reason/evidence request. The
+complete loader additionally validates globally unique IDs and exact
+category-directory closure.
 
 - [ ] **Step 5: Run schema and type suites**
 
 Run: `.venv/bin/python -c 'import sys, types; sys.modules["readline"] = types.ModuleType("readline"); import pytest; raise SystemExit(pytest.main(sys.argv[1:]))' tests/test_evidence_types.py tests/test_knowledge_schema.py -v`
 
-Expected: PASS for the valid synthetic tree and every closed-schema, source, hierarchy, range, applicability, provenance, symlink, and Unknown mutation.
+Expected: PASS for each valid shared-only, requested-category, and complete
+synthetic tree and every root/record closure, type/null/list, source, predicate,
+trigger, hierarchy, range, applicability, component overlay, provenance,
+symlink, and Unknown mutation.
 
 - [ ] **Step 6: Commit the authoring validator**
 
@@ -555,11 +1853,46 @@ git commit -m "feat: validate knowledge authoring sources"
 
 **Interfaces:**
 - Consumes: `load_evidence_documents(source_dir: Path) -> EvidenceDocuments`
+- Consumes only the canonical category fields `specific_lifecycles`, `component_definitions`, `component_templates`, and `component_associations`; it does not look for `lifecycles`, `components`, or `templates` aliases
+- Produces the testable pure projection `normalized_sql_rows(documents: EvidenceDocuments) -> Mapping[str, tuple[tuple[object, ...], ...]]`; keys are every table below and tuple fields follow `EXPECTED_TABLE_COLUMNS`. Its `metadata` rows are the four semantic release values; the two computed hash rows are appended only after their inputs exist
+- Produces `logical_content_sha256(rows: Mapping[str, tuple[tuple[object, ...], ...]]) -> str`; the compiler writes and hashes the same projected rows
 - Produces: `compile_knowledge_bundle(source_dir: Path, destination_dir: Path) -> KnowledgeManifest`
 - Produces fixed files: `<destination_dir>/knowledge.sqlite` and `<destination_dir>/evidence-coverage.json`
 - Produces CLI: `python scripts/build_knowledge_bundle.py --source PATH --out DIRECTORY --print-summary`
 
 - [ ] **Step 1: Write failing schema, digest, output, and atomicity tests**
+
+In `tests/test_knowledge_compiler.py`, define `EXPECTED_TABLE_COLUMNS` as the
+exact table/column mapping in **Normalized documents and compiler conversion**.
+Assert `sqlite_master` and `PRAGMA table_info` equal it with no extra table or
+column. Define `AUTHORING_FIELD_TARGETS` with a key for every root/record field
+in Task 2's `ROOT_VALUE_TYPES` and `FIELD_TYPES`; each value names every SQL
+`(table, column)` and coverage-JSON field derived from it, including flattened
+scope fields, derived tier/release order/casefold fields, list child rows, and
+ordinals. The two validation-only constants
+`Unknown.evidence_level=null`/`Unknown.source_ids=[]` are explicitly marked as
+reconstructible from a `coverage_unknowns` row and are still exercised by Task
+2 invalid mutations; they are not silently exempted. Assert the mapping key set
+equals the complete authored-field set and that every non-computed SQL column
+and coverage semantic field has at least one mapped authoring or documented
+derived-value source.
+
+The test oracle `expected_normalized_sql_rows(documents)` must be independent
+of the compiler projection and return every parent and child table, every
+column, every list item, and every ordinal in exact normalized order.
+`read_normalized_sql_rows(database)` reads those same tables/columns in their
+normative primary-key order and deliberately omits only the two computed
+metadata hash rows. A separate assertion requires the database's complete
+metadata mapping to contain exactly the four projected release rows plus
+`content_sha256` and `coverage_sha256` equal to the returned manifest.
+`semantic_authoring_mutations()` supplies a valid,
+referentially consistent mutation for every authored field whose value is not
+a frozen release constant, and declares the exact `AUTHORING_FIELD_TARGETS`
+covered. `semantic_sql_column_mutations(rows)` mutates each semantic SQL column
+in turn, including derived and ordinal columns; it excludes only the
+`content_sha256` and `coverage_sha256` metadata rows because hashes cannot
+contain themselves. Coverage assertions compare the exact field/target and
+table/column sets rather than merely a table-name class set.
 
 ```python
 def test_compile_emits_the_fixed_bundle_files(tmp_path):
@@ -575,13 +1908,52 @@ def test_compile_emits_the_fixed_bundle_files(tmp_path):
     assert manifest.policy_revision == "2.0.0"
 
 
-def test_every_semantic_table_changes_the_logical_digest(tmp_path):
+def test_every_parent_child_value_and_ordinal_round_trips_exactly(tmp_path):
     source = make_valid_knowledge_source(tmp_path / "source")
-    baseline = compile_knowledge_bundle(source, tmp_path / "baseline")
-    for mutation_name, mutation in semantic_mutations():
+    documents = load_evidence_documents(source)
+    expected = expected_normalized_sql_rows(documents)
+    manifest = compile_knowledge_bundle(source, tmp_path / "bundle")
+    actual = read_normalized_sql_rows(tmp_path / "bundle/knowledge.sqlite")
+    assert set(actual) == set(EXPECTED_TABLE_COLUMNS)
+    assert actual == expected == normalized_sql_rows(documents)
+    assert manifest.content_sha256 == logical_content_sha256(expected)
+    assert read_metadata(tmp_path / "bundle/knowledge.sqlite") == {
+        "schema_version": "3", "bundle_version": "3.0.0",
+        "identity_catalog_version": "1.0.0", "policy_revision": "2.0.0",
+        "content_sha256": manifest.content_sha256,
+        "coverage_sha256": manifest.coverage_sha256,
+    }
+
+
+def test_semantic_coverage_is_exact_per_authored_field_and_sql_column(tmp_path):
+    source = make_valid_knowledge_source(tmp_path / "source")
+    assert set(AUTHORING_FIELD_TARGETS) == all_normative_authoring_fields()
+    authoring_mutations = semantic_authoring_mutations()
+    assert mutation_targets(authoring_mutations) == mutable_authoring_field_targets()
+    baseline_rows = expected_normalized_sql_rows(load_evidence_documents(source))
+    sql_mutations = semantic_sql_column_mutations(baseline_rows)
+    assert mutation_columns(sql_mutations) == all_semantic_sql_columns()
+
+
+def test_every_authored_semantic_value_changes_rows_and_logical_digest(tmp_path):
+    source = make_valid_knowledge_source(tmp_path / "source")
+    baseline_documents = load_evidence_documents(source)
+    baseline_rows = normalized_sql_rows(baseline_documents)
+    baseline_hash = logical_content_sha256(baseline_rows)
+    for mutation_name, targets, mutation in semantic_authoring_mutations():
         changed_source = clone_and_mutate(source, tmp_path / mutation_name, mutation)
-        changed = compile_knowledge_bundle(changed_source, tmp_path / f"out-{mutation_name}")
-        assert changed.content_sha256 != baseline.content_sha256
+        changed_rows = normalized_sql_rows(load_evidence_documents(changed_source))
+        assert changed_sql_targets(baseline_rows, changed_rows) == targets
+        assert logical_content_sha256(changed_rows) != baseline_hash
+
+
+def test_every_semantic_sql_column_is_in_the_logical_digest(tmp_path):
+    source = make_valid_knowledge_source(tmp_path / "source")
+    rows = normalized_sql_rows(load_evidence_documents(source))
+    baseline_hash = logical_content_sha256(rows)
+    for table, column, changed_rows in semantic_sql_column_mutations(rows):
+        assert changed_rows != rows
+        assert logical_content_sha256(changed_rows) != baseline_hash
 
 
 def test_failed_rebuild_preserves_the_previous_complete_directory(tmp_path):
@@ -612,7 +1984,20 @@ Expected: FAIL during collection because `scripts.knowledge_compiler` does not e
 
 - [ ] **Step 3: Implement the normalized schema and logical digest**
 
-Create tables `metadata`, `sources`, `categories`, `subtypes`, `identities`, `identity_aliases`, `identity_tokens`, `lifecycle_records`, `industry_averages`, `components`, `component_templates`, `component_associations`, `hazards`, `hazard_triggers`, `hazard_actions`, `policy_rules`, `coverage_unknowns`, and `claim_sources`. Enable foreign keys, use deterministic primary keys and insert order, and include every semantic column in the canonical JSON hashed as `content_sha256`.
+Create exactly the tables and columns listed in **Normalized documents and
+compiler conversion**, including variants, every ordered child row, policy
+predicates, and the three separately normalized component types. Enable foreign
+keys and use deterministic primary keys and insertion order. Implement one pure
+`normalized_sql_rows` traversal; the SQLite writer inserts exactly those
+semantic rows, `logical_content_sha256` hashes exactly those rows serialized as
+canonical JSON with explicit table names, column names, row boundaries, nulls,
+and ordinals, and the writer then appends the two computed metadata rows. Do not
+maintain a second semantic digest traversal. The independent expected-
+row oracle must round-trip every normalized authoring value through the emitted
+database for every parent/child table. The authored-field target matrix and
+per-SQL-column semantic mutations must prove that no value is discarded and no
+semantic or ordinal column is omitted from the hash. Assert the database has
+that exact table/column surface and no legacy alias table.
 
 Computed metadata keys are exactly `schema_version`, `bundle_version`, `identity_catalog_version`, `policy_revision`, `content_sha256`, and `coverage_sha256`. Exclude the two computed hashes from their own logical-digest input.
 
@@ -706,7 +2091,56 @@ def test_store_is_query_only(compiled_bundle):
     with KnowledgeStore(database, coverage) as store:
         with pytest.raises(sqlite3.OperationalError, match="readonly"):
             store._connection.execute("DELETE FROM sources")
+
+
+def test_identity_scope_copies_variants_and_only_uses_singleton_ranges(
+    store_with_identity_ranges,
+):
+    exact = store_with_identity_ranges.identity_scope("exact_identity")
+    assert exact == CanonicalIdentityScope(
+        category_id="0303_laptop",
+        subtype_id="test_laptop_subtype",
+        family_id="test_laptop_family",
+        model_id="exact_identity",
+        variant_ids=("variant_a", "variant_b"),
+        model_year=2024,
+        applicable_on=date(2024, 6, 1),
+    )
+
+    ranged = store_with_identity_ranges.identity_scope("ranged_identity")
+    assert ranged == CanonicalIdentityScope(
+        category_id="0303_laptop",
+        subtype_id="test_laptop_subtype",
+        family_id="test_laptop_family",
+        model_id="ranged_identity",
+        variant_ids=("variant_a",),
+        model_year=None,
+        applicable_on=None,
+    )
+
+
+def test_identity_scope_does_not_choose_an_open_range_endpoint(
+    store_with_identity_ranges,
+):
+    scope = store_with_identity_ranges.identity_scope("open_range_identity")
+    assert scope == CanonicalIdentityScope(
+        category_id="0303_laptop",
+        subtype_id="test_laptop_subtype",
+        family_id="test_laptop_family",
+        model_id="open_range_identity",
+        variant_ids=(),
+        model_year=None,
+        applicable_on=None,
+    )
 ```
+
+The range fixture authors all three asserted model identities under exactly
+`0303_laptop / test_laptop_subtype / test_laptop_family`:
+`exact_identity` has equal non-null year/date bounds, `ranged_identity` has
+unequal non-null bounds, and `open_range_identity` has one null endpoint in
+each pair. Their authored `variant_ids` are exactly the asserted tuples. These
+whole-value comparisons prevent an implementation from deriving year/date
+correctly while dropping or inventing another scope field.
 
 - [ ] **Step 2: Run store tests and verify RED**
 
@@ -719,6 +2153,14 @@ Expected: FAIL during collection because `server.knowledge_store` does not exist
 Use only `dataclasses`, `datetime`, `hashlib`, `json`, `pathlib`, `sqlite3`, `threading`, and other Python standard-library modules. Resolve paths safely, hash the database before and after opening, use SQLite URI `mode=ro`, set `query_only`, validate exact metadata/table/column sets, run quick/foreign-key checks, recompute the logical digest, validate expected release values, and verify the coverage file hash plus its bundle-version/content-hash linkage. Convert all rows into frozen types and expand claim sources independently.
 
 Identity search normalizes Unicode, whitespace, and case only; it searches display names, aliases, and distinguishing tokens with deterministic exact-prefix-token ordering. It never performs network lookup and never turns a search result into a user decision.
+
+`identity_scope` reads the selected immutable `IdentityRecordSnapshot` and
+copies category/subtype/family/model IDs and `variant_ids`. It emits a singular
+`model_year` or `applicable_on` only for equal, non-null corresponding bounds;
+unequal or open bounds emit `None`. This is the only derivation compatible with
+Slice 2's closed confirmed/edited decision shapes, which supply `identity_id`
+but reject client-authored year/date/scope fields. The store never consults the
+clock and never selects a lower bound, upper bound, or midpoint.
 
 - [ ] **Step 4: Prove the packaged import graph has no YAML/compiler dependency**
 
@@ -795,13 +2237,91 @@ def test_equal_precedence_conflict_returns_unknown(resolver_with_conflict, phone
     )
     assert result.record is None
     assert result.unknown_reason == "Conflicting reviewed records at the same evidence tier."
+
+
+@pytest.mark.parametrize(
+    ("model_year", "applicable_on"),
+    [(2020, date(2020, 1, 1)), (2025, date(2025, 12, 31))],
+)
+def test_year_and_date_bounds_are_inclusive(
+    resolver_with_applicability, applicability_scope, model_year, applicable_on,
+):
+    scope = replace(
+        applicability_scope, model_year=model_year, applicable_on=applicable_on,
+    )
+    result = resolver_with_applicability.resolve_lifecycle(scope, SERVICE_LIFE)
+    assert result.record.record_id == "bounded_specific"
+
+
+@pytest.mark.parametrize(
+    ("missing_field", "reason"),
+    [
+        ("model_year", "model year unavailable"),
+        ("applicable_on", "applicability date unavailable"),
+    ],
+)
+def test_missing_singular_applicability_rejects_only_constrained_record(
+    resolver_with_applicability, applicability_scope, missing_field, reason,
+):
+    scope = replace(applicability_scope, **{missing_field: None})
+    result = resolver_with_applicability.resolve_lifecycle(scope, SERVICE_LIFE)
+    assert result.record.record_id == "unconstrained_specific"
+    assert ("bounded_specific", reason) in result.trace[0].rejected
+
+
+@pytest.mark.parametrize(
+    ("scope_change", "reason"),
+    [
+        ({"model_year": 2019}, "model year out of range"),
+        ({"applicable_on": date(2026, 1, 1)}, "applicability date out of range"),
+    ],
+)
+def test_out_of_range_values_have_closed_trace_reasons(
+    resolver_with_applicability, applicability_scope, scope_change, reason,
+):
+    result = resolver_with_applicability.resolve_lifecycle(
+        replace(applicability_scope, **scope_change), SERVICE_LIFE,
+    )
+    assert result.record.record_id == "unconstrained_specific"
+    assert ("bounded_specific", reason) in result.trace[0].rejected
+
+
+def test_required_and_excluded_variants_are_deterministic(
+    resolver_with_variant_filters, variant_scope,
+):
+    eligible = replace(variant_scope, variant_ids=("variant_a", "variant_b"))
+    assert resolver_with_variant_filters.resolve_lifecycle(
+        eligible, SERVICE_LIFE,
+    ).record.record_id == "variant_specific"
+    for variants, reason in [
+        (("variant_b",), "required variant missing"),
+        (("variant_a", "variant_x"), "excluded variant present"),
+    ]:
+        result = resolver_with_variant_filters.resolve_lifecycle(
+            replace(variant_scope, variant_ids=variants), SERVICE_LIFE,
+        )
+        assert result.record.record_id == "unconstrained_specific"
+        assert ("variant_specific", reason) in result.trace[0].rejected
 ```
+
+`resolver_with_applicability` has same-tier records `bounded_specific`
+(`model_year_from=2020`, `model_year_to=2025`,
+`applicable_from=2020-01-01`, `applicable_to=2025-12-31`),
+and the higher-numbered-precedence fallback `unconstrained_specific` with null
+year/date bounds and empty variant filters. `resolver_with_variant_filters`
+instead has `variant_specific` (requiring `variant_a` and excluding
+`variant_x`) plus that unconstrained fallback. Both fixtures prevent a
+more-specific tier from masking these checks.
 
 - [ ] **Step 2: Write failing category-only, overlay, hazard, and source tests**
 
 ```python
 def test_category_only_scope_uses_only_average_and_base_components(resolver):
     scope = CanonicalIdentityScope("0301_keyboard")
+    assert scope == CanonicalIdentityScope(
+        category_id="0301_keyboard", subtype_id=None, family_id=None,
+        model_id=None, variant_ids=(), model_year=None, applicable_on=None,
+    )
     resolved = resolver.resolve(
         scope,
         LifecycleRequest("device", "service_life", "elapsed_time", "years"),
@@ -820,12 +2340,40 @@ def test_layers_apply_category_subtype_family_model_order(resolver, laptop_scope
     assert storage.status is AssociationStatus.EXACT_MODEL_CONFIRMED
 
 
+def test_component_replacements_retain_slots_and_new_components_append(
+    resolver_with_component_slot_layers, component_slot_scope,
+):
+    first = resolver_with_component_slot_layers.resolve_components(component_slot_scope)
+    second = resolver_with_component_slot_layers.resolve_components(component_slot_scope)
+    assert first == second
+    assert first.applied_template_ids == (
+        "base", "subtype_overlay", "family_overlay", "model_overlay",
+    )
+    assert tuple(item.component_id for item in first.components) == (
+        "chassis", "battery", "storage", "radio", "camera",
+    )
+    assert tuple(item.association_id for item in first.components) == (
+        "model_chassis_not_present", "model_battery_unknown", "base_storage",
+        "subtype_radio", "model_camera",
+    )
+    assert first.components[0].status is AssociationStatus.NOT_PRESENT
+    assert first.components[1].status is AssociationStatus.UNKNOWN
+
+
 def test_hazard_sources_are_not_copied_from_lifecycle(resolver, phone_scope):
     resolved = resolver.resolve_hazards(phone_scope)
     battery = next(item for item in resolved.hazards if item.hazard_id == "phone_damaged_li_ion")
     assert {source.source_id for source in battery.sources} == {"epa_used_li_ion_2026"}
     assert "eu_phone_ecodesign_2023_1670" not in {source.source_id for source in battery.sources}
 ```
+
+The slot-layer fixture authors base positions `chassis`, `battery`, `storage`;
+a subtype layer that replaces `battery` then introduces `radio`; a family layer
+that again replaces only `battery`; and a model layer that replaces `chassis`
+with `not_present`, replaces `battery` with `unknown`, and first introduces
+`camera`. Thus the asserted tuple separately pins layer order, per-template
+position, repeated in-place replacement, new append, omission retention, both
+explicit absence states, and repeat-call determinism.
 
 - [ ] **Step 3: Run resolver tests and verify RED**
 
@@ -835,9 +2383,24 @@ Expected: FAIL because `EvidenceResolver` does not exist.
 
 - [ ] **Step 4: Implement deterministic resolution**
 
-Filter candidates by canonical hierarchy, subject, endpoint, metric, unit, applicable date, model year, and required/excluded variants before grouping them into `EXACT_MODEL`, `FAMILY`, `SUBTYPE`, and `INDUSTRY_AVERAGE`. At the first tier with applicable candidates, select the unique lowest integer precedence. A tie returns Unknown with all conflicting IDs in the trace. Never continue to a lower tier after finding a same-tier conflict, and never merge numeric ranges.
+Filter candidates by canonical hierarchy, subject, endpoint, metric, unit,
+inclusive applicability date/model-year bounds, and required/excluded variants
+before grouping them into `EXACT_MODEL`, `FAMILY`, `SUBTYPE`, and
+`INDUSTRY_AVERAGE`. A missing singular year/date rejects a constrained record
+with the exact unavailable trace reason in the normative contract but does not
+reject an unconstrained record. Never read the wall clock. At the first tier
+with applicable candidates, select the unique lowest integer precedence. A tie
+returns Unknown with all conflicting IDs in the trace. Never continue to a
+lower tier after finding a same-tier conflict, and never merge numeric ranges.
 
-Apply component layers in category/subtype/family/model order by component ID. A more-specific explicit association replaces the prior association; an omitted component leaves the prior value unchanged. Resolve applicable hazards without interpreting trigger observations. Attach `store.policy_bundle()` and `store.manifest.stamp` in `ResolvedEvidence`.
+Apply eligible component templates in category/subtype/family/model layer order
+and `(application_order, template_id)` order within a layer, then visit each
+template's associations by `position`. Use the normative stable-slot algorithm:
+first occurrence appends, replacement updates in place, omission retains, and
+explicit `not_present`/`unknown` replaces in place. Return the resulting tuple,
+not a component-ID sort. Resolve applicable hazards without interpreting
+trigger observations. Attach `store.policy_bundle()` and
+`store.manifest.stamp` in `ResolvedEvidence`.
 
 - [ ] **Step 5: Run resolver/store/type tests and commit**
 
@@ -862,6 +2425,7 @@ git commit -m "feat: resolve reviewed evidence records"
 
 **Interfaces:**
 - Produces: `build_coverage(documents: EvidenceDocuments, content_sha256: str) -> dict[str, object]`
+- Consumes reviewed claims from `subtypes`, `variants`, `identities`, `specific_lifecycles`, `industry_averages`, `component_associations`, and `hazards`, plus the canonical `unknowns` tuples; component templates are counted from `component_templates`
 - Produces: `validate_release_floor(report: Mapping[str, object]) -> None`
 - Produces: `compare_coverage(previous: Mapping[str, object] | None, current: Mapping[str, object]) -> dict[str, object]`
 - Produces CLI: `python scripts/compare_evidence_coverage.py --current PATH (--previous PATH | --initial) --out PATH`
@@ -906,7 +2470,14 @@ Expected: FAIL because the coverage modules and JSON schemas do not exist.
 
 - [ ] **Step 3: Implement canonical full and change artifacts**
 
-Each full claim row contains exactly `category_id`, `claim_kind`, `claim_id`, `evidence_level`, `source_state`, `source_ids`, and `unknown_reason`; `source_state` is `reviewed` or `unknown`. Serialize with sorted keys, no NaN, UTF-8, and one trailing newline.
+Each full claim row contains exactly `category_id`, `claim_kind`, `claim_id`,
+`evidence_level`, `source_state`, `source_ids`, and `unknown_reason`;
+`source_state` is `reviewed` or `unknown`. A reviewed row has non-null
+`evidence_level`, non-empty sorted `source_ids`, and `unknown_reason=null`. An
+Unknown row is keyed directly by `(category_id, claim_kind, claim_id)`, has
+`evidence_level=null`, `source_ids=[]`, and `unknown_reason` equal to the
+authored `reason`; the compiler never emits a synthetic Unknown ID. Serialize
+with sorted keys, no NaN, UTF-8, and one trailing newline.
 
 The change artifact contains exactly `schema_version`, `from_bundle_version`, `to_bundle_version`, `added`, `removed`, `changed`, and `known_limitations`. `added` and `removed` are sorted claim keys. Each changed row contains `claim_key`, `before_source_state`, `after_source_state`, `before_evidence_level`, and `after_evidence_level`. Each limitation contains `claim_key` and `reason` and is derived from current Unknown rows rather than free-form release copy.
 
@@ -961,7 +2532,7 @@ def test_policy_values_and_safety_priority_are_closed():
         "supported_reuse", "end_of_reference_recycle",
     }
     assert rules["urgent_hazard_specialist"].priority < rules["supported_reuse"].priority
-    assert rules["urgent_hazard_specialist"].outcome == "specialist_handling"
+    assert rules["urgent_hazard_specialist"].outcome is RecommendationValue.SPECIALIST_HANDLING
 ```
 
 - [ ] **Step 2: Run the common corpus test and verify RED**
@@ -985,7 +2556,7 @@ Run: `.venv/bin/python -c 'import sys, types; sys.modules["readline"] = types.Mo
 Then run:
 
 ```bash
-git diff --exit-code -- reference/sources.yaml reference/device_components.yaml
+git diff --exit-code HEAD -- reference/sources.yaml reference/device_components.yaml
 ```
 
 Expected: both commands PASS; the shared-only loader validates bundle identity, source metadata, exact policy set, closed outcomes, and safety priority without requiring any category directory, and the frozen-v1 source files are unchanged.
@@ -1012,7 +2583,7 @@ After Task 7 passes, Tasks 8–12 are five independent work packets and may be d
 **Interfaces:**
 - Produces category ID `0301_computer_mouse`
 - Produces subtypes `mouse_wired_optical`, `mouse_wireless_replaceable_battery`, `mouse_wireless_rechargeable`, and `mouse_ball_legacy`
-- Produces templates `mouse_standard`, `mouse_modern_wireless`, and `mouse_legacy_ball`
+- Produces `CategoryEvidenceDocuments.component_templates` IDs `mouse_standard`, `mouse_modern_wireless`, and `mouse_legacy_ball`
 - Consumes: `load_category_evidence_documents(ROOT / "reference", "0301_computer_mouse")` for the category-scoped fixture and acceptance test
 
 - [ ] **Step 1: Write the failing exact-roster and battery-architecture test**
@@ -1034,7 +2605,7 @@ def test_mouse_corpus_roster_and_floor(mouse_records):
         "mouse_wireless_rechargeable", "mouse_ball_legacy",
     }
     assert {item.battery_architecture for item in mouse_records.subtypes} >= {
-        "battery_free", "battery_bearing"
+        BatteryArchitecture.BATTERY_FREE, BatteryArchitecture.BATTERY_BEARING,
     }
 ```
 
@@ -1056,7 +2627,7 @@ The standard template covers enclosure, controller PCB, sensor/ball mechanism, s
 
 Run: `.venv/bin/python -c 'import sys, types; sys.modules["readline"] = types.ModuleType("readline"); import pytest; raise SystemExit(pytest.main(sys.argv[1:]))' tests/corpus/test_mouse_evidence.py tests/test_knowledge_schema.py tests/test_evidence_coverage.py -v`
 
-Expected: PASS for the exact roster, four subtypes, three endurance records, broad range, three templates, battery variants, hazard provenance, and Unknown rows; missing sibling category directories do not affect this category-scoped gate.
+Expected: PASS for the exact roster, four subtypes, three endurance records, broad range, three component templates, battery variants, hazard provenance, and Unknown rows; missing sibling category directories do not affect this category-scoped gate.
 
 ```bash
 git add reference/categories/0301_computer_mouse tests/corpus/test_mouse_evidence.py
@@ -1078,7 +2649,7 @@ git commit -m "data: publish mouse evidence corpus"
 **Interfaces:**
 - Produces category ID `0301_keyboard`
 - Produces subtypes `keyboard_wired_membrane`, `keyboard_wireless_replaceable_battery`, `keyboard_wireless_rechargeable`, `keyboard_mechanical`, and `keyboard_buckling_spring_legacy`
-- Produces templates `keyboard_standard`, `keyboard_modern_wireless`, and `keyboard_legacy_buckling_spring`
+- Produces `CategoryEvidenceDocuments.component_templates` IDs `keyboard_standard`, `keyboard_modern_wireless`, and `keyboard_legacy_buckling_spring`
 - Consumes: `load_category_evidence_documents(ROOT / "reference", "0301_keyboard")` for the category-scoped fixture and acceptance test
 
 - [ ] **Step 1: Write the failing keyboard roster test**
@@ -1097,7 +2668,7 @@ def test_keyboard_corpus_roster_and_floor(keyboard_records):
     assert len(keyboard_records.subtypes) >= 4
     assert len(keyboard_records.specific_lifecycles) >= 3
     assert keyboard_records.industry_averages[0].endpoint == "service_life"
-    assert {item.template_kind for item in keyboard_records.templates} >= {
+    assert {item.template_kind for item in keyboard_records.component_templates} >= {
         "standard", "modern_overlay", "legacy_overlay"
     }
 ```
@@ -1142,7 +2713,7 @@ git commit -m "data: publish keyboard evidence corpus"
 **Interfaces:**
 - Produces category ID `0303_laptop`
 - Produces subtypes `laptop_modern_ultrabook`, `laptop_modular`, `laptop_two_in_one`, `laptop_gaming`, and `laptop_legacy_notebook`
-- Produces templates `laptop_standard`, `laptop_modern_integrated`, and `laptop_legacy_serviceable`
+- Produces `CategoryEvidenceDocuments.component_templates` IDs `laptop_standard`, `laptop_modern_integrated`, and `laptop_legacy_serviceable`
 - Consumes: `load_category_evidence_documents(ROOT / "reference", "0303_laptop")` for the category-scoped fixture and acceptance test
 
 - [ ] **Step 1: Write the failing laptop roster test**
@@ -1160,7 +2731,7 @@ EXPECTED_LAPTOP_IDENTITIES = {
 def test_laptop_corpus_roster_and_floor(laptop_records):
     assert {item.identity_id for item in laptop_records.identities} == EXPECTED_LAPTOP_IDENTITIES
     assert len({item.manufacturer_id for item in laptop_records.identities}) >= 2
-    assert any(item.market_state == "legacy" for item in laptop_records.subtypes)
+    assert any(item.market_state is MarketState.LEGACY for item in laptop_records.subtypes)
     assert len(laptop_records.specific_lifecycles) >= 3
     assert len(laptop_records.industry_averages) >= 1
 ```
@@ -1205,7 +2776,7 @@ git commit -m "data: publish laptop evidence corpus"
 **Interfaces:**
 - Produces category ID `0306_mobile_phone`
 - Produces subtypes `phone_slate_smartphone`, `phone_foldable_smartphone`, `phone_modular_smartphone`, `phone_feature_legacy`, and `phone_keyboard_legacy`
-- Produces templates `phone_standard`, `phone_modern_integrated`, and `phone_legacy_removable_battery`
+- Produces `CategoryEvidenceDocuments.component_templates` IDs `phone_standard`, `phone_modern_integrated`, and `phone_legacy_removable_battery`
 - Consumes: `load_category_evidence_documents(ROOT / "reference", "0306_mobile_phone")` for the category-scoped fixture and acceptance test
 
 - [ ] **Step 1: Write the failing phone roster and threshold test**
@@ -1227,7 +2798,11 @@ def test_phone_corpus_roster_and_capacity_endpoints(phone_records):
         "apple_iphone_15_battery_capacity_threshold",
         "fairphone_5_battery_capacity_threshold",
     } <= threshold_ids
-    assert all(item.endpoint_kind == "capacity_threshold" for item in phone_records.specific_lifecycles if "battery" in item.record_id)
+    assert all(
+        item.endpoint_kind is LifecycleEndpointKind.CAPACITY_THRESHOLD
+        for item in phone_records.specific_lifecycles
+        if "battery" in item.record_id
+    )
 ```
 
 - [ ] **Step 2: Run the phone test and verify RED**
@@ -1270,7 +2845,7 @@ git commit -m "data: publish phone evidence corpus"
 **Interfaces:**
 - Produces category ID `0401_headphones`
 - Produces subtypes `headphones_wired_over_ear`, `headphones_wired_on_ear_legacy`, `headphones_wireless_over_ear`, and `headphones_true_wireless`
-- Produces templates `headphones_standard`, `headphones_modern_wireless`, and `headphones_legacy_wired`
+- Produces `CategoryEvidenceDocuments.component_templates` IDs `headphones_standard`, `headphones_modern_wireless`, and `headphones_legacy_wired`
 - Consumes: `load_category_evidence_documents(ROOT / "reference", "0401_headphones")` for the category-scoped fixture and acceptance test
 
 - [ ] **Step 1: Write the failing headphones roster and battery test**
@@ -1288,7 +2863,7 @@ EXPECTED_HEADPHONE_IDENTITIES = {
 def test_headphones_corpus_roster_and_battery_architecture(headphone_records):
     assert {item.identity_id for item in headphone_records.identities} == EXPECTED_HEADPHONE_IDENTITIES
     assert {item.battery_architecture for item in headphone_records.subtypes} >= {
-        "battery_free", "battery_bearing"
+        BatteryArchitecture.BATTERY_FREE, BatteryArchitecture.BATTERY_BEARING,
     }
     assert len(headphone_records.specific_lifecycles) >= 3
     assert len(headphone_records.industry_averages) >= 1
@@ -1440,10 +3015,39 @@ def test_verifier_rejects_each_tampered_artifact(approved_candidate, artifact):
         verify_knowledge_release_inputs(candidate, approval)
 
 
-def test_verifier_rejects_extra_or_symlinked_candidate_files(approved_candidate):
+def test_verifier_rejects_an_extra_candidate_file(approved_candidate):
     candidate, approval, _manifest = approved_candidate
     (candidate / "unreviewed.json").write_text("{}")
     with pytest.raises(KnowledgeReleaseError, match="unavailable or incompatible"):
+        verify_knowledge_release_inputs(candidate, approval)
+
+
+@pytest.mark.parametrize(
+    "symlink_target",
+    (
+        "candidate_dir", "knowledge.sqlite", "evidence-coverage.json",
+        "evidence-coverage-change.json", "approval_path",
+    ),
+)
+def test_verifier_rejects_each_symlinked_input(approved_candidate, symlink_target):
+    candidate, approval, _manifest = approved_candidate
+    if symlink_target == "candidate_dir":
+        real_path = candidate.with_name(f"{candidate.name}-real")
+        candidate.rename(real_path)
+        candidate.symlink_to(real_path, target_is_directory=True)
+        hostile_path = candidate
+    elif symlink_target == "approval_path":
+        real_path = approval.with_name(f"{approval.name}.real")
+        approval.rename(real_path)
+        approval.symlink_to(real_path)
+        hostile_path = approval
+    else:
+        hostile_path = candidate / symlink_target
+        real_path = candidate.parent / f"{symlink_target}.real"
+        hostile_path.rename(real_path)
+        hostile_path.symlink_to(real_path)
+    assert hostile_path.is_symlink()
+    with pytest.raises(KnowledgeReleaseError, match="unsafe release input path"):
         verify_knowledge_release_inputs(candidate, approval)
 ```
 
@@ -1457,7 +3061,19 @@ Expected: FAIL during collection because `scripts.knowledge_release` does not ex
 
 Accept exactly these top-level approval keys: `approval_schema_version`, `schema_version`, `bundle_version`, `identity_catalog_version`, `policy_revision`, `knowledge_sha256`, `content_sha256`, `coverage_sha256`, `coverage_change_sha256`, `corpus_counts`, `reviewed_by`, and `reviewed_on`. Require approval schema 1, knowledge schema 3, bundle `3.0.0`, catalog `1.0.0`, policy `2.0.0`, lowercase SHA-256 strings, a non-empty reviewer, and an ISO review date. `corpus_counts` has the exact summary keys emitted by Task 6 and positive integer values.
 
-Resolve all paths strictly; reject symlinks, special files, path overlap, missing or extra candidate entries, malformed/non-canonical JSON, and changed bytes during verification. Open the database and coverage together through `KnowledgeStore` with the approved raw/logical/coverage/version expectations. Validate the change artifact against its closed schema, require `to_bundle_version == "3.0.0"`, require its current limitations to equal the coverage report's Unknown rows, and then return resolved absolute paths and hashes.
+Before opening any input, inspect every path component without following links.
+The candidate must be a real directory rather than a symlink; each of its three
+approved artifacts must be a non-symlinked regular file whose resolved parent is
+exactly the resolved candidate directory; and the approval path must itself be
+a non-symlinked regular file. Any failure raises
+`KnowledgeReleaseError("unsafe release input path")`. Then resolve all paths
+strictly; reject special files, path overlap, missing or extra candidate
+entries, malformed/non-canonical JSON, and changed bytes during verification.
+Open the database and coverage together through `KnowledgeStore` with the
+approved raw/logical/coverage/version expectations. Validate the change
+artifact against its closed schema, require `to_bundle_version == "3.0.0"`,
+require its current limitations to equal the coverage report's Unknown rows,
+and then return resolved absolute paths and hashes.
 
 The approval file is the source-controlled trust record; rewriting artifact hashes alone cannot bless a swap. This verifier does not create or modify an app release manifest.
 
@@ -1470,7 +3086,10 @@ Run:
 .venv/bin/python -m py_compile scripts/knowledge_release.py
 ```
 
-Expected: PASS for valid input, every single-artifact tamper, coordinated bundle/report swaps, extra files, symlinks, malformed approval values, version drift, and Unknown-limitation drift.
+Expected: PASS for valid input, every single-artifact tamper, coordinated
+bundle/report swaps, the separate extra-file case, candidate-directory and all
+three artifact symlinks, approval symlink, containment/regular-file checks,
+malformed approval values, version drift, and Unknown-limitation drift.
 
 ```bash
 git add scripts/knowledge_release.py tests/test_knowledge_release_inputs.py
