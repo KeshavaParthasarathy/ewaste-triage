@@ -189,6 +189,15 @@ class ResolutionStep:
     selected_record_id: str | None
     outcome: str
 
+    def __post_init__(self) -> None:
+        if self.outcome not in {
+            "no_candidates",
+            "filtered",
+            "selected",
+            "conflict",
+        }:
+            raise ValueError("resolution outcome must be a closed contract value")
+
 
 @dataclass(frozen=True)
 class LifecycleResolution:
