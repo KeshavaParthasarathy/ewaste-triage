@@ -607,6 +607,15 @@ class _YamlRuleError(Exception):
     pass
 
 
+_PathIdentity = tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class _CheckedPath:
+    path: Path
+    identities: tuple[_PathIdentity, ...]
+
+
 class _ClosedLoader(yaml.SafeLoader):
     pass
 
@@ -642,42 +651,245 @@ def _absolute_without_resolving(path: Path) -> Path:
     return Path(os.path.abspath(os.fspath(path)))
 
 
-def _ensure_no_symlink_components(path: Path, filename: str = ".") -> Path:
+def _stat_identity(value: os.stat_result) -> _PathIdentity:
+    return value.st_dev, value.st_ino, stat.S_IFMT(value.st_mode)
+
+
+def _ensure_no_symlink_components(
+    path: Path,
+    filename: str = ".",
+    *,
+    identities: list[_PathIdentity] | None = None,
+) -> Path:
     absolute = _absolute_without_resolving(path)
     current = Path(absolute.anchor)
-    for part in absolute.parts[1:]:
-        current = current / part
+    for index, part in enumerate(absolute.parts):
+        if index:
+            current /= part
         try:
-            mode = current.lstat().st_mode
+            current_stat = current.lstat()
         except FileNotFoundError:
             break
         except OSError as exc:
             _fail(filename, "path", f"unsafe path: {exc}")
-        if stat.S_ISLNK(mode):
+        if stat.S_ISLNK(current_stat.st_mode):
             _fail(filename, "path", f"unsafe path contains symlink component {current}")
+        if identities is not None:
+            identities.append(_stat_identity(current_stat))
     return absolute
+
+
+def _capture_checked_path(
+    path: Path,
+    filename: str,
+    *,
+    directory: bool,
+    missing_message: str,
+) -> _CheckedPath:
+    identities: list[_PathIdentity] = []
+    absolute = _ensure_no_symlink_components(
+        path,
+        filename,
+        identities=identities,
+    )
+    try:
+        final_stat = absolute.lstat()
+    except (FileNotFoundError, OSError):
+        _fail(filename, "path", missing_message)
+    if len(identities) != len(absolute.parts):
+        _fail(filename, "path", missing_message)
+    if identities[-1] != _stat_identity(final_stat):
+        _fail(filename, "path", "unsafe path changed during validation")
+    if directory:
+        if not stat.S_ISDIR(final_stat.st_mode):
+            _fail(filename, "path", missing_message)
+    elif not stat.S_ISREG(final_stat.st_mode):
+        _fail(filename, "path", missing_message)
+    return _CheckedPath(absolute, tuple(identities))
+
+
+def _descriptor_flags(*, directory: bool) -> int:
+    required = ("O_CLOEXEC", "O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
+    if any(not hasattr(os, name) for name in required):
+        raise OSError("no-follow descriptor walking is unavailable")
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    if directory:
+        flags |= os.O_DIRECTORY
+    else:
+        flags |= os.O_NONBLOCK
+    return flags
+
+
+def _verify_opened_component(
+    descriptor: int,
+    expected: _PathIdentity,
+    *,
+    directory: bool,
+    parent_descriptor: int | None,
+    component_name: str,
+    filename: str,
+) -> None:
+    opened_stat = os.fstat(descriptor)
+    if directory:
+        if not stat.S_ISDIR(opened_stat.st_mode):
+            _fail(filename, "path", "unsafe path component is not a directory")
+    elif not stat.S_ISREG(opened_stat.st_mode):
+        _fail(filename, "path", "unsafe path document is not a regular file")
+    if _stat_identity(opened_stat) != expected:
+        _fail(filename, "path", "unsafe path changed during validation")
+    if parent_descriptor is None:
+        entry_stat = os.stat(component_name, follow_symlinks=False)
+    else:
+        entry_stat = os.stat(
+            component_name,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+    if _stat_identity(entry_stat) != expected:
+        _fail(filename, "path", "unsafe path changed during validation")
+
+
+def _open_checked_path(
+    checked: _CheckedPath,
+    filename: str,
+    *,
+    directory: bool,
+) -> int:
+    parts = checked.path.parts
+    if len(parts) != len(checked.identities):
+        _fail(filename, "path", "unsafe path changed during validation")
+    descriptors: list[int] = []
+    try:
+        current_descriptor = os.open(
+            checked.path.anchor,
+            _descriptor_flags(directory=True),
+        )
+        descriptors.append(current_descriptor)
+        _verify_opened_component(
+            current_descriptor,
+            checked.identities[0],
+            directory=True,
+            parent_descriptor=None,
+            component_name=checked.path.anchor,
+            filename=filename,
+        )
+        for index, component_name in enumerate(parts[1:], start=1):
+            component_is_directory = directory or index < len(parts) - 1
+            next_descriptor = os.open(
+                component_name,
+                _descriptor_flags(directory=component_is_directory),
+                dir_fd=current_descriptor,
+            )
+            descriptors.append(next_descriptor)
+            _verify_opened_component(
+                next_descriptor,
+                checked.identities[index],
+                directory=component_is_directory,
+                parent_descriptor=current_descriptor,
+                component_name=component_name,
+                filename=filename,
+            )
+            current_descriptor = next_descriptor
+        return descriptors.pop()
+    except EvidenceValidationError:
+        raise
+    except (OSError, TypeError, NotImplementedError) as exc:
+        _fail(filename, "path", f"unsafe path: {exc}")
+    finally:
+        for descriptor in reversed(descriptors):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
 
 def _require_directory(path: Path, filename: str, missing_message: str) -> Path:
-    absolute = _ensure_no_symlink_components(path, filename)
-    try:
-        mode = absolute.lstat().st_mode
-    except (FileNotFoundError, OSError):
-        _fail(filename, "path", missing_message)
-    if not stat.S_ISDIR(mode):
-        _fail(filename, "path", missing_message)
-    return absolute
+    return _require_checked_directory(path, filename, missing_message).path
+
+
+def _require_checked_directory(
+    path: Path,
+    filename: str,
+    missing_message: str,
+    *,
+    checked: _CheckedPath | None = None,
+) -> _CheckedPath:
+    absolute = _absolute_without_resolving(path)
+    if checked is None:
+        checked = _capture_checked_path(
+            absolute,
+            filename,
+            directory=True,
+            missing_message=missing_message,
+        )
+    elif checked.path != absolute:
+        _fail(filename, "path", "unsafe path does not match validated directory")
+    descriptor = _open_checked_path(checked, filename, directory=True)
+    os.close(descriptor)
+    return checked
 
 
 def _require_regular_file(path: Path, filename: str) -> Path:
-    absolute = _ensure_no_symlink_components(path, filename)
+    return _capture_checked_path(
+        path,
+        filename,
+        directory=False,
+        missing_message="required regular file is missing or not regular",
+    ).path
+
+
+def _directory_names_no_follow(
+    path: Path,
+    filename: str,
+    *,
+    checked: _CheckedPath | None = None,
+) -> dict[str, _CheckedPath]:
+    absolute = _absolute_without_resolving(path)
+    if checked is None:
+        checked = _capture_checked_path(
+            absolute,
+            filename,
+            directory=True,
+            missing_message="unsafe path directory changed during validation",
+        )
+    elif checked.path != absolute:
+        _fail(filename, "path", "unsafe path does not match validated directory")
+    descriptor = _open_checked_path(checked, filename, directory=True)
     try:
-        mode = absolute.lstat().st_mode
-    except (FileNotFoundError, OSError):
-        _fail(filename, "path", "required regular file is missing")
-    if not stat.S_ISREG(mode):
-        _fail(filename, "path", "required regular file is missing or not regular")
-    return absolute
+        entries: dict[str, _CheckedPath] = {}
+        with os.scandir(descriptor) as iterator:
+            for entry in iterator:
+                entry_stat = entry.stat(follow_symlinks=False)
+                if entry.inode() != entry_stat.st_ino:
+                    _fail(
+                        filename,
+                        "path",
+                        f"unsafe path directory entry changed: {entry.name!r}",
+                    )
+                if stat.S_ISLNK(entry_stat.st_mode):
+                    _fail(
+                        filename,
+                        "path",
+                        f"unsafe path directory entry is a symlink: {entry.name!r}",
+                    )
+                if not (
+                    stat.S_ISREG(entry_stat.st_mode)
+                    or stat.S_ISDIR(entry_stat.st_mode)
+                ):
+                    _fail(
+                        filename,
+                        "path",
+                        f"unsafe path directory entry is not regular: {entry.name!r}",
+                    )
+                entries[entry.name] = _CheckedPath(
+                    checked.path / entry.name,
+                    (*checked.identities, _stat_identity(entry_stat)),
+                )
+        return entries
+    except OSError as exc:
+        _fail(filename, "path", f"unsafe path: {exc}")
+    finally:
+        os.close(descriptor)
 
 
 def _closed_directory(
@@ -686,11 +898,10 @@ def _closed_directory(
     filename: str,
     *,
     optional_names: frozenset[str] = frozenset(),
-) -> None:
-    try:
-        names = {entry.name for entry in path.iterdir()}
-    except OSError as exc:
-        _fail(filename, "path", f"unsafe path: {exc}")
+    checked: _CheckedPath | None = None,
+) -> dict[str, _CheckedPath]:
+    entries = _directory_names_no_follow(path, filename, checked=checked)
+    names = set(entries)
     unexpected = names - allowed_names - optional_names
     if unexpected:
         _fail(
@@ -698,14 +909,34 @@ def _closed_directory(
             "path",
             f"unexpected directory entry: {sorted(unexpected)!r}",
         )
+    return entries
 
 
-def _load_yaml(path: Path, filename: str) -> dict[str, object]:
-    regular = _require_regular_file(path, filename)
+def _load_yaml(
+    path: Path,
+    filename: str,
+    *,
+    checked: _CheckedPath | None = None,
+) -> dict[str, object]:
+    absolute = _absolute_without_resolving(path)
+    if checked is None:
+        checked = _capture_checked_path(
+            absolute,
+            filename,
+            directory=False,
+            missing_message="required regular file is missing or not regular",
+        )
+    elif checked.path != absolute:
+        _fail(filename, "path", "unsafe path does not match validated document")
+    _require_regular_file(path, filename)
+    descriptor = _open_checked_path(checked, filename, directory=False)
     try:
-        text = regular.read_text(encoding="utf-8")
+        with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as stream:
+            text = stream.read()
     except (OSError, UnicodeError) as exc:
         _fail(filename, "document root", f"invalid YAML encoding: {exc}")
+    finally:
+        os.close(descriptor)
     try:
         for token in yaml.scan(text):
             if isinstance(token, AnchorToken):
@@ -830,7 +1061,10 @@ def _parse_number(value: object, filename: str, path: str) -> float:
         _type_failure(filename, path, "a number", value)
     if type(value) not in {int, float}:
         _type_failure(filename, path, "a number", value)
-    result = float(value)
+    try:
+        result = float(value)
+    except OverflowError:
+        _fail(filename, path, "number must be finite")
     if not math.isfinite(result):
         _fail(filename, path, "number must be finite")
     return result
@@ -1074,34 +1308,50 @@ def _validate_policy_predicates(policy: PolicyRecord, filename: str, path: str) 
         family_values[family] = value
 
 
-def _shared_root(source_dir: Path) -> Path:
-    root = _require_directory(
+def _shared_root(source_dir: Path) -> tuple[Path, dict[str, _CheckedPath]]:
+    root_checked = _require_checked_directory(
         source_dir, ".", "source directory is missing or not a directory"
     )
-    _closed_directory(
+    root = root_checked.path
+    root_entries = _closed_directory(
         root,
         frozenset({"bundle.yaml", "common"}),
         ".",
         optional_names=frozenset(
             {"categories", "sources.yaml", "device_components.yaml"}
         ),
+        checked=root_checked,
     )
-    common = _require_directory(
-        root / "common", "common", "common directory is missing or not a directory"
+    common_checked = _require_checked_directory(
+        root / "common",
+        "common",
+        "common directory is missing or not a directory",
+        checked=root_entries.get("common"),
     )
-    _closed_directory(
-        common,
+    common_entries = _closed_directory(
+        common_checked.path,
         frozenset({"sources.yaml", "policies.yaml"}),
         "common",
+        checked=common_checked,
     )
-    return root
+    checked_documents: dict[str, _CheckedPath] = {}
+    if "bundle.yaml" in root_entries:
+        checked_documents["bundle.yaml"] = root_entries["bundle.yaml"]
+    for leaf in ("sources.yaml", "policies.yaml"):
+        if leaf in common_entries:
+            checked_documents[f"common/{leaf}"] = common_entries[leaf]
+    return root, checked_documents
 
 
 def load_shared_evidence_documents(source_dir: Path) -> SharedEvidenceDocuments:
-    root = _shared_root(Path(source_dir))
+    root, checked_documents = _shared_root(Path(source_dir))
 
     bundle_filename = "bundle.yaml"
-    bundle_doc = _load_yaml(root / bundle_filename, bundle_filename)
+    bundle_doc = _load_yaml(
+        root / bundle_filename,
+        bundle_filename,
+        checked=checked_documents.get(bundle_filename),
+    )
     _validate_document_root(
         bundle_doc, _SHARED_ROOT_KEYS[bundle_filename], bundle_filename
     )
@@ -1131,7 +1381,11 @@ def load_shared_evidence_documents(source_dir: Path) -> SharedEvidenceDocuments:
         )
 
     source_filename = "common/sources.yaml"
-    source_doc = _load_yaml(root / source_filename, source_filename)
+    source_doc = _load_yaml(
+        root / source_filename,
+        source_filename,
+        checked=checked_documents.get(source_filename),
+    )
     _validate_document_root(
         source_doc, _SHARED_ROOT_KEYS[source_filename], source_filename
     )
@@ -1155,7 +1409,11 @@ def load_shared_evidence_documents(source_dir: Path) -> SharedEvidenceDocuments:
         _validate_source(source, source_filename, f"sources[{index}]")
 
     policy_filename = "common/policies.yaml"
-    policy_doc = _load_yaml(root / policy_filename, policy_filename)
+    policy_doc = _load_yaml(
+        root / policy_filename,
+        policy_filename,
+        checked=checked_documents.get(policy_filename),
+    )
     _validate_document_root(
         policy_doc, _SHARED_ROOT_KEYS[policy_filename], policy_filename
     )
@@ -1205,7 +1463,12 @@ def load_shared_evidence_documents(source_dir: Path) -> SharedEvidenceDocuments:
     )
 
 
-def _category_directory(source_dir: Path, category_id: object) -> tuple[Path, str]:
+def _category_directory(
+    source_dir: Path,
+    category_id: object,
+    *,
+    checked_category: _CheckedPath | None = None,
+) -> tuple[Path, str, dict[str, _CheckedPath]]:
     root = _require_directory(
         Path(source_dir), ".", "source directory is missing or not a directory"
     )
@@ -1224,34 +1487,50 @@ def _category_directory(source_dir: Path, category_id: object) -> tuple[Path, st
             _fail("categories", "path", "unsafe category_id path containment")
     except ValueError:
         _fail("categories", "path", "unsafe category_id path containment")
-    category_dir = _require_directory(
+    category_checked = _require_checked_directory(
         absolute_category,
         f"categories/{parsed_category_id}",
         "missing category directory",
+        checked=checked_category,
     )
-    _closed_directory(
+    category_dir = category_checked.path
+    checked_documents = _closed_directory(
         category_dir,
         frozenset(_CATEGORY_ROOT_KEYS),
         f"categories/{parsed_category_id}",
+        checked=category_checked,
     )
-    return category_dir, parsed_category_id
+    return category_dir, parsed_category_id, checked_documents
 
 
 def _category_filename(category_id: str, leaf: str) -> str:
     return f"categories/{category_id}/{leaf}"
 
 
-def _category_document(category_dir: Path, category_id: str, leaf: str) -> dict[str, object]:
+def _category_document(
+    category_dir: Path,
+    category_id: str,
+    leaf: str,
+    checked_documents: dict[str, _CheckedPath],
+) -> dict[str, object]:
     filename = _category_filename(category_id, leaf)
-    document = _load_yaml(category_dir / leaf, filename)
+    document = _load_yaml(
+        category_dir / leaf,
+        filename,
+        checked=checked_documents.get(leaf),
+    )
     _validate_document_root(document, _CATEGORY_ROOT_KEYS[leaf], filename)
     return document
 
 
 def _parse_category_documents(
-    category_dir: Path, category_id: str
+    category_dir: Path,
+    category_id: str,
+    checked_documents: dict[str, _CheckedPath],
 ) -> CategoryEvidenceDocuments:
-    sources_doc = _category_document(category_dir, category_id, "sources.yaml")
+    sources_doc = _category_document(
+        category_dir, category_id, "sources.yaml", checked_documents
+    )
     sources = _parse_record_list(
         sources_doc["sources"],
         "source",
@@ -1260,7 +1539,7 @@ def _parse_category_documents(
     )
 
     identities_doc = _category_document(
-        category_dir, category_id, "identities.yaml"
+        category_dir, category_id, "identities.yaml", checked_documents
     )
     identity_filename = _category_filename(category_id, "identities.yaml")
     category = _parse_record(
@@ -1286,7 +1565,7 @@ def _parse_category_documents(
     )
 
     lifecycle_doc = _category_document(
-        category_dir, category_id, "lifecycles.yaml"
+        category_dir, category_id, "lifecycles.yaml", checked_documents
     )
     specific_lifecycles = _parse_record_list(
         lifecycle_doc["lifecycles"],
@@ -1296,7 +1575,10 @@ def _parse_category_documents(
     )
 
     averages_doc = _category_document(
-        category_dir, category_id, "industry_averages.yaml"
+        category_dir,
+        category_id,
+        "industry_averages.yaml",
+        checked_documents,
     )
     industry_averages = _parse_record_list(
         averages_doc["industry_averages"],
@@ -1306,7 +1588,7 @@ def _parse_category_documents(
     )
 
     components_doc = _category_document(
-        category_dir, category_id, "components.yaml"
+        category_dir, category_id, "components.yaml", checked_documents
     )
     components_filename = _category_filename(category_id, "components.yaml")
     component_definitions = _parse_record_list(
@@ -1328,7 +1610,9 @@ def _parse_category_documents(
         "associations",
     )
 
-    hazards_doc = _category_document(category_dir, category_id, "hazards.yaml")
+    hazards_doc = _category_document(
+        category_dir, category_id, "hazards.yaml", checked_documents
+    )
     hazards = _parse_record_list(
         hazards_doc["hazards"],
         "hazard",
@@ -1337,7 +1621,7 @@ def _parse_category_documents(
     )
 
     coverage_doc = _category_document(
-        category_dir, category_id, "coverage.yaml"
+        category_dir, category_id, "coverage.yaml", checked_documents
     )
     unknowns = _parse_record_list(
         coverage_doc["unknowns"],
@@ -1628,6 +1912,7 @@ def _validate_endpoint(
 def _validate_lifecycle_common(
     record: SpecificLifecycleRecord | IndustryAverageRecord,
     subtype_id: str | None,
+    allowed_variant_ids: frozenset[str],
     variant_by_id: dict[str, VariantRecord],
     available_sources: frozenset[str],
     filename: str,
@@ -1661,6 +1946,16 @@ def _validate_lifecycle_common(
         if variant is None:
             _fail(filename, path, "variant filter reference does not resolve")
         if subtype_id is None or variant.subtype_id != subtype_id:
+            _fail(filename, path, "variant filter must belong to the scoped subtype")
+        if variant_id not in allowed_variant_ids:
+            if record.scope.kind is ScopeKind.MODEL:
+                _fail(filename, path, "variant filter must be declared by the scoped model")
+            if record.scope.kind is ScopeKind.FAMILY:
+                _fail(
+                    filename,
+                    path,
+                    "variant filter must be declared by an identity in the scoped family",
+                )
             _fail(filename, path, "variant filter must belong to the scoped subtype")
     _validate_endpoint(record.endpoint, record.endpoint_kind, filename, path)
     _source_refs(record.source_ids, available_sources, filename, path)
@@ -1698,9 +1993,27 @@ def _validate_lifecycles(
             _fail(filename, path, "grade D cannot support lifecycle")
         if record.evidence_level is not expected:
             _fail(filename, path, f"specific lifecycle evidence level must be {expected.value}")
+        if record.scope.kind is ScopeKind.MODEL:
+            allowed_variant_ids = frozenset(
+                model_by_id[record.scope.id].variant_ids
+            )
+        elif record.scope.kind is ScopeKind.FAMILY:
+            allowed_variant_ids = frozenset(
+                variant_id
+                for identity in documents.identities
+                if identity.family_id == record.scope.id
+                for variant_id in identity.variant_ids
+            )
+        else:
+            allowed_variant_ids = frozenset(
+                variant.variant_id
+                for variant in variant_by_id.values()
+                if variant.subtype_id == subtype_id
+            )
         _validate_lifecycle_common(
             record,
             subtype_id,
+            allowed_variant_ids,
             variant_by_id,
             available_sources,
             filename,
@@ -1748,6 +2061,7 @@ def _validate_lifecycles(
         _validate_lifecycle_common(
             record,
             None,
+            frozenset(),
             variant_by_id,
             available_sources,
             filename,
@@ -2010,6 +2324,7 @@ def load_category_evidence_documents(
     category_id: str,
     *,
     shared: SharedEvidenceDocuments | None = None,
+    _checked_category: _CheckedPath | None = None,
 ) -> CategoryEvidenceDocuments:
     """Load and validate one category without examining sibling categories."""
 
@@ -2018,8 +2333,10 @@ def load_category_evidence_documents(
     elif not isinstance(shared, SharedEvidenceDocuments):
         _fail(".", "shared", "shared must be SharedEvidenceDocuments")
 
-    category_dir, parsed_category_id = _category_directory(
-        Path(source_dir), category_id
+    category_dir, parsed_category_id, checked_documents = _category_directory(
+        Path(source_dir),
+        category_id,
+        checked_category=_checked_category,
     )
     if parsed_category_id not in shared.bundle.category_ids:
         _fail(
@@ -2027,24 +2344,32 @@ def load_category_evidence_documents(
             "bundle.category_ids",
             "category_id is not declared by the bundle",
         )
-    documents = _parse_category_documents(category_dir, parsed_category_id)
+    documents = _parse_category_documents(
+        category_dir,
+        parsed_category_id,
+        checked_documents,
+    )
     _validate_category_documents(documents, parsed_category_id, shared)
     return documents
 
 
-def _complete_categories_directory(source_dir: Path) -> Path:
-    root = _require_directory(
+def _complete_categories_directory(
+    source_dir: Path,
+) -> dict[str, _CheckedPath]:
+    root_checked = _require_checked_directory(
         Path(source_dir), ".", "source directory is missing or not a directory"
     )
-    categories = _require_directory(
-        root / "categories",
+    categories_checked = _require_checked_directory(
+        root_checked.path / "categories",
         "categories",
         "missing category directory",
     )
-    try:
-        names = {entry.name for entry in categories.iterdir()}
-    except OSError as exc:
-        _fail("categories", "path", f"unsafe path: {exc}")
+    entries = _directory_names_no_follow(
+        categories_checked.path,
+        "categories",
+        checked=categories_checked,
+    )
+    names = set(entries)
     expected = frozenset(RELEASED_CATEGORY_IDS)
     missing = expected - names
     if missing:
@@ -2060,7 +2385,7 @@ def _complete_categories_directory(source_dir: Path) -> Path:
             "path",
             f"unexpected category directory: {sorted(unexpected)!r}",
         )
-    return categories
+    return entries
 
 
 def _validate_global_identifier_namespace(
@@ -2148,12 +2473,13 @@ def load_evidence_documents(source_dir: Path) -> EvidenceDocuments:
 
     source_dir = Path(source_dir)
     shared = load_shared_evidence_documents(source_dir)
-    _complete_categories_directory(source_dir)
+    checked_categories = _complete_categories_directory(source_dir)
     categories = tuple(
         load_category_evidence_documents(
             source_dir,
             category_id,
             shared=shared,
+            _checked_category=checked_categories[category_id],
         )
         for category_id in RELEASED_CATEGORY_IDS
     )

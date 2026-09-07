@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, fields
 from datetime import date
+import os
 from pathlib import Path
 import shutil
 from typing import Callable
 
 import pytest
 
+import scripts.knowledge_schema as knowledge_schema
 from scripts.knowledge_schema import (
     CategoryEvidenceDocuments,
     EvidenceDocuments,
@@ -1680,6 +1682,22 @@ def test_both_lifecycle_record_types_reject_invalid_bounds(
         _load_mouse_category(source)
 
 
+def test_lifecycle_numeric_overflow_is_a_location_bearing_validation_error(tmp_path):
+    source = make_valid_category_knowledge_source(tmp_path, TEST_CATEGORY_ID)
+    mutate_yaml(
+        source / f"categories/{TEST_CATEGORY_ID}/lifecycles.yaml",
+        lambda document: document["lifecycles"][0].update(
+            {"lower_bound": 10**400}
+        ),
+    )
+
+    with pytest.raises(EvidenceValidationError) as caught:
+        _load_mouse_category(source)
+    assert caught.value.filename.endswith("/lifecycles.yaml")
+    assert caught.value.record_path == "lifecycles[0].lower_bound"
+    assert "finite" in caught.value.message
+
+
 def test_specific_lifecycle_may_preserve_positive_sourced_point_records(tmp_path):
     source = make_valid_category_knowledge_source(tmp_path, TEST_CATEGORY_ID)
     path = source / f"categories/{TEST_CATEGORY_ID}/lifecycles.yaml"
@@ -1872,6 +1890,104 @@ def test_lifecycle_variant_filters_are_disjoint_and_scope_owned(tmp_path):
     )
     with pytest.raises(EvidenceValidationError, match="variant.*scoped subtype"):
         _load_mouse_category(wrong_subtype)
+
+
+@pytest.mark.parametrize(
+    ("lifecycle_index", "identity_indexes", "owned_variant", "sibling_variant"),
+    [
+        (
+            0,
+            (1,),
+            f"{TEST_CATEGORY_ID}_variant_0a",
+            f"{TEST_CATEGORY_ID}_variant_0b",
+        ),
+        (
+            1,
+            (2, 3),
+            f"{TEST_CATEGORY_ID}_variant_1a",
+            f"{TEST_CATEGORY_ID}_variant_1b",
+        ),
+    ],
+    ids=("model", "family"),
+)
+@pytest.mark.parametrize(
+    "filter_field", ("required_variant_ids", "excluded_variant_ids")
+)
+def test_specific_lifecycle_variant_filters_reject_same_subtype_sibling_variants(
+    tmp_path,
+    lifecycle_index,
+    identity_indexes,
+    owned_variant,
+    sibling_variant,
+    filter_field,
+):
+    source = make_valid_category_knowledge_source(tmp_path, TEST_CATEGORY_ID)
+    identities_path = source / f"categories/{TEST_CATEGORY_ID}/identities.yaml"
+    lifecycle_path = source / f"categories/{TEST_CATEGORY_ID}/lifecycles.yaml"
+
+    def narrow_identity_variants(document: dict[str, object]) -> None:
+        for index in identity_indexes:
+            document["identities"][index]["variant_ids"] = [owned_variant]
+
+    mutate_yaml(identities_path, narrow_identity_variants)
+    mutate_yaml(
+        lifecycle_path,
+        lambda document: document["lifecycles"][lifecycle_index].update(
+            {filter_field: [sibling_variant]}
+        ),
+    )
+
+    with pytest.raises(
+        EvidenceValidationError,
+        match="variant filter.*declared.*(model|family)",
+    ):
+        _load_mouse_category(source)
+
+
+@pytest.mark.parametrize(
+    ("lifecycle_index", "identity_indexes", "owned_variant"),
+    [
+        (0, (1,), f"{TEST_CATEGORY_ID}_variant_0a"),
+        (1, (2,), f"{TEST_CATEGORY_ID}_variant_1a"),
+    ],
+    ids=("model", "family"),
+)
+@pytest.mark.parametrize(
+    "filter_field", ("required_variant_ids", "excluded_variant_ids")
+)
+def test_specific_lifecycle_variant_filters_accept_variants_declared_by_scope(
+    tmp_path,
+    lifecycle_index,
+    identity_indexes,
+    owned_variant,
+    filter_field,
+):
+    source = make_valid_category_knowledge_source(tmp_path, TEST_CATEGORY_ID)
+    identities_path = source / f"categories/{TEST_CATEGORY_ID}/identities.yaml"
+    lifecycle_path = source / f"categories/{TEST_CATEGORY_ID}/lifecycles.yaml"
+
+    def narrow_identity_variants(document: dict[str, object]) -> None:
+        if lifecycle_index == 1:
+            for index in (2, 3):
+                document["identities"][index]["variant_ids"] = []
+        for index in identity_indexes:
+            document["identities"][index]["variant_ids"] = [owned_variant]
+
+    mutate_yaml(identities_path, narrow_identity_variants)
+
+    filters = {
+        "required_variant_ids": [],
+        "excluded_variant_ids": [],
+    }
+    filters[filter_field] = [owned_variant]
+    mutate_yaml(
+        lifecycle_path,
+        lambda document: document["lifecycles"][lifecycle_index].update(filters),
+    )
+
+    category = _load_mouse_category(source)
+    lifecycle = category.specific_lifecycles[lifecycle_index]
+    assert getattr(lifecycle, filter_field) == (owned_variant,)
 
 
 @pytest.mark.parametrize("root_key", ["lifecycles", "industry_averages"])
@@ -2556,6 +2672,141 @@ def test_loader_rejects_a_symlink_in_an_ancestor_path_component(tmp_path):
     hostile_source = linked_parent / source.name
     with pytest.raises(EvidenceValidationError, match="unsafe path"):
         load_shared_evidence_documents(hostile_source)
+
+
+@pytest.mark.parametrize(
+    ("name", "relative_path", "category_loader"),
+    [
+        ("bundle", "bundle.yaml", False),
+        (
+            "category-identities",
+            f"categories/{TEST_CATEGORY_ID}/identities.yaml",
+            True,
+        ),
+    ],
+)
+def test_loader_rejects_document_swapped_to_out_of_tree_symlink_after_validation(
+    tmp_path,
+    monkeypatch,
+    name,
+    relative_path,
+    category_loader,
+):
+    source = make_valid_category_knowledge_source(
+        tmp_path / "source", TEST_CATEGORY_ID
+    )
+    shared = load_shared_evidence_documents(source) if category_loader else None
+    target = source / relative_path
+    outside = tmp_path / f"outside-{name}.yaml"
+    shutil.copy2(target, outside)
+    original = knowledge_schema._require_regular_file
+    swap_count = 0
+
+    def swap_after_validation(path: Path, filename: str) -> Path:
+        nonlocal swap_count
+        checked = original(path, filename)
+        if checked == target and swap_count == 0:
+            target.unlink()
+            target.symlink_to(outside)
+            swap_count += 1
+        return checked
+
+    monkeypatch.setattr(
+        knowledge_schema, "_require_regular_file", swap_after_validation
+    )
+    with pytest.raises(EvidenceValidationError, match="unsafe path|changed"):
+        if category_loader:
+            load_category_evidence_documents(
+                source, TEST_CATEGORY_ID, shared=shared
+            )
+        else:
+            load_shared_evidence_documents(source)
+    assert swap_count == 1
+
+
+@pytest.mark.parametrize(
+    ("name", "ancestor_path", "last_document", "category_loader"),
+    [
+        ("common", "common", "common/policies.yaml", False),
+        (
+            "category",
+            f"categories/{TEST_CATEGORY_ID}",
+            f"categories/{TEST_CATEGORY_ID}/coverage.yaml",
+            True,
+        ),
+    ],
+)
+def test_loader_rejects_ancestor_swapped_to_out_of_tree_symlink_before_read(
+    tmp_path,
+    monkeypatch,
+    name,
+    ancestor_path,
+    last_document,
+    category_loader,
+):
+    source = make_valid_category_knowledge_source(
+        tmp_path / "source", TEST_CATEGORY_ID
+    )
+    shared = load_shared_evidence_documents(source) if category_loader else None
+    ancestor = source / ancestor_path
+    target = source / last_document
+    outside = tmp_path / f"outside-{name}"
+    shutil.copytree(ancestor, outside)
+    original = knowledge_schema._require_regular_file
+    swap_count = 0
+
+    def swap_after_validation(path: Path, filename: str) -> Path:
+        nonlocal swap_count
+        checked = original(path, filename)
+        if checked == target and swap_count == 0:
+            shutil.rmtree(ancestor)
+            ancestor.symlink_to(outside, target_is_directory=True)
+            swap_count += 1
+        return checked
+
+    monkeypatch.setattr(
+        knowledge_schema, "_require_regular_file", swap_after_validation
+    )
+    with pytest.raises(EvidenceValidationError, match="unsafe path|changed"):
+        if category_loader:
+            load_category_evidence_documents(
+                source, TEST_CATEGORY_ID, shared=shared
+            )
+        else:
+            load_shared_evidence_documents(source)
+    assert swap_count == 1
+
+
+def test_loader_rejects_regular_entry_replaced_after_directory_snapshot(
+    tmp_path, monkeypatch
+):
+    source = make_valid_shared_knowledge_source(tmp_path / "source")
+    target = source / "bundle.yaml"
+    outside = tmp_path / "outside-bundle.yaml"
+    shutil.copy2(target, outside)
+    original = knowledge_schema._directory_names_no_follow
+    swap_count = 0
+
+    def swap_after_snapshot(
+        path: Path,
+        filename: str,
+        *,
+        checked=None,
+    ) -> dict[str, object]:
+        nonlocal swap_count
+        entries = original(path, filename, checked=checked)
+        if filename == "." and swap_count == 0:
+            target.unlink()
+            os.link(outside, target)
+            swap_count += 1
+        return entries
+
+    monkeypatch.setattr(
+        knowledge_schema, "_directory_names_no_follow", swap_after_snapshot
+    )
+    with pytest.raises(EvidenceValidationError, match="unsafe path|changed"):
+        load_shared_evidence_documents(source)
+    assert swap_count == 1
 
 
 def test_category_source_list_may_be_empty_when_claims_use_shared_sources(tmp_path):
