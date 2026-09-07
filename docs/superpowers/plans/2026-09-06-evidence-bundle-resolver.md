@@ -2534,6 +2534,80 @@ def test_source_and_destination_may_not_overlap(tmp_path, destination_kind):
     assert snapshot_tree(source) == before
 
 
+@pytest.mark.parametrize(
+    "relationship",
+    ("same_inode", "destination_below_source", "destination_above_source"),
+)
+def test_case_alias_overlap_is_rejected_before_any_destructive_call(
+    tmp_path, monkeypatch, relationship,
+):
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination, identity_view = case_alias_identity_view(source, relationship)
+    install_path_identity_view(monkeypatch, identity_view)
+    mutations = spy_on_compiler_mkdir_and_replace(monkeypatch)
+    before = snapshot_tree(source)
+    before_existing = snapshot_existing_identity_view(identity_view)
+    with pytest.raises(KnowledgeCompilationError, match="must not overlap"):
+        compile_knowledge_bundle(source, destination)
+    assert mutations.calls == []
+    assert snapshot_tree(source) == before
+    assert snapshot_existing_identity_view(identity_view) == before_existing
+    assert current_invocation_siblings(destination) == []
+
+
+def test_case_alias_identity_drift_is_rechecked_before_promotion(
+    tmp_path, monkeypatch,
+):
+    source = make_valid_knowledge_source(tmp_path / "source")
+    output = tmp_path / "bundle"
+    original = compile_knowledge_bundle(source, output)
+    install_case_alias_identity_drift_at_promotion(monkeypatch, source, output)
+    promotion = spy_on_promotion_replace(monkeypatch, output)
+    with pytest.raises(KnowledgeCompilationError, match="unsafe path identity changed"):
+        compile_knowledge_bundle(source, output)
+    assert promotion.calls == []
+    assert read_bundle_manifest(output) == original
+    assert current_invocation_siblings(output) == []
+
+
+def test_two_missing_parent_entries_are_fsynced_in_creation_order(
+    tmp_path, monkeypatch,
+):
+    source = make_valid_knowledge_source(tmp_path / "source")
+    outer = tmp_path / "new-outer"
+    inner = outer / "new-inner"
+    output = inner / "bundle"
+    trace = trace_parent_creation_and_fsync(monkeypatch, output)
+    compile_knowledge_bundle(source, output)
+    assert trace.before_stage == [
+        ("mkdir", outer),
+        ("fsync_directory", tmp_path),
+        ("recheck_identity_chains", outer),
+        ("mkdir", inner),
+        ("fsync_directory", outer),
+        ("recheck_identity_chains", inner),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("failed_parent_fsync", "remaining_ancestors"),
+    [(0, ("new-outer",)), (1, ("new-outer", "new-outer/new-inner"))],
+)
+def test_parent_fsync_failure_stops_before_next_parent_or_stage(
+    tmp_path, monkeypatch, failed_parent_fsync, remaining_ancestors,
+):
+    source = make_valid_knowledge_source(tmp_path / "source")
+    output = tmp_path / "new-outer/new-inner/bundle"
+    before = snapshot_tree(source)
+    fail_destination_parent_fsync(monkeypatch, failed_parent_fsync)
+    with pytest.raises(KnowledgeCompilationError, match="fsync"):
+        compile_knowledge_bundle(source, output)
+    assert existing_destination_ancestors(output) == remaining_ancestors
+    assert not output.exists()
+    assert current_invocation_siblings(output) == []
+    assert snapshot_tree(source) == before
+
+
 def test_failed_promotion_restores_old_bundle_and_cleans_only_its_own_stage(
     tmp_path, monkeypatch,
 ):
@@ -2582,31 +2656,57 @@ This is the safety contract for `compile_knowledge_bundle()` and
 
 Convert source and destination to normalized absolute lexical paths without
 using `resolve()` to bless a symlink. Before opening a source document or
-writing anything, walk every existing path component with `lstat`. The source
-must be an existing non-symlink directory; every authoring subdirectory visited
-by the closed loader must be a non-symlink directory; and every authoring file
-opened by it must be a non-symlink regular file. Every existing destination
-ancestor and an existing destination must be non-symlink directories. Reject a
-regular file, directory, socket, FIFO, device, or symlink whenever the contract
-requires a different kind. Resolve only the now-verified locations and reject
-equality or containment in either direction. Load, validate, project, hash,
-build coverage, and (after Task 6) enforce the floor before creating missing
-destination parents. Immediately before stage creation, create each missing
-parent component one at a time, re-run the `lstat`/non-overlap checks, and then
-proceed. Invalid source content therefore creates neither an output parent nor a
-stage.
+writing anything, walk every existing path component with `lstat`. For every
+existing source ancestor through the source root, and every existing destination
+ancestor through the destination or its nearest existing ancestor when the
+destination is missing, record the verified filesystem identity
+`(st_dev, st_ino)`. The source must be an existing non-symlink directory; every
+authoring subdirectory visited by the closed loader must be a non-symlink
+directory; and every authoring file opened by it must be a non-symlink regular
+file. Every existing destination ancestor and an existing destination must be
+non-symlink directories. Reject a regular file, directory, socket, FIFO, device,
+or symlink whenever the contract requires a different kind.
+
+Lexical or `resolve()` string comparison is never overlap evidence: on a
+case-insensitive filesystem, `/Users` and `/users` can resolve to distinct
+strings while naming the same inode. Compare the verified identity chains,
+using `os.path.samefile()` only after both operands have passed the `lstat`
+checks. Reject destination equality or descent when the source-root identity
+occurs in the destination's existing ancestry; reject an existing destination
+that contains the source when the destination identity occurs in the source's
+ancestry. These rules cover exact paths, case aliases, and any other distinct
+spellings of one filesystem object. A resolved string may be retained for an
+error message, but it cannot authorize a write.
+
+Load, validate, project, hash, build coverage, and (after Task 6) enforce the
+floor before creating missing destination parents. Immediately before creating
+each missing parent component, repeat the full kind, captured-identity, and
+identity-chain overlap checks; any changed identity is a path-safety failure.
+Create that one component with `mkdir(exist_ok=False)`, verify it with `lstat`,
+append its identity to the captured destination chain, then fsync its immediate
+parent directory before inspecting or creating the next component. A collision
+is re-inspected and rejected, never treated as the directory just created. An
+fsync failure is fatal and no later parent or stage is created; already-created
+ancestor directories are left in place rather than recursively removed because
+another process may have begun using them. With two missing ancestors the
+required order is therefore `mkdir outer`, fsync the outer's parent, recheck,
+`mkdir inner`, fsync the inner's parent, recheck, then create the stage. Invalid
+source content creates neither an output parent nor a stage.
 
 The hostile-path test matrix is exhaustive over: a symlinked source root;
 symlink/non-directory source ancestors; symlink, directory, or special-file
 authoring files; symlink/non-directory destination ancestors; an existing
 destination that is a symlink or any non-directory; source/destination equality
-and containment in both directions; a colliding stage/backup candidate of every
-file kind; either staged artifact replaced by a symlink or non-regular file; and
-every forbidden SQLite sidecar or extra stage entry. Where the host cannot make
-a device, the test supplies its `lstat` mode through the path-inspection seam.
-Every case asserts that no source byte changes, no invalid output parent is
-created, an old destination is unchanged, and unrelated sibling lookalikes are
-untouched.
+and containment in both directions under both identical and case-aliased
+spellings; a colliding stage/backup candidate of every file kind; either staged
+artifact replaced by a symlink or non-regular file; and every forbidden SQLite
+sidecar or extra stage entry. Identity-seam regressions make case-alias equality,
+destination-below-source, and destination-above-source return the same
+`(st_dev, st_ino)` chain under lexically different names even on a case-sensitive
+test host. Where the host cannot make a device, the same seam supplies its
+`lstat` mode. Every case asserts that no source byte changes, no destructive
+`mkdir`/`os.replace` occurs, no invalid output parent is created, an old
+destination is unchanged, and unrelated sibling lookalikes are untouched.
 
 Create one private directory on the destination filesystem with basename
 matching `.<destination-name>-<32 lowercase hex>.stage`: generate
@@ -2624,7 +2724,15 @@ reject any journal, sidecar, or extra entry. Immediately before fsync and again
 before reopen, use `lstat` to require both named artifacts to be non-symlink
 regular files. File and directory fsync failures are fatal rather than silently
 ignored. After the reopen verification in the compile-order contract, fsync the
-stage directory.
+stage directory. Immediately before the first promotion rename, rebuild the
+source and destination identity chains (including the nearest existing
+destination ancestor), re-run every type and identity-overlap check, and require
+every previously captured existing component to retain its `(st_dev, st_ino)`.
+Also require the stage and destination to have the same verified immediate-parent
+identity, require the recorded stage to remain a real directory, and re-confirm
+that the recorded backup path is absent. Any drift aborts before touching the
+destination and cleans only this invocation's verified stage.
+
 Promotion is then:
 
 1. if present, `os.replace(destination, backup)` and fsync the parent;
