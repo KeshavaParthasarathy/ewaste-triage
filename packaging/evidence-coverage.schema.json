@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ewaste/evidence-coverage.schema.json",
+  "title": "E-Waste Evidence Coverage Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "bundle_version",
+    "knowledge_content_sha256",
+    "summary",
+    "claims"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "bundle_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "knowledge_content_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "categories",
+        "canonical_identities",
+        "subtypes",
+        "lifecycle_records",
+        "industry_averages",
+        "component_templates",
+        "modern_overlays",
+        "legacy_overlays",
+        "hazard_records",
+        "reviewed_claims",
+        "unknown_claims"
+      ],
+      "properties": {
+        "categories": {"type": "integer", "minimum": 0},
+        "canonical_identities": {"type": "integer", "minimum": 0},
+        "subtypes": {"type": "integer", "minimum": 0},
+        "lifecycle_records": {"type": "integer", "minimum": 0},
+        "industry_averages": {"type": "integer", "minimum": 0},
+        "component_templates": {"type": "integer", "minimum": 0},
+        "modern_overlays": {"type": "integer", "minimum": 0},
+        "legacy_overlays": {"type": "integer", "minimum": 0},
+        "hazard_records": {"type": "integer", "minimum": 0},
+        "reviewed_claims": {"type": "integer", "minimum": 0},
+        "unknown_claims": {"type": "integer", "minimum": 0}
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "category_id",
+          "claim_kind",
+          "claim_id",
+          "evidence_level",
+          "source_state",
+          "source_ids",
+          "unknown_reason"
+        ],
+        "properties": {
+          "category_id": {
+            "enum": [
+              "0301_computer_mouse",
+              "0301_keyboard",
+              "0303_laptop",
+              "0306_mobile_phone",
+              "0401_headphones"
+            ]
+          },
+          "claim_kind": {
+            "enum": [
+              "subtype",
+              "variant",
+              "identity",
+              "specific_lifecycle",
+              "industry_average",
+              "component_association",
+              "hazard"
+            ]
+          },
+          "claim_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+          },
+          "evidence_level": {
+            "type": ["string", "null"],
+            "enum": ["A", "B", "C", "D", null]
+          },
+          "source_state": {"enum": ["reviewed", "unknown"]},
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+            },
+            "uniqueItems": true
+          },
+          "unknown_reason": {"type": ["string", "null"]}
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "source_state": {"const": "reviewed"},
+              "evidence_level": {"enum": ["A", "B", "C", "D"]},
+              "source_ids": {"minItems": 1},
+              "unknown_reason": {"const": null}
+            },
+            "required": [
+              "source_state",
+              "evidence_level",
+              "source_ids",
+              "unknown_reason"
+            ]
+          },
+          {
+            "properties": {
+              "source_state": {"const": "unknown"},
+              "evidence_level": {"const": null},
+              "source_ids": {"maxItems": 0},
+              "unknown_reason": {"type": "string", "minLength": 1}
+            },
+            "required": [
+              "source_state",
+              "evidence_level",
+              "source_ids",
+              "unknown_reason"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
