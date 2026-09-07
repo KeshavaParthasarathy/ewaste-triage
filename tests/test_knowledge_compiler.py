@@ -184,6 +184,9 @@ CATEGORY_RELEASE_ORDER = {
     "0306_mobile_phone": 3,
     "0401_headphones": 4,
 }
+EXPECTED_SCHEMA_SIGNATURE_SHA256 = (
+    "9e46f4501848c75de67d7b7cbe806217d8d31f51b6964ffbd85792293f061c74"
+)
 
 NULLABLE_COLUMNS = {
     ("identities", "model_id"),
@@ -3381,6 +3384,24 @@ def test_schema_columns_affinities_nullability_primary_keys_uniques_and_fks_are_
     assert _foreign_keys(database) == EXPECTED_FOREIGN_KEYS
     assert sum(len(columns) for columns in EXPECTED_TABLE_COLUMNS.values()) == 145
     with sqlite3.connect(database) as connection:
+        schema_objects = tuple(
+            connection.execute(
+                "SELECT type, name, tbl_name, sql FROM sqlite_master "
+                "ORDER BY type, name, tbl_name, sql"
+            )
+        )
+        assert len(schema_objects) == 72
+        assert {row[0] for row in schema_objects} == {"index", "table"}
+        schema_bytes = json.dumps(
+            schema_objects,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        assert hashlib.sha256(schema_bytes).hexdigest() == (
+            EXPECTED_SCHEMA_SIGNATURE_SHA256
+        )
+        assert connection.execute("PRAGMA journal_mode").fetchone() == ("delete",)
         assert connection.execute("PRAGMA quick_check").fetchall() == [("ok",)]
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         assert connection.execute(
@@ -3422,6 +3443,149 @@ def test_schema_columns_affinities_nullability_primary_keys_uniques_and_fks_are_
             )
 
 
+@pytest.mark.parametrize(
+    ("name", "table", "needle", "replacement"),
+    [
+        ("affinity", "sources", "title TEXT NOT NULL", "title BLOB NOT NULL"),
+        ("nullability", "sources", "publisher TEXT NOT NULL", "publisher TEXT"),
+        (
+            "primary-key",
+            "metadata",
+            "key TEXT NOT NULL PRIMARY KEY",
+            "key TEXT NOT NULL UNIQUE",
+        ),
+        (
+            "unique",
+            "categories",
+            "release_order INTEGER NOT NULL UNIQUE",
+            "release_order INTEGER NOT NULL",
+        ),
+        (
+            "deferred-foreign-key",
+            "subtypes",
+            "DEFERRABLE INITIALLY DEFERRED",
+            "NOT DEFERRABLE INITIALLY IMMEDIATE",
+        ),
+        (
+            "range-check",
+            "categories",
+            "CHECK (release_order BETWEEN 0 AND 4)",
+            "CHECK (1)",
+        ),
+        (
+            "excluded-variant-ordinal-check",
+            "lifecycle_excluded_variants",
+            "ordinal INTEGER NOT NULL CHECK (ordinal >= 0)",
+            "ordinal INTEGER NOT NULL",
+        ),
+        (
+            "identity-shape-check",
+            "identities",
+            "identity_id = family_id",
+            "identity_id = identity_id",
+        ),
+        (
+            "lifecycle-tier-check",
+            "lifecycle_records",
+            "(scope_kind='model' AND resolution_tier='exact_model' AND evidence_level='A')",
+            "(scope_kind='model')",
+        ),
+        (
+            "lifecycle-endpoint-check",
+            "lifecycle_records",
+            "(endpoint='service_life' AND endpoint_kind='total_life')",
+            "(endpoint='service_life')",
+        ),
+        (
+            "industry-average-check",
+            "lifecycle_records",
+            "resolution_tier != 'industry_average' OR",
+            "1 OR",
+        ),
+        (
+            "template-shape-check",
+            "component_templates",
+            "scope_id=category_id AND application_order=0",
+            "1",
+        ),
+        (
+            "association-evidence-check",
+            "component_associations",
+            "status='unknown' AND evidence_level IS NULL",
+            "status='unknown'",
+        ),
+        (
+            "hazard-evidence-check",
+            "hazards",
+            "(scope_kind='model' AND evidence_level='A')",
+            "(scope_kind='model')",
+        ),
+        (
+            "claim-category-check",
+            "claim_sources",
+            "claim_kind='policy' AND category_key=''",
+            "claim_kind='policy'",
+        ),
+    ],
+)
+def test_reopen_rejects_each_structurally_weakened_ddl_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    table: str,
+    needle: str,
+    replacement: str,
+) -> None:
+    del name
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    statements = list(compiler_module._SCHEMA_STATEMENTS)
+    index = next(
+        index
+        for index, statement in enumerate(statements)
+        if statement.startswith(f"CREATE TABLE {table} (")
+    )
+    assert statements[index].count(needle) == 1
+    statements[index] = statements[index].replace(needle, replacement, 1)
+    monkeypatch.setattr(compiler_module, "_SCHEMA_STATEMENTS", tuple(statements))
+
+    with pytest.raises(KnowledgeCompilationError):
+        compile_knowledge_bundle(source, destination)
+
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "CREATE VIEW leaked_view AS SELECT key FROM metadata",
+        (
+            "CREATE TRIGGER leaked_trigger AFTER INSERT ON metadata "
+            "BEGIN SELECT 1; END"
+        ),
+        "CREATE INDEX leaked_index ON sources(title)",
+    ],
+    ids=("view", "trigger", "index"),
+)
+def test_reopen_rejects_every_extra_schema_object(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    statement: str,
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    monkeypatch.setattr(
+        compiler_module,
+        "_SCHEMA_STATEMENTS",
+        (*compiler_module._SCHEMA_STATEMENTS, statement),
+    )
+
+    with pytest.raises(KnowledgeCompilationError):
+        compile_knowledge_bundle(source, destination)
+
+    assert not destination.exists()
+
+
 def _assert_integrity_rejected(database: Path, sql: str) -> None:
     # UPDATE/DELETE LIMIT is an optional SQLite compile-time extension. Updating
     # every matching fixture row exercises the same declared constraint.
@@ -3455,26 +3619,55 @@ def _assert_integrity_rejected(database: Path, sql: str) -> None:
         ("variant-battery", "UPDATE variants SET battery_architecture='other' LIMIT 1"),
         ("variant-evidence", "UPDATE variants SET evidence_level='A' LIMIT 1"),
         ("identity-kind", "UPDATE identities SET identity_kind='other' LIMIT 1"),
+        ("identity-market", "UPDATE identities SET market_state='other' LIMIT 1"),
+        ("identity-battery", "UPDATE identities SET battery_architecture='other' LIMIT 1"),
+        ("identity-evidence", "UPDATE identities SET evidence_level='D' LIMIT 1"),
         ("identity-year-order", "UPDATE identities SET model_year_from=2030, model_year_to=2020 LIMIT 1"),
         ("identity-date-order", "UPDATE identities SET applicable_from='2030-01-01', applicable_to='2020-01-01' LIMIT 1"),
+        ("family-id-shape", "UPDATE identities SET family_id='other' WHERE identity_kind='family'"),
         ("family-model-null", "UPDATE identities SET model_id='model' WHERE identity_kind='family' LIMIT 1"),
+        ("model-id-shape", "UPDATE identities SET model_id='other' WHERE identity_kind='model'"),
         ("model-model-required", "UPDATE identities SET model_id=NULL WHERE identity_kind='model' LIMIT 1"),
+        ("model-name-required", "UPDATE identities SET model_name=NULL WHERE identity_kind='model' LIMIT 1"),
         ("lifecycle-positive", "UPDATE lifecycle_records SET lower_bound=0 LIMIT 1"),
         ("lifecycle-bound-order", "UPDATE lifecycle_records SET lower_bound=10, upper_bound=5 LIMIT 1"),
         ("lifecycle-precedence", "UPDATE lifecycle_records SET precedence=-1 LIMIT 1"),
+        ("lifecycle-resolution-tier", "UPDATE lifecycle_records SET resolution_tier='other' LIMIT 1"),
+        ("lifecycle-scope-kind", "UPDATE lifecycle_records SET scope_kind='other' LIMIT 1"),
+        ("lifecycle-year-order", "UPDATE lifecycle_records SET model_year_from=2030, model_year_to=2020 WHERE scope_kind='family'"),
+        ("lifecycle-date-order", "UPDATE lifecycle_records SET applicable_from='2030-01-01', applicable_to='2020-01-01' WHERE scope_kind='family'"),
         ("lifecycle-tier", "UPDATE lifecycle_records SET resolution_tier='family' WHERE scope_kind='model' LIMIT 1"),
+        ("model-tier-evidence", "UPDATE lifecycle_records SET evidence_level='B' WHERE scope_kind='model'"),
+        ("family-tier-evidence", "UPDATE lifecycle_records SET evidence_level='A' WHERE scope_kind='family'"),
+        ("subtype-tier-evidence", "UPDATE lifecycle_records SET evidence_level='A' WHERE scope_kind='subtype'"),
+        ("category-tier-evidence", "UPDATE lifecycle_records SET evidence_level='B' WHERE scope_kind='category'"),
         ("lifecycle-endpoint-kind", "UPDATE lifecycle_records SET endpoint_kind='operating_endurance' WHERE endpoint='service_life' LIMIT 1"),
+        ("capacity-endpoint-kind", "UPDATE lifecycle_records SET endpoint_kind='total_life' WHERE endpoint='capacity_threshold'"),
+        ("other-endpoint-kind", "UPDATE lifecycle_records SET endpoint_kind='total_life' WHERE endpoint NOT IN ('service_life','capacity_threshold')"),
         ("industry-strict-range", "UPDATE lifecycle_records SET upper_bound=lower_bound WHERE resolution_tier='industry_average' LIMIT 1"),
+        ("industry-subject", "UPDATE lifecycle_records SET subject='battery' WHERE resolution_tier='industry_average'"),
+        ("industry-metric", "UPDATE lifecycle_records SET metric='full_charge_cycles' WHERE resolution_tier='industry_average'"),
+        ("industry-unit", "UPDATE lifecycle_records SET unit='months' WHERE resolution_tier='industry_average'"),
+        ("industry-date-bounds", "UPDATE lifecycle_records SET applicable_from='2020-01-01' WHERE resolution_tier='industry_average'"),
+        ("industry-year-bounds", "UPDATE lifecycle_records SET model_year_from=2020 WHERE resolution_tier='industry_average'"),
         ("template-kind", "UPDATE component_templates SET template_kind='other' LIMIT 1"),
+        ("template-scope-kind", "UPDATE component_templates SET scope_kind='other' LIMIT 1"),
         ("template-order", "UPDATE component_templates SET application_order=-1 LIMIT 1"),
         ("standard-scope", "UPDATE component_templates SET scope_kind='subtype' WHERE template_kind='standard' LIMIT 1"),
+        ("standard-scope-id", "UPDATE component_templates SET scope_id='other' WHERE template_kind='standard'"),
+        ("standard-order", "UPDATE component_templates SET application_order=1 WHERE template_kind='standard'"),
+        ("overlay-category-scope", "UPDATE component_templates SET scope_kind='category' WHERE template_kind!='standard'"),
         ("association-position", "UPDATE component_associations SET position=-1 LIMIT 1"),
+        ("association-status", "UPDATE component_associations SET status='other' LIMIT 1"),
         ("association-user-confirmed", "UPDATE component_associations SET status='user_confirmed' LIMIT 1"),
         ("association-unknown-evidence", "UPDATE component_associations SET evidence_level='B' WHERE status='unknown' LIMIT 1"),
         ("association-reviewed-evidence", "UPDATE component_associations SET evidence_level=NULL WHERE status!='unknown' LIMIT 1"),
+        ("association-reviewed-grade", "UPDATE component_associations SET evidence_level='D' WHERE status!='unknown'"),
         ("hazard-scope", "UPDATE hazards SET scope_kind='other' LIMIT 1"),
         ("hazard-severity", "UPDATE hazards SET severity='other' LIMIT 1"),
         ("hazard-evidence", "UPDATE hazards SET evidence_level='A' WHERE scope_kind='category' LIMIT 1"),
+        ("hazard-category-grade", "UPDATE hazards SET evidence_level='B' WHERE scope_kind='category'"),
+        ("hazard-family-grade", "UPDATE hazards SET scope_kind='family', evidence_level='C' WHERE scope_kind='category'"),
         ("trigger-key", "UPDATE hazard_triggers SET observation_key='other' LIMIT 1"),
         ("action-kind", "UPDATE hazard_actions SET action_kind='other' LIMIT 1"),
         ("policy-priority", "UPDATE policy_rules SET priority=-1 LIMIT 1"),
@@ -3527,6 +3720,26 @@ def test_child_ordinals_are_nonnegative(
     _assert_integrity_rejected(database, f'UPDATE "{table}" SET ordinal=-1 LIMIT 1')
 
 
+def test_lifecycle_excluded_variant_ordinal_is_nonnegative_even_when_fixture_is_empty(
+    source_and_documents: tuple[Path, EvidenceDocuments], tmp_path: Path
+) -> None:
+    source, _documents = source_and_documents
+    database = tmp_path / "bundle/knowledge.sqlite"
+    compile_knowledge_bundle(source, database.parent)
+    with sqlite3.connect(database) as connection:
+        record_id = connection.execute(
+            "SELECT record_id FROM lifecycle_records ORDER BY record_id LIMIT 1"
+        ).fetchone()[0]
+        variant_id = connection.execute(
+            "SELECT variant_id FROM variants ORDER BY variant_id LIMIT 1"
+        ).fetchone()[0]
+    _assert_integrity_rejected(
+        database,
+        "INSERT INTO lifecycle_excluded_variants "
+        f"VALUES ('{record_id}', -1, '{variant_id}')",
+    )
+
+
 def test_exact_category_release_order_survives_reopen(
     source_and_documents: tuple[Path, EvidenceDocuments], tmp_path: Path
 ) -> None:
@@ -3570,6 +3783,42 @@ def test_invalid_source_creates_no_missing_destination_parent(tmp_path: Path) ->
         compile_knowledge_bundle(source, destination)
 
     assert not (tmp_path / "missing").exists()
+
+
+def test_destination_appearing_after_preflight_is_rejected_without_touching_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    marker = b"belongs to another creator"
+    real_capture = compiler_module._capture_directory_chain
+    destination_captures = 0
+
+    def create_before_second_destination_capture(
+        path: Path, *, label: str, require_final: bool
+    ) -> tuple[tuple[object, ...], bool]:
+        nonlocal destination_captures
+        if label == "destination":
+            destination_captures += 1
+            if destination_captures == 2:
+                destination.mkdir()
+                (destination / "marker").write_bytes(marker)
+        return real_capture(path, label=label, require_final=require_final)
+
+    monkeypatch.setattr(
+        compiler_module,
+        "_capture_directory_chain",
+        create_before_second_destination_capture,
+    )
+
+    with pytest.raises(KnowledgeCompilationError, match="identity|existence"):
+        compile_knowledge_bundle(source, destination)
+
+    assert destination_captures == 2
+    assert (destination / "marker").read_bytes() == marker
+    assert sorted(path.name for path in destination.iterdir()) == ["marker"]
+    assert not list(tmp_path.glob(".bundle-*.stage"))
+    assert not list(tmp_path.glob(".bundle-*.backup"))
 
 
 def test_real_source_identity_swap_before_first_destination_mkdir_is_detected(
@@ -3970,12 +4219,14 @@ def test_identity_drift_immediately_before_promotion_cleans_stage_without_rename
     destination = tmp_path / "bundle"
     before = _snapshot_tree(source)
     replace_calls: list[tuple[object, object]] = []
-    real_fsync_directory = compiler_module._fsync_directory
+    real_fsync_directory = compiler_module._fsync_stage_directory
     swapped = False
 
-    def swap_source_identity_after_stage_fsync(path: Path) -> None:
+    def swap_source_identity_after_stage_fsync(
+        path: Path, stage_identity: tuple[int, int]
+    ) -> None:
         nonlocal swapped
-        real_fsync_directory(path)
+        real_fsync_directory(path, stage_identity)
         if str(path).endswith(".stage") and not swapped:
             original = tmp_path / "source-original"
             source.rename(original)
@@ -3984,7 +4235,7 @@ def test_identity_drift_immediately_before_promotion_cleans_stage_without_rename
 
     monkeypatch.setattr(
         compiler_module,
-        "_fsync_directory",
+        "_fsync_stage_directory",
         swap_source_identity_after_stage_fsync,
     )
     monkeypatch.setattr(
@@ -4067,6 +4318,99 @@ def test_backup_name_collision_of_every_kind_is_retried_without_touching_collisi
     )
 
 
+def test_stage_mode_failure_cleans_the_created_stage_inode(tmp_path: Path) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    previous_umask = os.umask(0o700)
+    try:
+        with pytest.raises(KnowledgeCompilationError, match="mode 0700"):
+            compile_knowledge_bundle(source, destination)
+    finally:
+        os.umask(previous_umask)
+
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".bundle-*.stage"))
+
+
+def test_failed_stage_cleanup_never_deletes_a_substituted_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    displaced_stage = tmp_path / "invocation-stage-original-inode"
+    replacement_marker = b"replacement owned by another creator"
+
+    def substitute_stage_then_fail(stage: Path, *_args: object) -> None:
+        stage.rename(displaced_stage)
+        stage.mkdir(mode=0o700)
+        (stage / "marker").write_bytes(replacement_marker)
+        raise OSError("injected write failure after stage substitution")
+
+    monkeypatch.setattr(compiler_module, "_write_database", substitute_stage_then_fail)
+
+    with pytest.raises(KnowledgeCompilationError, match="preserved recovery"):
+        compile_knowledge_bundle(source, destination)
+
+    replacements = list(tmp_path.glob(".bundle-*.stage"))
+    assert len(replacements) == 1
+    assert (replacements[0] / "marker").read_bytes() == replacement_marker
+    assert displaced_stage.is_dir()
+    assert not destination.exists()
+
+
+def test_database_entry_swap_after_safe_create_never_writes_external_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    outside = tmp_path / "outside.sqlite"
+    with sqlite3.connect(outside) as connection:
+        connection.execute("CREATE TABLE sentinel (value TEXT NOT NULL)")
+        connection.execute("INSERT INTO sentinel VALUES ('unchanged')")
+    outside_before = outside.read_bytes()
+
+    real_open = compiler_module.os.open
+    real_close = compiler_module.os.close
+    database_descriptor: int | None = None
+    attacked = False
+
+    def record_database_open(
+        path: object, flags: int, *args: object, **kwargs: object
+    ) -> int:
+        nonlocal database_descriptor
+        descriptor = real_open(path, flags, *args, **kwargs)
+        if path == "knowledge.sqlite" and flags & os.O_EXCL:
+            database_descriptor = descriptor
+        return descriptor
+
+    def swap_database_entry_on_close(descriptor: int) -> None:
+        nonlocal attacked
+        if descriptor == database_descriptor and not attacked:
+            stage = next(tmp_path.glob(".bundle-*.stage"))
+            database = stage / "knowledge.sqlite"
+            database.unlink()
+            database.symlink_to(outside)
+            attacked = True
+        real_close(descriptor)
+
+    monkeypatch.setattr(compiler_module.os, "open", record_database_open)
+    monkeypatch.setattr(compiler_module.os, "close", swap_database_entry_on_close)
+
+    with pytest.raises(KnowledgeCompilationError):
+        compile_knowledge_bundle(source, destination)
+
+    assert attacked
+    assert outside.read_bytes() == outside_before
+    with sqlite3.connect(outside) as connection:
+        assert connection.execute("SELECT value FROM sentinel").fetchall() == [
+            ("unchanged",)
+        ]
+        assert connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall() == [("sentinel",)]
+    assert not destination.exists()
+
+
 @pytest.mark.parametrize(
     ("artifact", "replacement"),
     [
@@ -4092,7 +4436,7 @@ def test_staged_symlink_nonregular_sidecar_and_extra_are_rejected_before_promoti
     real_entries = compiler_module._stage_entries
     attacked = False
 
-    def attack(stage: Path) -> object:
+    def attack(stage: Path, *args: object) -> object:
         nonlocal attacked
         if not attacked:
             attacked = True
@@ -4107,7 +4451,7 @@ def test_staged_symlink_nonregular_sidecar_and_extra_are_rejected_before_promoti
                 os.mkfifo(target)
             else:
                 target.write_bytes(b"extra")
-        return real_entries(stage)
+        return real_entries(stage, *args)
 
     monkeypatch.setattr(compiler_module, "_stage_entries", attack)
     with pytest.raises(KnowledgeCompilationError, match="stage|artifact"):
@@ -4314,10 +4658,14 @@ def test_each_pre_promotion_write_fsync_and_reopen_failure_cleans_only_stage(
     elif seam == "file-fsync":
         real_fsync_file = compiler_module._fsync_stage_regular
 
-        def fail_artifact(stage: Path, name: str) -> None:
+        def fail_artifact(
+            stage: Path,
+            name: str,
+            stage_identity: tuple[int, int] | None = None,
+        ) -> None:
             if name == artifact:
                 raise OSError(f"{name} fsync failed")
-            real_fsync_file(stage, name)
+            real_fsync_file(stage, name, stage_identity)
 
         monkeypatch.setattr(compiler_module, "_fsync_stage_regular", fail_artifact)
     elif seam == "reopen":
@@ -4327,14 +4675,14 @@ def test_each_pre_promotion_write_fsync_and_reopen_failure_cleans_only_stage(
             lambda *_args: (_ for _ in ()).throw(sqlite3.OperationalError("reopen failed")),
         )
     else:
-        real_fsync_directory = compiler_module._fsync_directory
+        real_fsync_directory = compiler_module._fsync_stage_directory
 
-        def fail_stage(path: Path) -> None:
+        def fail_stage(path: Path, stage_identity: tuple[int, int]) -> None:
             if str(path).endswith(".stage"):
                 raise OSError("stage directory fsync failed")
-            real_fsync_directory(path)
+            real_fsync_directory(path, stage_identity)
 
-        monkeypatch.setattr(compiler_module, "_fsync_directory", fail_stage)
+        monkeypatch.setattr(compiler_module, "_fsync_stage_directory", fail_stage)
 
     with pytest.raises(KnowledgeCompilationError):
         compile_knowledge_bundle(source, destination)
@@ -4391,13 +4739,13 @@ def test_old_destination_rename_failure_preserves_old_and_cleans_stage(
     assert not list(tmp_path.glob(".bundle-*.backup"))
 
 
-def test_rollback_parent_fsync_failure_preserves_recovery_stage(
+def test_rollback_parent_fsync_failure_preserves_both_recovery_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = make_valid_knowledge_source(tmp_path / "source")
     destination = tmp_path / "bundle"
     old = compile_knowledge_bundle(source, destination)
-    _mutate_release_content(source)
+    new_hash = _mutate_release_content(source)
     real_replace = compiler_module.os.replace
     real_fsync = compiler_module._fsync_directory
     parent_calls = 0
@@ -4421,9 +4769,13 @@ def test_rollback_parent_fsync_failure_preserves_recovery_stage(
     with pytest.raises(KnowledgeCompilationError, match="rollback parent fsync") as error:
         compile_knowledge_bundle(source, destination)
     stages = list(tmp_path.glob(".bundle-*.stage"))
-    assert len(stages) == 1
+    backups = list(tmp_path.glob(".bundle-*.backup"))
+    assert len(stages) == len(backups) == 1
     assert str(stages[0]) in str(error.value)
-    assert _metadata(destination / "knowledge.sqlite")["content_sha256"] == old.content_sha256
+    assert str(backups[0]) in str(error.value)
+    assert not destination.exists()
+    assert _metadata(stages[0] / "knowledge.sqlite")["content_sha256"] == new_hash
+    assert _metadata(backups[0] / "knowledge.sqlite")["content_sha256"] == old.content_sha256
 
 
 def test_cleanup_failure_preserves_exact_stage_and_reports_both_failures(
@@ -4452,6 +4804,54 @@ def test_cleanup_failure_preserves_exact_stage_and_reports_both_failures(
     assert "stage cleanup failure" in str(error.value)
     assert str(stages[0]) in str(error.value)
     assert not destination.exists()
+
+
+@pytest.mark.parametrize("helper", ["directory", "regular"])
+def test_stage_open_helpers_close_every_descriptor_when_fstat_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    helper: str,
+) -> None:
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    (stage / "artifact").write_bytes(b"artifact")
+    real_open = compiler_module.os.open
+    real_close = compiler_module.os.close
+    real_fstat = compiler_module.os.fstat
+    opened: set[int] = set()
+    fstat_calls = 0
+    failure_call = 1 if helper == "directory" else 2
+
+    def tracked_open(*args: object, **kwargs: object) -> int:
+        descriptor = real_open(*args, **kwargs)
+        opened.add(descriptor)
+        return descriptor
+
+    def tracked_close(descriptor: int) -> None:
+        real_close(descriptor)
+        opened.discard(descriptor)
+
+    def fail_selected_fstat(descriptor: int) -> os.stat_result:
+        nonlocal fstat_calls
+        fstat_calls += 1
+        if fstat_calls == failure_call:
+            raise OSError("injected fstat failure")
+        return real_fstat(descriptor)
+
+    monkeypatch.setattr(compiler_module.os, "open", tracked_open)
+    monkeypatch.setattr(compiler_module.os, "close", tracked_close)
+    monkeypatch.setattr(compiler_module.os, "fstat", fail_selected_fstat)
+    try:
+        with pytest.raises(OSError, match="injected fstat failure"):
+            if helper == "directory":
+                compiler_module._open_stage_directory(stage)
+            else:
+                compiler_module._open_stage_regular(stage, "artifact")
+        assert opened == set()
+    finally:
+        for descriptor in tuple(opened):
+            real_close(descriptor)
+            opened.discard(descriptor)
 
 
 def test_every_compiler_opened_descriptor_is_closed_on_success(

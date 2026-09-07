@@ -94,6 +94,10 @@ def _require_text(value: object, location: str) -> str:
         or unicodedata.normalize("NFC", value) != value
     ):
         raise CoverageError(f"{location} must be non-empty NFC text")
+    if any(ch == "\x00" or unicodedata.category(ch).startswith("C") for ch in value):
+        raise CoverageError(
+            f"{location} must not contain Unicode control characters"
+        )
     return value
 
 

@@ -1155,7 +1155,7 @@ def _generated_sibling(destination: Path, suffix: str) -> Path:
     return destination.parent / f".{destination.name}-{uuid4().hex}{suffix}"
 
 
-def _create_stage_directory(destination: Path) -> Path:
+def _create_stage_directory(destination: Path) -> tuple[Path, tuple[int, int]]:
     for _attempt in range(_UUID_ATTEMPTS):
         candidate = _generated_sibling(destination, _STAGE_SUFFIX)
         try:
@@ -1166,14 +1166,35 @@ def _create_stage_directory(destination: Path) -> Path:
             raise KnowledgeCompilationError(
                 f"cannot create bundle stage {candidate}: {exc}"
             ) from exc
-        result = os.lstat(candidate)
-        if stat.S_ISLNK(result.st_mode) or not stat.S_ISDIR(result.st_mode):
-            raise KnowledgeCompilationError(f"bundle stage is unsafe: {candidate}")
-        if stat.S_IMODE(result.st_mode) != 0o700:
+        try:
+            result = os.lstat(candidate)
+        except OSError as exc:
             raise KnowledgeCompilationError(
-                f"bundle stage does not have mode 0700: {candidate}"
-            )
-        return candidate
+                f"cannot capture created bundle stage identity; preserved at {candidate}: {exc}"
+            ) from exc
+        identity = (result.st_dev, result.st_ino)
+        try:
+            if stat.S_ISLNK(result.st_mode) or not stat.S_ISDIR(result.st_mode):
+                raise KnowledgeCompilationError(f"bundle stage is unsafe: {candidate}")
+            if stat.S_IMODE(result.st_mode) != 0o700:
+                raise KnowledgeCompilationError(
+                    f"bundle stage does not have mode 0700: {candidate}"
+                )
+        except BaseException as original:
+            try:
+                current = os.lstat(candidate)
+                if (current.st_dev, current.st_ino) != identity:
+                    raise KnowledgeCompilationError(
+                        f"created bundle stage identity changed; preserved at {candidate}"
+                    )
+                os.rmdir(candidate)
+            except BaseException as cleanup_error:
+                raise KnowledgeCompilationError(
+                    f"bundle stage validation failed ({original!r}); cleanup failed "
+                    f"({cleanup_error!r}); preserved recovery path: {candidate}"
+                ) from original
+            raise
+        return candidate, identity
     raise KnowledgeCompilationError("could not allocate a unique bundle stage")
 
 
@@ -1196,7 +1217,12 @@ def _expected_generated_name(destination: Path, suffix: str, name: str) -> bool:
     return re.fullmatch(pattern, name) is not None
 
 
-def _remove_owned_directory(path: Path, destination: Path, suffix: str) -> None:
+def _remove_owned_directory(
+    path: Path,
+    destination: Path,
+    suffix: str,
+    expected_identity: tuple[int, int],
+) -> None:
     if path.parent != destination.parent or not _expected_generated_name(
         destination, suffix, path.name
     ):
@@ -1211,6 +1237,10 @@ def _remove_owned_directory(path: Path, destination: Path, suffix: str) -> None:
         raise KnowledgeCompilationError(
             f"refusing to clean unsafe recovery path; preserved at {path}"
         )
+    if (result.st_dev, result.st_ino) != expected_identity:
+        raise KnowledgeCompilationError(
+            f"refusing to clean replaced recovery path; preserved at {path}"
+        )
     try:
         shutil.rmtree(path)
     except OSError as exc:
@@ -1219,18 +1249,47 @@ def _remove_owned_directory(path: Path, destination: Path, suffix: str) -> None:
         ) from exc
 
 
-def _open_stage_directory(stage: Path) -> int:
+def _open_stage_directory(
+    stage: Path, expected_identity: tuple[int, int] | None = None
+) -> int:
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(stage, flags)
-    result = os.fstat(descriptor)
-    if not stat.S_ISDIR(result.st_mode):
+    verified = False
+    try:
+        result = os.fstat(descriptor)
+        if not stat.S_ISDIR(result.st_mode):
+            raise KnowledgeCompilationError(f"bundle stage is not a directory: {stage}")
+        if expected_identity is not None and (
+            result.st_dev,
+            result.st_ino,
+        ) != expected_identity:
+            raise KnowledgeCompilationError(
+                f"bundle stage identity changed before open: {stage}"
+            )
+        verified = True
+        return descriptor
+    finally:
+        if not verified:
+            os.close(descriptor)
+
+
+def _fsync_stage_directory(
+    stage: Path, stage_identity: tuple[int, int]
+) -> None:
+    descriptor = _open_stage_directory(stage, stage_identity)
+    try:
+        os.fsync(descriptor)
+    finally:
         os.close(descriptor)
-        raise KnowledgeCompilationError(f"bundle stage is not a directory: {stage}")
-    return descriptor
 
 
-def _open_stage_regular(stage: Path, name: str) -> int:
-    stage_descriptor = _open_stage_directory(stage)
+def _open_stage_regular(
+    stage: Path,
+    name: str,
+    stage_identity: tuple[int, int] | None = None,
+) -> int:
+    stage_descriptor = _open_stage_directory(stage, stage_identity)
+    descriptor = -1
     try:
         try:
             before = os.stat(name, dir_fd=stage_descriptor, follow_symlinks=False)
@@ -1249,17 +1308,22 @@ def _open_stage_regular(stage: Path, name: str) -> int:
             before.st_dev,
             before.st_ino,
         ) != (after.st_dev, after.st_ino):
-            os.close(descriptor)
             raise KnowledgeCompilationError(
                 f"staged artifact identity changed while opening: {name}"
             )
-        return descriptor
+        result = descriptor
+        descriptor = -1
+        return result
     finally:
+        if descriptor >= 0:
+            os.close(descriptor)
         os.close(stage_descriptor)
 
 
-def _stage_entries(stage: Path) -> dict[str, os.stat_result]:
-    descriptor = _open_stage_directory(stage)
+def _stage_entries(
+    stage: Path, stage_identity: tuple[int, int] | None = None
+) -> dict[str, os.stat_result]:
+    descriptor = _open_stage_directory(stage, stage_identity)
     try:
         entries: dict[str, os.stat_result] = {}
         with os.scandir(descriptor) as iterator:
@@ -1279,16 +1343,24 @@ def _stage_entries(stage: Path) -> dict[str, os.stat_result]:
     return entries
 
 
-def _fsync_stage_regular(stage: Path, name: str) -> None:
-    descriptor = _open_stage_regular(stage, name)
+def _fsync_stage_regular(
+    stage: Path,
+    name: str,
+    stage_identity: tuple[int, int] | None = None,
+) -> None:
+    descriptor = _open_stage_regular(stage, name, stage_identity)
     try:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
 
 
-def _read_stage_regular(stage: Path, name: str) -> bytes:
-    descriptor = _open_stage_regular(stage, name)
+def _read_stage_regular(
+    stage: Path,
+    name: str,
+    stage_identity: tuple[int, int] | None = None,
+) -> bytes:
+    descriptor = _open_stage_regular(stage, name, stage_identity)
     try:
         chunks: list[bytes] = []
         while True:
@@ -1300,27 +1372,42 @@ def _read_stage_regular(stage: Path, name: str) -> bytes:
         os.close(descriptor)
 
 
+def _schema_signature(
+    connection: sqlite3.Connection,
+) -> tuple[tuple[object, ...], ...]:
+    return tuple(
+        connection.execute(
+            "SELECT type, name, tbl_name, sql FROM sqlite_master "
+            "ORDER BY type, name, tbl_name, sql"
+        )
+    )
+
+
+def _build_expected_schema_signature() -> tuple[tuple[object, ...], ...]:
+    connection = sqlite3.connect(":memory:")
+    try:
+        for statement in _SCHEMA_STATEMENTS:
+            connection.execute(statement)
+        return _schema_signature(connection)
+    finally:
+        connection.close()
+
+
+_EXPECTED_SCHEMA_SIGNATURE = _build_expected_schema_signature()
+
+
 def _write_database(
     stage: Path,
     rows: Mapping[str, tuple[tuple[object, ...], ...]],
     content_sha256: str,
     coverage_sha256: str,
+    stage_identity: tuple[int, int] | None = None,
 ) -> None:
-    stage_descriptor = _open_stage_directory(stage)
-    try:
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open("knowledge.sqlite", flags, 0o600, dir_fd=stage_descriptor)
-        os.close(descriptor)
-    finally:
-        os.close(stage_descriptor)
-    database = stage / "knowledge.sqlite"
-    connection = sqlite3.connect(database)
+    connection = sqlite3.connect(":memory:")
     try:
         connection.execute("PRAGMA foreign_keys = ON")
         if connection.execute("PRAGMA foreign_keys").fetchone() != (1,):
             raise KnowledgeCompilationError("SQLite foreign keys could not be enabled")
-        if connection.execute("PRAGMA journal_mode = DELETE").fetchone()[0].lower() != "delete":
-            raise KnowledgeCompilationError("SQLite DELETE journal mode could not be enabled")
         connection.execute("BEGIN")
         for statement in _SCHEMA_STATEMENTS:
             connection.execute(statement)
@@ -1341,6 +1428,7 @@ def _write_database(
                 table_rows,
             )
         connection.commit()
+        database_bytes = connection.serialize()
     except BaseException:
         if connection.in_transaction:
             connection.rollback()
@@ -1348,9 +1436,31 @@ def _write_database(
     finally:
         connection.close()
 
+    stage_descriptor = _open_stage_directory(stage, stage_identity)
+    descriptor = -1
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(
+            "knowledge.sqlite", flags, 0o600, dir_fd=stage_descriptor
+        )
+        view = memoryview(database_bytes)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("short write for SQLite database")
+            view = view[written:]
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(stage_descriptor)
 
-def _write_coverage(stage: Path, data: bytes) -> None:
-    stage_descriptor = _open_stage_directory(stage)
+
+def _write_coverage(
+    stage: Path,
+    data: bytes,
+    stage_identity: tuple[int, int] | None = None,
+) -> None:
+    stage_descriptor = _open_stage_directory(stage, stage_identity)
     descriptor = -1
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
@@ -1400,9 +1510,12 @@ def _verify_staged_bundle(
     expected_rows: Mapping[str, tuple[tuple[object, ...], ...]],
     manifest: KnowledgeManifest,
     expected_coverage_bytes: bytes,
+    stage_identity: tuple[int, int] | None = None,
 ) -> None:
-    _stage_entries(stage)
-    coverage_data = _read_stage_regular(stage, "evidence-coverage.json")
+    _stage_entries(stage, stage_identity)
+    coverage_data = _read_stage_regular(
+        stage, "evidence-coverage.json", stage_identity
+    )
     if coverage_data != expected_coverage_bytes:
         raise KnowledgeCompilationError("staged coverage bytes changed before reopen")
     try:
@@ -1415,7 +1528,7 @@ def _verify_staged_bundle(
     if hashlib.sha256(coverage_data).hexdigest() != manifest.coverage_sha256:
         raise KnowledgeCompilationError("staged coverage hash does not match manifest")
 
-    descriptor = _open_stage_regular(stage, "knowledge.sqlite")
+    descriptor = _open_stage_regular(stage, "knowledge.sqlite", stage_identity)
     try:
         connection = _readonly_sqlite_from_descriptor(descriptor)
         try:
@@ -1427,15 +1540,40 @@ def _verify_staged_bundle(
             )
             if table_names != TABLE_ORDER:
                 raise KnowledgeCompilationError("staged database tables do not match schema")
+            if _schema_signature(connection) != _EXPECTED_SCHEMA_SIGNATURE:
+                raise KnowledgeCompilationError(
+                    "staged database schema objects do not match"
+                )
             for table in TABLE_ORDER:
-                columns = tuple(
-                    row[1]
+                table_info = tuple(
+                    row[1:6]
                     for row in connection.execute(f'PRAGMA table_info("{table}")')
                 )
-                if columns != EXPECTED_TABLE_COLUMNS[table]:
-                    raise KnowledgeCompilationError(
-                        f"staged database columns do not match for {table}"
+                expected_primary_key = EXPECTED_PRIMARY_KEY_COLUMNS[table]
+                expected_table_info = tuple(
+                    (
+                        column,
+                        "REAL"
+                        if (table, column) in _REAL_COLUMNS
+                        else "INTEGER"
+                        if column in _INTEGER_COLUMN_NAMES
+                        else "TEXT",
+                        int((table, column) not in _NULLABLE_COLUMNS),
+                        None,
+                        expected_primary_key.index(column) + 1
+                        if column in expected_primary_key
+                        else 0,
                     )
+                    for column in EXPECTED_TABLE_COLUMNS[table]
+                )
+                if table_info != expected_table_info:
+                    raise KnowledgeCompilationError(
+                        f"staged database column contract does not match for {table}"
+                    )
+            if connection.execute("PRAGMA journal_mode").fetchone() != ("delete",):
+                raise KnowledgeCompilationError(
+                    "staged database journal mode does not match"
+                )
             if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
                 raise KnowledgeCompilationError("staged database quick_check failed")
             if connection.execute("PRAGMA foreign_key_check").fetchall():
@@ -1494,6 +1632,7 @@ def _rollback_promotion(
     had_destination: bool,
 ) -> list[str]:
     failures: list[str] = []
+    restored_backup = False
     try:
         if _stage_is_present(destination) and not _stage_is_present(stage):
             os.replace(destination, stage)
@@ -1505,6 +1644,7 @@ def _rollback_promotion(
                 failures.append("restore blocked because destination is still present")
             else:
                 os.replace(backup, destination)
+                restored_backup = True
         except BaseException as exc:
             failures.append(f"restore previous destination failed: {exc!r}")
     elif had_destination and not _stage_is_present(destination):
@@ -1513,6 +1653,13 @@ def _rollback_promotion(
         _fsync_directory(destination.parent)
     except BaseException as exc:
         failures.append(f"rollback parent fsync failed: {exc!r}")
+        if restored_backup and backup is not None:
+            try:
+                os.replace(destination, backup)
+            except BaseException as preserve_error:
+                failures.append(
+                    f"preserve previous destination backup failed: {preserve_error!r}"
+                )
     return failures
 
 
@@ -1532,9 +1679,12 @@ def _promotion_error(
     return KnowledgeCompilationError("; ".join(details))
 
 
-def _promote(stage: Path, state: _PathState) -> None:
+def _promote(
+    stage: Path, stage_identity: tuple[int, int], state: _PathState
+) -> None:
     destination = state.destination
     backup: Path | None = None
+    backup_identity: tuple[int, int] | None = None
     try:
         _recheck_identity_chains(state)
         stage_result = os.lstat(stage)
@@ -1542,10 +1692,15 @@ def _promote(stage: Path, state: _PathState) -> None:
             raise KnowledgeCompilationError(
                 f"bundle stage is unsafe before promotion: {stage}"
             )
+        if (stage_result.st_dev, stage_result.st_ino) != stage_identity:
+            raise KnowledgeCompilationError(
+                f"bundle stage identity changed before promotion: {stage}"
+            )
         if _path_identity(stage.parent) != _path_identity(destination.parent):
             raise KnowledgeCompilationError("stage and destination parents do not match")
         backup = _choose_backup_path(destination) if state.destination_exists else None
         if backup is not None:
+            backup_identity = state.destination_chain[-1].identity
             try:
                 os.lstat(backup)
             except FileNotFoundError:
@@ -1556,7 +1711,9 @@ def _promote(stage: Path, state: _PathState) -> None:
                 )
     except BaseException as original:
         try:
-            _remove_owned_directory(stage, destination, _STAGE_SUFFIX)
+            _remove_owned_directory(
+                stage, destination, _STAGE_SUFFIX, stage_identity
+            )
         except BaseException as cleanup_error:
             raise _promotion_error(
                 original,
@@ -1595,7 +1752,9 @@ def _promote(stage: Path, state: _PathState) -> None:
                     original, failures, destination, stage, backup
                 ) from original
         try:
-            _remove_owned_directory(stage, destination, _STAGE_SUFFIX)
+            _remove_owned_directory(
+                stage, destination, _STAGE_SUFFIX, stage_identity
+            )
         except BaseException as cleanup_error:
             raise _promotion_error(
                 original,
@@ -1607,8 +1766,12 @@ def _promote(stage: Path, state: _PathState) -> None:
         raise _promotion_error(original, [], destination, stage, backup) from original
 
     if backup is not None:
+        if backup_identity is None:
+            raise AssertionError("existing destination requires captured backup identity")
         try:
-            _remove_owned_directory(backup, destination, _BACKUP_SUFFIX)
+            _remove_owned_directory(
+                backup, destination, _BACKUP_SUFFIX, backup_identity
+            )
         except BaseException as exc:
             raise KnowledgeCompilationError(
                 f"new bundle is durable but backup cleanup failed; preserved at {backup}: {exc}"
@@ -1621,9 +1784,16 @@ def _promote(stage: Path, state: _PathState) -> None:
             ) from exc
 
 
-def _clean_failed_stage(stage: Path, destination: Path, original: BaseException) -> None:
+def _clean_failed_stage(
+    stage: Path,
+    stage_identity: tuple[int, int],
+    destination: Path,
+    original: BaseException,
+) -> None:
     try:
-        _remove_owned_directory(stage, destination, _STAGE_SUFFIX)
+        _remove_owned_directory(
+            stage, destination, _STAGE_SUFFIX, stage_identity
+        )
     except BaseException as cleanup_error:
         raise KnowledgeCompilationError(
             f"bundle compilation failed ({original!r}); cleanup failed "
@@ -1656,28 +1826,26 @@ def compile_knowledge_bundle(
     )
 
     _create_missing_destination_parents(state)
-    # Capture compiler-created ancestors as part of the authority rechecked at promotion.
-    destination_chain, destination_exists = _capture_directory_chain(
-        destination, label="destination", require_final=False
-    )
-    state.destination_chain = destination_chain
-    state.destination_exists = destination_exists
-    _reject_overlap(state.source_chain, destination_chain, destination_exists)
-    stage = _create_stage_directory(destination)
+    _recheck_identity_chains(state)
+    stage, stage_identity = _create_stage_directory(destination)
     promotion_started = False
     try:
-        _write_database(stage, rows, content_sha256, coverage_sha256)
-        _write_coverage(stage, coverage_bytes)
-        _stage_entries(stage)
-        _fsync_stage_regular(stage, "knowledge.sqlite")
-        _fsync_stage_regular(stage, "evidence-coverage.json")
-        _verify_staged_bundle(stage, rows, manifest, coverage_bytes)
-        _fsync_directory(stage)
+        _write_database(
+            stage, rows, content_sha256, coverage_sha256, stage_identity
+        )
+        _write_coverage(stage, coverage_bytes, stage_identity)
+        _stage_entries(stage, stage_identity)
+        _fsync_stage_regular(stage, "knowledge.sqlite", stage_identity)
+        _fsync_stage_regular(stage, "evidence-coverage.json", stage_identity)
+        _verify_staged_bundle(
+            stage, rows, manifest, coverage_bytes, stage_identity
+        )
+        _fsync_stage_directory(stage, stage_identity)
         promotion_started = True
-        _promote(stage, state)
+        _promote(stage, stage_identity, state)
     except (KnowledgeCompilationError, CoverageError, sqlite3.Error, OSError) as exc:
         if not promotion_started:
-            _clean_failed_stage(stage, destination, exc)
+            _clean_failed_stage(stage, stage_identity, destination, exc)
             if isinstance(exc, KnowledgeCompilationError):
                 raise
             raise KnowledgeCompilationError(f"bundle compilation failed: {exc}") from exc

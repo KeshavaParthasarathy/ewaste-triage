@@ -433,6 +433,27 @@ def test_validator_rejects_each_closed_shape_semantic_mutation(
         validate_coverage_report(report)
 
 
+@pytest.mark.parametrize(
+    "forbidden",
+    [
+        pytest.param("\x00", id="Cc-NUL"),
+        pytest.param("\u200e", id="Cf-format"),
+        pytest.param("\ud800", id="Cs-surrogate"),
+        pytest.param("\ue000", id="Co-private-use"),
+        pytest.param("\u0378", id="Cn-unassigned"),
+    ],
+)
+def test_unknown_reason_rejects_every_unicode_control_category(
+    valid_documents: EvidenceDocuments,
+    forbidden: str,
+) -> None:
+    report = build_coverage(valid_documents, "f" * 64)
+    _mutate_first_unknown(report, "unknown_reason", f"Before{forbidden}after")
+
+    with pytest.raises(CoverageError, match="Unicode control"):
+        validate_coverage_report(report)
+
+
 def test_builder_rejects_duplicate_claim_keys(valid_documents: EvidenceDocuments) -> None:
     category = valid_documents.categories[0]
     changed = replace(
