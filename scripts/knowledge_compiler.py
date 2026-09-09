@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ctypes
 from datetime import date
 from enum import Enum
 import hashlib
@@ -11,10 +12,11 @@ import math
 import os
 from pathlib import Path
 import re
-import shutil
+import secrets
 import sqlite3
 import stat
-from typing import Mapping
+import sys
+from typing import Callable, Mapping
 import unicodedata
 from uuid import uuid4
 
@@ -1182,12 +1184,7 @@ def _create_stage_directory(destination: Path) -> tuple[Path, tuple[int, int]]:
                 )
         except BaseException as original:
             try:
-                current = os.lstat(candidate)
-                if (current.st_dev, current.st_ino) != identity:
-                    raise KnowledgeCompilationError(
-                        f"created bundle stage identity changed; preserved at {candidate}"
-                    )
-                os.rmdir(candidate)
+                _remove_owned_directory(candidate, destination, _STAGE_SUFFIX, identity)
             except BaseException as cleanup_error:
                 raise KnowledgeCompilationError(
                     f"bundle stage validation failed ({original!r}); cleanup failed "
@@ -1241,12 +1238,168 @@ def _remove_owned_directory(
         raise KnowledgeCompilationError(
             f"refusing to clean replaced recovery path; preserved at {path}"
         )
+    parent_fd = original_fd = holder_fd = -1
+    holder: Path | None = None
+    detached: Path | None = None
     try:
-        shutil.rmtree(path)
-    except OSError as exc:
+        parent_fd = _open_stage_directory(path.parent)
+        original_fd = _open_named_directory(path, parent_fd, expected_identity)
+        # The holder's namespace is private to this invocation. POSIX/macOS
+        # cannot compare an expected inode atomically with unlink/rmdir. Never
+        # recursively delete from the public stage/backup name; detach first,
+        # and verify against the still-open inode before traversing anything.
+        for _ in range(_UUID_ATTEMPTS):
+            holder = path.parent / f".{destination.name}-{secrets.token_hex(16)}.cleanup"
+            try:
+                os.mkdir(holder.name, mode=0o700, dir_fd=parent_fd)
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise KnowledgeCompilationError("could not allocate private cleanup holder")
+        holder_stat = os.stat(holder.name, dir_fd=parent_fd, follow_symlinks=False)
+        holder_identity = (holder_stat.st_dev, holder_stat.st_ino)
+        holder_fd = _open_named_directory(holder, parent_fd, holder_identity)
+        if stat.S_IMODE(os.fstat(holder_fd).st_mode) != 0o700:
+            raise KnowledgeCompilationError("cleanup holder does not have mode 0700")
+        detached = holder / path.name
+        _rename_noreplace(path, detached, parent_fd, holder_fd)
+        _require_named_identity(detached, holder_fd, expected_identity)
+        _remove_directory_contents(original_fd)
+        _require_named_identity(detached, holder_fd, expected_identity)
+        os.rmdir(detached.name, dir_fd=holder_fd)
+        _require_named_identity(holder, parent_fd, holder_identity)
+        # Only an empty holder is removed from the public parent. This is not
+        # an atomic expected-inode delete against an arbitrary same-UID actor.
+        os.rmdir(holder.name, dir_fd=parent_fd)
+    except (OSError, KnowledgeCompilationError) as exc:
+        recovery_errors: list[str] = []
+        if detached is not None and holder_fd >= 0:
+            try:
+                _require_named_identity(detached, holder_fd, expected_identity)
+                _rename_noreplace(detached, path, holder_fd, parent_fd)
+                _require_named_identity(path, parent_fd, expected_identity)
+                _require_named_identity(holder, parent_fd, holder_identity)
+                os.rmdir(holder.name, dir_fd=parent_fd)
+            except BaseException as recovery_error:
+                recovery_errors.append("restore cleanup path failed: " + _safe_exception(recovery_error))
+        paths: list[str] = []
+        for candidate in (path, holder, detached, _descriptor_path(original_fd)):
+            if candidate is not None and str(candidate) not in paths:
+                try:
+                    present = _stage_is_present(candidate)
+                except BaseException as inspection_error:
+                    recovery_errors.append("cleanup recovery inspection failed: " + _safe_exception(inspection_error))
+                    present = True
+                if present:
+                    paths.append(str(candidate))
         raise KnowledgeCompilationError(
-            f"could not clean recovery directory; preserved at {path}: {exc}"
+            f"could not clean recovery directory: {_safe_exception(exc)}; "
+            + "; ".join(recovery_errors)
+            + "; preserved recovery paths: " + ", ".join(paths)
         ) from exc
+    finally:
+        try:
+            if holder_fd >= 0:
+                _close_descriptor(holder_fd)
+        finally:
+            try:
+                if original_fd >= 0:
+                    _close_descriptor(original_fd)
+            finally:
+                if parent_fd >= 0:
+                    _close_descriptor(parent_fd)
+
+
+def _safe_exception(exc: BaseException) -> str:
+    try:
+        return repr(exc)
+    except BaseException:
+        return type(exc).__name__ + " (unprintable error)"
+
+
+def _descriptor_path(descriptor: int) -> Path | None:
+    """Best-effort recovery discovery; formatting errors must never mask I/O."""
+    if descriptor < 0:
+        return None
+    try:
+        if sys.platform == "darwin":
+            import fcntl
+            value = fcntl.fcntl(descriptor, 50, bytes(1024))  # F_GETPATH
+            return Path(os.fsdecode(value.split(b"\0", 1)[0]))
+        if sys.platform.startswith("linux"):
+            return Path(os.readlink(f"/proc/self/fd/{descriptor}"))
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _rename_noreplace(
+    source: Path, destination: Path, source_parent_fd: int,
+    destination_parent_fd: int | None = None,
+) -> None:
+    """Atomic target absence, with all resolution relative to captured parents."""
+    destination_parent_fd = (source_parent_fd if destination_parent_fd is None
+                             else destination_parent_fd)
+    if sys.platform == "darwin":
+        symbol, flag = "renameatx_np", 0x4  # RENAME_EXCL, macOS 10.12+
+    elif sys.platform.startswith("linux"):
+        symbol, flag = "renameat2", 0x1  # RENAME_NOREPLACE
+    else:
+        raise KnowledgeCompilationError("atomic no-replace rename is unsupported on this platform")
+    try:
+        function = getattr(ctypes.CDLL(None, use_errno=True), symbol)
+    except (OSError, AttributeError) as exc:
+        raise KnowledgeCompilationError("atomic no-replace rename is unavailable") from exc
+    function.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+    function.restype = ctypes.c_int
+    if function(source_parent_fd, os.fsencode(source.name), destination_parent_fd,
+                os.fsencode(destination.name), flag) != 0:
+        error = ctypes.get_errno()
+        raise KnowledgeCompilationError(
+            f"atomic no-replace rename failed (errno {error}: {os.strerror(error)})"
+        )
+
+
+def _require_named_identity(
+    path: Path, parent_fd: int, identity: tuple[int, int]
+) -> None:
+    result = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+    if not stat.S_ISDIR(result.st_mode) or (result.st_dev, result.st_ino) != identity:
+        raise KnowledgeCompilationError(f"directory identity changed; preserved at {path}")
+
+
+def _open_named_directory(path: Path, parent_fd: int, identity: tuple[int, int]) -> int:
+    descriptor = os.open(path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                         dir_fd=parent_fd)
+    try:
+        result = os.fstat(descriptor)
+        if not stat.S_ISDIR(result.st_mode) or (result.st_dev, result.st_ino) != identity:
+            raise KnowledgeCompilationError(f"directory identity changed; preserved at {path}")
+    except BaseException:
+        _close_descriptor(descriptor)
+        raise
+    return descriptor
+
+
+def _remove_directory_contents(descriptor: int) -> None:
+    """No-follow traversal only inside a verified detached private namespace."""
+    with os.scandir(descriptor) as iterator:
+        entries = [(entry.name, entry.stat(follow_symlinks=False)) for entry in iterator]
+    for name, before in entries:
+        if stat.S_ISDIR(before.st_mode):
+            child = _open_named_directory(Path(name), descriptor, (before.st_dev, before.st_ino))
+            try:
+                _remove_directory_contents(child)
+                _require_named_identity(Path(name), descriptor, (before.st_dev, before.st_ino))
+                os.rmdir(name, dir_fd=descriptor)
+            finally:
+                _close_descriptor(child)
+        else:
+            after = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+                raise KnowledgeCompilationError("cleanup entry identity changed")
+            os.unlink(name, dir_fd=descriptor)
 
 
 def _open_stage_directory(
@@ -1311,13 +1464,29 @@ def _open_stage_regular(
             raise KnowledgeCompilationError(
                 f"staged artifact identity changed while opening: {name}"
             )
+        # Ownership transfers only after the enclosing directory has closed.
+        closing_stage = stage_descriptor
+        stage_descriptor = -1
+        _close_descriptor(closing_stage)
         result = descriptor
         descriptor = -1
         return result
     finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        os.close(stage_descriptor)
+        try:
+            if descriptor >= 0:
+                _close_descriptor(descriptor)
+        finally:
+            if stage_descriptor >= 0:
+                _close_descriptor(stage_descriptor)
+
+
+def _close_descriptor(descriptor: int) -> None:
+    original = sys.exception()
+    try:
+        os.close(descriptor)
+    except OSError as exc:
+        prefix = f"original failure: {_safe_exception(original)}; " if original is not None else ""
+        raise KnowledgeCompilationError(f"{prefix}descriptor close failed: {exc}") from exc
 
 
 def _stage_entries(
@@ -1450,9 +1619,11 @@ def _write_database(
                 raise OSError("short write for SQLite database")
             view = view[written:]
     finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        os.close(stage_descriptor)
+        try:
+            if descriptor >= 0:
+                _close_descriptor(descriptor)
+        finally:
+            _close_descriptor(stage_descriptor)
 
 
 def _write_coverage(
@@ -1474,9 +1645,11 @@ def _write_coverage(
                 raise OSError("short write for evidence coverage")
             view = view[written:]
     finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        os.close(stage_descriptor)
+        try:
+            if descriptor >= 0:
+                _close_descriptor(descriptor)
+        finally:
+            _close_descriptor(stage_descriptor)
 
 
 def _read_database_rows(
@@ -1630,35 +1803,41 @@ def _rollback_promotion(
     stage: Path,
     backup: Path | None,
     had_destination: bool,
+    parent_fd: int,
+    stage_identity: tuple[int, int],
+    backup_identity: tuple[int, int] | None,
 ) -> list[str]:
     failures: list[str] = []
     restored_backup = False
     try:
-        if _stage_is_present(destination) and not _stage_is_present(stage):
-            os.replace(destination, stage)
+        if _stage_is_present(destination):
+            _require_named_identity(destination, parent_fd, stage_identity)
+            _rename_noreplace(destination, stage, parent_fd)
+            _require_named_identity(stage, parent_fd, stage_identity)
     except BaseException as exc:
-        failures.append(f"move new destination aside failed: {exc!r}")
-    if backup is not None and _stage_is_present(backup):
-        try:
-            if _stage_is_present(destination):
-                failures.append("restore blocked because destination is still present")
-            else:
-                os.replace(backup, destination)
-                restored_backup = True
-        except BaseException as exc:
-            failures.append(f"restore previous destination failed: {exc!r}")
-    elif had_destination and not _stage_is_present(destination):
-        failures.append("previous destination backup is missing")
+        failures.append(f"move new destination aside failed: {_safe_exception(exc)}")
+    try:
+        if backup is not None and backup_identity is not None:
+            _require_named_identity(backup, parent_fd, backup_identity)
+            _rename_noreplace(backup, destination, parent_fd)
+            _require_named_identity(destination, parent_fd, backup_identity)
+            restored_backup = True
+        elif had_destination:
+            failures.append("previous destination backup identity is missing")
+    except BaseException as exc:
+        failures.append(f"restore previous destination failed: {_safe_exception(exc)}")
     try:
         _fsync_directory(destination.parent)
     except BaseException as exc:
-        failures.append(f"rollback parent fsync failed: {exc!r}")
+        failures.append(f"rollback parent fsync failed: {_safe_exception(exc)}")
         if restored_backup and backup is not None:
             try:
-                os.replace(destination, backup)
+                _require_named_identity(destination, parent_fd, backup_identity)
+                _rename_noreplace(destination, backup, parent_fd)
+                _require_named_identity(backup, parent_fd, backup_identity)
             except BaseException as preserve_error:
                 failures.append(
-                    f"preserve previous destination backup failed: {preserve_error!r}"
+                    f"preserve previous destination backup failed: {_safe_exception(preserve_error)}"
                 )
     return failures
 
@@ -1669,87 +1848,111 @@ def _promotion_error(
     destination: Path,
     stage: Path,
     backup: Path | None,
+    descriptors: tuple[int, ...] = (),
 ) -> KnowledgeCompilationError:
-    details = [f"bundle promotion failure: {original!r}", *failures]
-    preserved = [str(path) for path in (backup, stage) if path is not None and _stage_is_present(path)]
-    if failures and _stage_is_present(destination):
-        preserved.append(str(destination))
+    details = [f"bundle promotion failure: {_safe_exception(original)}", *failures]
+    preserved: list[str] = []
+    candidates = [backup, stage, destination if failures else None]
+    candidates.extend(_descriptor_path(descriptor) for descriptor in descriptors)
+    for path in candidates:
+        if path is None or str(path) in preserved:
+            continue
+        try:
+            present = _stage_is_present(path)
+        except BaseException as exc:
+            details.append(f"recovery path inspection failed for {path}: {_safe_exception(exc)}")
+            present = True  # Unknown presence is never interpreted as absence.
+        if present:
+            preserved.append(str(path))
     if preserved:
         details.append("preserved recovery paths: " + ", ".join(preserved))
     return KnowledgeCompilationError("; ".join(details))
 
 
 def _promote(
-    stage: Path, stage_identity: tuple[int, int], state: _PathState
+    stage: Path, stage_identity: tuple[int, int], state: _PathState,
+    verify: Callable[[Path], None],
+) -> None:
+    destination = state.destination
+    parent_fd = stage_fd = old_fd = -1
+    started = False
+    try:
+        _recheck_identity_chains(state)
+        parent_identity = next(entry.identity for entry in state.destination_chain
+                               if entry.path == destination.parent)
+        parent_fd = _open_stage_directory(destination.parent, parent_identity)
+        stage_fd = _open_named_directory(stage, parent_fd, stage_identity)
+        old_identity = state.destination_chain[-1].identity if state.destination_exists else None
+        if old_identity is not None:
+            old_fd = _open_named_directory(destination, parent_fd, old_identity)
+        started = True
+        _promote_bound(stage, stage_identity, state, parent_fd, old_identity,
+                       (stage_fd, old_fd), verify)
+    except BaseException as original:
+        if not started:
+            failures = []
+            try:
+                _remove_owned_directory(stage, destination, _STAGE_SUFFIX, stage_identity)
+            except BaseException as cleanup_error:
+                failures.append(f"stage cleanup failed: {_safe_exception(cleanup_error)}")
+            raise _promotion_error(original, failures, destination, stage, None,
+                                   (stage_fd, old_fd)) from original
+        if isinstance(original, KnowledgeCompilationError):
+            raise
+        raise _promotion_error(original, [], destination, stage, None,
+                               (stage_fd, old_fd)) from original
+    finally:
+        try:
+            if old_fd >= 0:
+                _close_descriptor(old_fd)
+        finally:
+            try:
+                if stage_fd >= 0:
+                    _close_descriptor(stage_fd)
+            finally:
+                if parent_fd >= 0:
+                    _close_descriptor(parent_fd)
+
+
+def _promote_bound(
+    stage: Path, stage_identity: tuple[int, int], state: _PathState,
+    parent_fd: int, backup_identity: tuple[int, int] | None,
+    descriptors: tuple[int, ...], verify: Callable[[Path], None],
 ) -> None:
     destination = state.destination
     backup: Path | None = None
-    backup_identity: tuple[int, int] | None = None
-    try:
-        _recheck_identity_chains(state)
-        stage_result = os.lstat(stage)
-        if stat.S_ISLNK(stage_result.st_mode) or not stat.S_ISDIR(stage_result.st_mode):
-            raise KnowledgeCompilationError(
-                f"bundle stage is unsafe before promotion: {stage}"
-            )
-        if (stage_result.st_dev, stage_result.st_ino) != stage_identity:
-            raise KnowledgeCompilationError(
-                f"bundle stage identity changed before promotion: {stage}"
-            )
-        if _path_identity(stage.parent) != _path_identity(destination.parent):
-            raise KnowledgeCompilationError("stage and destination parents do not match")
-        backup = _choose_backup_path(destination) if state.destination_exists else None
-        if backup is not None:
-            backup_identity = state.destination_chain[-1].identity
-            try:
-                os.lstat(backup)
-            except FileNotFoundError:
-                pass
-            else:
-                raise KnowledgeCompilationError(
-                    f"bundle backup appeared before promotion: {backup}"
-                )
-    except BaseException as original:
-        try:
-            _remove_owned_directory(
-                stage, destination, _STAGE_SUFFIX, stage_identity
-            )
-        except BaseException as cleanup_error:
-            raise _promotion_error(
-                original,
-                [f"stage cleanup failed: {cleanup_error!r}"],
-                destination,
-                stage,
-                backup,
-            ) from original
-        if isinstance(original, KnowledgeCompilationError):
-            raise original
-        raise _promotion_error(original, [], destination, stage, backup) from original
     moved_old = False
     moved_new = False
     try:
+        backup = _choose_backup_path(destination) if state.destination_exists else None
         if backup is not None:
-            os.replace(destination, backup)
+            _rename_noreplace(destination, backup, parent_fd)
             moved_old = True
+            _require_named_identity(backup, parent_fd, backup_identity)
             _fsync_directory(destination.parent)
-        os.replace(stage, destination)
+        _rename_noreplace(stage, destination, parent_fd)
         moved_new = True
+        _require_named_identity(destination, parent_fd, stage_identity)
+        verify(destination)
         _fsync_directory(destination.parent)
+        # Parent fsync is another observable boundary: revalidate exact inode
+        # and full contents before accepting durability or removing the old copy.
+        _require_named_identity(destination, parent_fd, stage_identity)
+        verify(destination)
     except BaseException as original:
-        moved_old = moved_old or (backup is not None and _stage_is_present(backup))
-        moved_new = moved_new or (
-            _stage_is_present(destination) and not _stage_is_present(stage)
-        )
         if moved_old or moved_new:
             failures = _rollback_promotion(
                 destination=destination,
                 stage=stage,
                 backup=backup,
                 had_destination=state.destination_exists,
+                parent_fd=parent_fd,
+                stage_identity=stage_identity,
+                backup_identity=backup_identity,
             )
             if failures:
                 raise _promotion_error(
-                    original, failures, destination, stage, backup
+                    original, failures, destination, stage, backup, descriptors
                 ) from original
         try:
             _remove_owned_directory(
@@ -1758,12 +1961,13 @@ def _promote(
         except BaseException as cleanup_error:
             raise _promotion_error(
                 original,
-                [f"stage cleanup failed: {cleanup_error!r}"],
+                [f"stage cleanup failed: {_safe_exception(cleanup_error)}"],
                 destination,
                 stage,
                 backup,
+                descriptors,
             ) from original
-        raise _promotion_error(original, [], destination, stage, backup) from original
+        raise _promotion_error(original, [], destination, stage, backup, descriptors) from original
 
     if backup is not None:
         if backup_identity is None:
@@ -1774,14 +1978,20 @@ def _promote(
             )
         except BaseException as exc:
             raise KnowledgeCompilationError(
-                f"new bundle is durable but backup cleanup failed; preserved at {backup}: {exc}"
+                f"new bundle is durable but backup cleanup failed: {_safe_exception(exc)}"
             ) from exc
         try:
             _fsync_directory(destination.parent)
+            _require_named_identity(destination, parent_fd, stage_identity)
+            verify(destination)
         except BaseException as exc:
-            raise KnowledgeCompilationError(
-                f"new bundle remains installed but final parent fsync failed: {exc}"
-            ) from exc
+            # The old directory is already removed. Never imply it is still
+            # recoverable, or accept a replacement at this final boundary.
+            original = KnowledgeCompilationError(
+                "final parent fsync or installed bundle verification failed: " + _safe_exception(exc)
+            )
+            raise _promotion_error(original, ["installed destination requires recovery inspection"],
+                                   destination, stage, None, descriptors[:1]) from exc
 
 
 def _clean_failed_stage(
@@ -1795,10 +2005,8 @@ def _clean_failed_stage(
             stage, destination, _STAGE_SUFFIX, stage_identity
         )
     except BaseException as cleanup_error:
-        raise KnowledgeCompilationError(
-            f"bundle compilation failed ({original!r}); cleanup failed "
-            f"({cleanup_error!r}); preserved recovery path: {stage}"
-        ) from original
+        raise _promotion_error(original, [f"stage cleanup failed: {_safe_exception(cleanup_error)}"],
+                               destination, stage, None) from original
 
 
 def compile_knowledge_bundle(
@@ -1842,7 +2050,9 @@ def compile_knowledge_bundle(
         )
         _fsync_stage_directory(stage, stage_identity)
         promotion_started = True
-        _promote(stage, stage_identity, state)
+        _promote(stage, stage_identity, state, lambda path: _verify_staged_bundle(
+            path, rows, manifest, coverage_bytes, stage_identity
+        ))
     except (KnowledgeCompilationError, CoverageError, sqlite3.Error, OSError) as exc:
         if not promotion_started:
             _clean_failed_stage(stage, stage_identity, destination, exc)

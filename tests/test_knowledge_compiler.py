@@ -4055,14 +4055,14 @@ def test_failed_stage_to_destination_promotion_restores_old_bundle(
     before = _snapshot_tree(destination)
     unrelated = tmp_path / ".bundle-unrelated.stage"
     unrelated.mkdir()
-    real_replace = compiler_module.os.replace
+    real_replace = compiler_module._rename_noreplace
 
-    def fail_stage(source_path: object, destination_path: object) -> None:
+    def fail_stage(source_path: object, destination_path: object, *args: object) -> None:
         if str(source_path).endswith(".stage") and Path(destination_path) == destination:
             raise OSError("injected promotion failure")
-        real_replace(source_path, destination_path)
+        real_replace(source_path, destination_path, *args)
 
-    monkeypatch.setattr(compiler_module.os, "replace", fail_stage)
+    monkeypatch.setattr(compiler_module, "_rename_noreplace", fail_stage)
     with pytest.raises(KnowledgeCompilationError, match="promotion failure"):
         compile_knowledge_bundle(source, destination)
 
@@ -4199,13 +4199,11 @@ def test_all_case_alias_identity_relationships_are_rejected_before_stage(
 
     monkeypatch.setattr(compiler_module, "_path_identity", identity_view)
     replace_calls: list[tuple[object, object]] = []
-    monkeypatch.setattr(
-        compiler_module.os,
-        "replace",
-        lambda source_path, destination_path: replace_calls.append(
-            (source_path, destination_path)
-        ),
-    )
+    def record_promotion(source_path: Path, destination_path: Path) -> None:
+        if source_path == destination or destination_path == destination:
+            replace_calls.append((source_path, destination_path))
+
+    _intercept_promotion_move(monkeypatch, record_promotion)
     with pytest.raises(KnowledgeCompilationError, match="must not overlap"):
         compile_knowledge_bundle(source, destination)
     assert replace_calls == []
@@ -4318,18 +4316,75 @@ def test_backup_name_collision_of_every_kind_is_retried_without_touching_collisi
     )
 
 
-def test_stage_mode_failure_cleans_the_created_stage_inode(tmp_path: Path) -> None:
+@pytest.mark.parametrize("existing", [False, True])
+def test_unreadable_stage_mode_failure_preserves_exact_inode_and_closes_descriptors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: bool
+) -> None:
     source = make_valid_knowledge_source(tmp_path / "source")
     destination = tmp_path / "bundle"
+    if existing:
+        compile_knowledge_bundle(source, destination)
+    old = _snapshot_tree(destination) if existing else None
+    source_before = _snapshot_tree(source)
+    captured: list[tuple[Path, tuple[int, int, int]]] = []
+    opened: set[int] = set()
+    destructive: list[object] = []
+    real_mkdir, real_open, real_close = Path.mkdir, os.open, os.close
+    real_rmdir, real_move = os.rmdir, compiler_module._rename_noreplace
+
+    def mkdir(path: Path, *args: object, **kwargs: object) -> None:
+        real_mkdir(path, *args, **kwargs)
+        if path.suffix == ".stage":
+            result = os.lstat(path)
+            captured.append((path, (result.st_dev, result.st_ino, result.st_mode)))
+
+    def tracked_open(*args: object, **kwargs: object) -> int:
+        fd = real_open(*args, **kwargs)
+        opened.add(fd)
+        return fd
+
+    def tracked_close(fd: int) -> None:
+        real_close(fd)
+        opened.discard(fd)
+
+    def rmdir(*args: object, **kwargs: object) -> None:
+        destructive.append(args)
+        real_rmdir(*args, **kwargs)
+
+    def move(*args: object, **kwargs: object) -> None:
+        destructive.append(args)
+        real_move(*args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", mkdir)
+    monkeypatch.setattr(os, "open", tracked_open)
+    monkeypatch.setattr(os, "close", tracked_close)
+    monkeypatch.setattr(os, "rmdir", rmdir)
+    monkeypatch.setattr(compiler_module, "_rename_noreplace", move)
     previous_umask = os.umask(0o700)
     try:
-        with pytest.raises(KnowledgeCompilationError, match="mode 0700"):
+        with pytest.raises(KnowledgeCompilationError, match="mode 0700") as error:
             compile_knowledge_bundle(source, destination)
     finally:
         os.umask(previous_umask)
 
-    assert not destination.exists()
-    assert not list(tmp_path.glob(".bundle-*.stage"))
+    # A mode-000 directory cannot be safely opened for descriptor-bound cleanup.
+    # Preserve it, as required by the current C4 conservative-recovery contract.
+    assert len(captured) == 1
+    stage, identity = captured[0]
+    result = os.lstat(stage)
+    assert (result.st_dev, result.st_ino, result.st_mode) == identity
+    assert stat.S_IMODE(result.st_mode) == 0
+    assert list(tmp_path.glob(".bundle-*.stage")) == [stage]
+    assert not list(tmp_path.glob(".bundle-*.cleanup"))
+    assert not list(tmp_path.glob(".bundle-*.backup"))
+    assert "cleanup failed" in str(error.value)
+    assert "PermissionError" in str(error.value)
+    assert "preserved recovery path" in str(error.value)
+    assert str(stage) in str(error.value)
+    assert _snapshot_tree(source) == source_before
+    assert (_snapshot_tree(destination) if destination.exists() else None) == old
+    assert opened == set()
+    assert destructive == []
 
 
 def test_failed_stage_cleanup_never_deletes_a_substituted_directory(
@@ -4538,14 +4593,14 @@ def test_backup_removal_failure_keeps_new_bundle_and_exact_backup(
     destination = tmp_path / "bundle"
     old = compile_knowledge_bundle(source, destination)
     new_hash = _mutate_release_content(source)
-    real_rmtree = compiler_module.shutil.rmtree
+    real_remove = compiler_module._remove_directory_contents
 
-    def fail_backup(path: Path) -> None:
-        if str(path).endswith(".backup"):
+    def fail_backup(descriptor: int) -> None:
+        if str(compiler_module._descriptor_path(descriptor)).endswith(".backup"):
             raise OSError("injected backup removal failure")
-        real_rmtree(path)
+        real_remove(descriptor)
 
-    monkeypatch.setattr(compiler_module.shutil, "rmtree", fail_backup)
+    monkeypatch.setattr(compiler_module, "_remove_directory_contents", fail_backup)
     with pytest.raises(KnowledgeCompilationError, match="backup cleanup failed") as error:
         compile_knowledge_bundle(source, destination)
     backups = list(tmp_path.glob(".bundle-*.backup"))
@@ -4562,18 +4617,18 @@ def test_restore_failure_preserves_stage_and_backup_recovery_paths(
     destination = tmp_path / "bundle"
     compile_knowledge_bundle(source, destination)
     _mutate_release_content(source)
-    real_replace = compiler_module.os.replace
+    real_replace = compiler_module._rename_noreplace
 
-    def fail_promotion_and_restore(source_path: object, destination_path: object) -> None:
+    def fail_promotion_and_restore(source_path: object, destination_path: object, *args: object) -> None:
         source_path = Path(source_path)
         destination_path = Path(destination_path)
         if source_path.name.endswith(".stage") and destination_path == destination:
             raise OSError("injected promotion failure")
         if source_path.name.endswith(".backup") and destination_path == destination:
             raise OSError("injected restore failure")
-        real_replace(source_path, destination_path)
+        real_replace(source_path, destination_path, *args)
 
-    monkeypatch.setattr(compiler_module.os, "replace", fail_promotion_and_restore)
+    monkeypatch.setattr(compiler_module, "_rename_noreplace", fail_promotion_and_restore)
     with pytest.raises(KnowledgeCompilationError, match="restore previous") as error:
         compile_knowledge_bundle(source, destination)
     stages = list(tmp_path.glob(".bundle-*.stage"))
@@ -4591,14 +4646,14 @@ def test_move_aside_failure_preserves_new_destination_and_old_backup(
     destination = tmp_path / "bundle"
     old = compile_knowledge_bundle(source, destination)
     new_hash = _mutate_release_content(source)
-    real_replace = compiler_module.os.replace
+    real_replace = compiler_module._rename_noreplace
     real_fsync = compiler_module._fsync_directory
     parent_calls = 0
 
-    def fail_move_aside(source_path: object, destination_path: object) -> None:
+    def fail_move_aside(source_path: object, destination_path: object, *args: object) -> None:
         if Path(source_path) == destination and str(destination_path).endswith(".stage"):
             raise OSError("injected move-aside failure")
-        real_replace(source_path, destination_path)
+        real_replace(source_path, destination_path, *args)
 
     def fail_new_fsync(path: Path) -> None:
         nonlocal parent_calls
@@ -4609,7 +4664,7 @@ def test_move_aside_failure_preserves_new_destination_and_old_backup(
                 raise OSError("injected new-destination fsync failure")
         real_fsync(path)
 
-    monkeypatch.setattr(compiler_module.os, "replace", fail_move_aside)
+    monkeypatch.setattr(compiler_module, "_rename_noreplace", fail_move_aside)
     monkeypatch.setattr(compiler_module, "_fsync_directory", fail_new_fsync)
     with pytest.raises(KnowledgeCompilationError, match="move new destination aside") as error:
         compile_knowledge_bundle(source, destination)
@@ -4724,14 +4779,14 @@ def test_old_destination_rename_failure_preserves_old_and_cleans_stage(
     compile_knowledge_bundle(source, destination)
     old_tree = _snapshot_tree(destination)
     _mutate_release_content(source)
-    real_replace = compiler_module.os.replace
+    real_replace = compiler_module._rename_noreplace
 
-    def fail_old(source_path: object, destination_path: object) -> None:
+    def fail_old(source_path: object, destination_path: object, *args: object) -> None:
         if Path(source_path) == destination and str(destination_path).endswith(".backup"):
             raise OSError("old destination rename failed")
-        real_replace(source_path, destination_path)
+        real_replace(source_path, destination_path, *args)
 
-    monkeypatch.setattr(compiler_module.os, "replace", fail_old)
+    monkeypatch.setattr(compiler_module, "_rename_noreplace", fail_old)
     with pytest.raises(KnowledgeCompilationError, match="rename failed"):
         compile_knowledge_bundle(source, destination)
     assert _snapshot_tree(destination) == old_tree
@@ -4746,14 +4801,14 @@ def test_rollback_parent_fsync_failure_preserves_both_recovery_artifacts(
     destination = tmp_path / "bundle"
     old = compile_knowledge_bundle(source, destination)
     new_hash = _mutate_release_content(source)
-    real_replace = compiler_module.os.replace
+    real_replace = compiler_module._rename_noreplace
     real_fsync = compiler_module._fsync_directory
     parent_calls = 0
 
-    def fail_stage_rename(source_path: object, destination_path: object) -> None:
+    def fail_stage_rename(source_path: object, destination_path: object, *args: object) -> None:
         if str(source_path).endswith(".stage") and Path(destination_path) == destination:
             raise OSError("stage rename failed")
-        real_replace(source_path, destination_path)
+        real_replace(source_path, destination_path, *args)
 
     def fail_rollback_fsync(path: Path) -> None:
         nonlocal parent_calls
@@ -4764,7 +4819,7 @@ def test_rollback_parent_fsync_failure_preserves_both_recovery_artifacts(
                 raise OSError("rollback fsync failed")
         real_fsync(path)
 
-    monkeypatch.setattr(compiler_module.os, "replace", fail_stage_rename)
+    monkeypatch.setattr(compiler_module, "_rename_noreplace", fail_stage_rename)
     monkeypatch.setattr(compiler_module, "_fsync_directory", fail_rollback_fsync)
     with pytest.raises(KnowledgeCompilationError, match="rollback parent fsync") as error:
         compile_knowledge_bundle(source, destination)
@@ -4788,14 +4843,14 @@ def test_cleanup_failure_preserves_exact_stage_and_reports_both_failures(
         "_write_database",
         lambda *_args: (_ for _ in ()).throw(OSError("original write failure")),
     )
-    real_rmtree = compiler_module.shutil.rmtree
+    real_remove = compiler_module._remove_directory_contents
 
-    def fail_stage_cleanup(path: Path) -> None:
-        if str(path).endswith(".stage"):
+    def fail_stage_cleanup(descriptor: int) -> None:
+        if str(compiler_module._descriptor_path(descriptor)).endswith(".stage"):
             raise OSError("stage cleanup failure")
-        real_rmtree(path)
+        real_remove(descriptor)
 
-    monkeypatch.setattr(compiler_module.shutil, "rmtree", fail_stage_cleanup)
+    monkeypatch.setattr(compiler_module, "_remove_directory_contents", fail_stage_cleanup)
     with pytest.raises(KnowledgeCompilationError) as error:
         compile_knowledge_bundle(source, destination)
     stages = list(tmp_path.glob(".bundle-*.stage"))
@@ -4875,6 +4930,791 @@ def test_every_compiler_opened_descriptor_is_closed_on_success(
     monkeypatch.setattr(compiler_module.os, "close", tracked_close)
     compile_knowledge_bundle(source, tmp_path / "bundle")
     assert opened == set()
+
+
+def _intercept_promotion_move(monkeypatch: pytest.MonkeyPatch, attack: Callable) -> None:
+    """Inject at the actual move boundary, across the no-replace migration."""
+    if hasattr(compiler_module, "_rename_noreplace"):
+        import ctypes
+        import fcntl
+        from types import SimpleNamespace
+
+        library = ctypes.CDLL(None, use_errno=True)
+        symbol = "renameatx_np" if sys.platform == "darwin" else "renameat2"
+        real_native = getattr(library, symbol)
+        real_native.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                                ctypes.c_char_p, ctypes.c_uint)
+        real_native.restype = ctypes.c_int
+
+        def parent_path(fd: int) -> Path:
+            if sys.platform == "darwin":
+                return Path(os.fsdecode(fcntl.fcntl(fd, 50, bytes(1024)).split(b"\0", 1)[0]))
+            return Path(os.readlink(f"/proc/self/fd/{fd}"))
+
+        def native(src_fd: int, src: bytes, dst_fd: int, dst: bytes, flags: int) -> int:
+            assert src_fd >= 0 and dst_fd >= 0
+            assert flags == (4 if sys.platform == "darwin" else 1)
+            attack(parent_path(src_fd) / os.fsdecode(src), parent_path(dst_fd) / os.fsdecode(dst))
+            return real_native(src_fd, src, dst_fd, dst, flags)
+
+        monkeypatch.setattr(ctypes, "CDLL", lambda *_a, **_k: SimpleNamespace(**{symbol: native}))
+        return
+    owner = compiler_module if hasattr(compiler_module, "_rename_noreplace") else os
+    name = "_rename_noreplace" if owner is compiler_module else "replace"
+    real = getattr(owner, name)
+
+    def intercepted(source: object, destination: object, *args: object, **kwargs: object):
+        attack(Path(source), Path(destination))
+        return real(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(owner, name, intercepted)
+
+
+def _sql_constraint_parts(sql: str) -> list[str]:
+    """Split the real CREATE TABLE at top-level commas, preserving checks."""
+    body = sql[sql.index("(") + 1:sql.rindex(")")]
+    depth = 0
+    start = 0
+    parts = []
+    quoted = False
+    for index, char in enumerate(body):
+        if char == "'":
+            quoted = not quoted
+        elif not quoted:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif char == "," and depth == 0:
+                parts.append(body[start:index].strip())
+                start = index + 1
+    parts.append(body[start:].strip())
+    return parts
+
+
+def _sql_declared_constraints(sql: str) -> list[tuple[str, tuple[str, ...], str]]:
+    import re
+
+    constraints = []
+    for part in _sql_constraint_parts(sql):
+        match = re.match(r"(PRIMARY KEY|UNIQUE|FOREIGN KEY)\s*\(([^)]+)\)", part)
+        if match:
+            kind = {"PRIMARY KEY": "pk", "UNIQUE": "unique", "FOREIGN KEY": "fk"}[match[1]]
+            constraints.append((kind, tuple(v.strip() for v in match[2].split(",")), part))
+        elif not part.startswith("CHECK"):
+            column = part.split()[0]
+            if "NOT NULL" in part:
+                constraints.append(("notnull", (column,), "NOT NULL"))
+            if "PRIMARY KEY" in part:
+                constraints.append(("pk", (column,), f"PRIMARY KEY ({column})"))
+            if "UNIQUE" in part:
+                constraints.append(("unique", (column,), f"UNIQUE ({column})"))
+    return constraints
+
+
+def test_fix2_every_pk_notnull_unique_and_deferred_fk_rejects_insert(
+    source_and_documents: tuple[Path, EvidenceDocuments], tmp_path: Path
+) -> None:
+    """Removing any one actual constraint permits its isolated invalid INSERT.
+
+    Overlapping constraints are deliberately removed in a private SQL sandbox:
+    e.g. UNIQUE(category_id, subtype_id) otherwise hides behind the subtype PK.
+    The tested constraint text comes from the compiled artifact, while the
+    complete inventory and row-value cases are test-owned.
+    """
+    source, _ = source_and_documents
+    database = tmp_path / "bundle/knowledge.sqlite"
+    compile_knowledge_bundle(source, database.parent)
+    with sqlite3.connect(database) as baseline:
+        schema = dict(baseline.execute("SELECT name,sql FROM sqlite_master WHERE type='table'"))
+        rows = {table: baseline.execute(f'SELECT * FROM "{table}"').fetchall()
+                for table in TABLE_ORDER}
+    rows["lifecycle_excluded_variants"] = [rows["lifecycle_required_variants"][0]]
+    expected = {
+        ("pk", table, columns) for table, columns in EXPECTED_PRIMARY_KEY_COLUMNS.items()
+    } | {
+        ("notnull", table, (column,))
+        for table, columns in EXPECTED_TABLE_COLUMNS.items() for column in columns
+        if (table, column) not in NULLABLE_COLUMNS
+    } | {
+        ("unique", table, columns) for table, groups in EXPECTED_UNIQUE_COLUMNS.items()
+        for columns in groups
+    } | {("fk", table, columns) for table, columns, _, _ in EXPECTED_FOREIGN_KEYS}
+    actual = {(kind, table, columns) for table, ddl in schema.items()
+              for kind, columns, _ in _sql_declared_constraints(ddl)}
+    assert actual == expected
+    assert {kind: sum(item[0] == kind for item in expected)
+            for kind in ("pk", "notnull", "unique", "fk")} == {
+                "pk": 26, "notnull": 134, "unique": 20, "fk": 28,
+            }
+    visited = set()
+    for table, ddl in schema.items():
+        column_defs = [" ".join(part.split()[:2]) for part in _sql_constraint_parts(ddl)
+                       if not part.startswith(("CHECK", "PRIMARY KEY", "UNIQUE", "FOREIGN KEY"))]
+        for kind, columns, constraint in _sql_declared_constraints(ddl):
+            case = (kind, table, columns)
+            row = list(rows[table][0])
+            if kind == "notnull":
+                row[EXPECTED_TABLE_COLUMNS[table].index(columns[0])] = None
+            elif kind == "fk":
+                row[EXPECTED_TABLE_COLUMNS[table].index(columns[-1])] = "missing-parent"
+            # Positive sensitivity control: deleting exactly the selected
+            # constraint from this isolated actual DDL accepts the same INSERT.
+            for enabled in (True, False):
+                connection = sqlite3.connect(":memory:")
+                try:
+                    if kind == "fk":
+                        parent_name = next(parent for child, cols, parent, _ in EXPECTED_FOREIGN_KEYS
+                                           if child == table and cols == columns)
+                        for parent, parent_ddl in schema.items():
+                            if parent == parent_name:
+                                parent_ddl = f'CREATE TABLE "{parent}" (' + ", ".join(
+                                    part for part in _sql_constraint_parts(parent_ddl)
+                                    if not part.startswith("FOREIGN KEY")
+                                ) + ")"
+                                connection.execute(parent_ddl)
+                                connection.executemany(
+                                    f'INSERT INTO "{parent}" VALUES ({",".join("?" for _ in EXPECTED_TABLE_COLUMNS[parent])})',
+                                    rows[parent],
+                                )
+                        connection.commit()
+                    defs = list(column_defs)
+                    if enabled:
+                        if kind == "notnull":
+                            index = EXPECTED_TABLE_COLUMNS[table].index(columns[0])
+                            defs[index] += " NOT NULL"
+                        else:
+                            defs.append(constraint)
+                    connection.execute(f'CREATE TABLE "{table}" ({", ".join(defs)})')
+                    insert = f'INSERT INTO "{table}" VALUES ({",".join("?" for _ in row)})'
+                    if kind in {"pk", "unique"}:
+                        connection.execute(insert, rows[table][0])
+                        connection.commit()
+                    connection.execute("PRAGMA foreign_keys=ON")
+                    connection.execute("BEGIN")
+                    if enabled and kind != "fk":
+                        with pytest.raises(sqlite3.IntegrityError, match={
+                            "pk": "UNIQUE constraint failed", "unique": "UNIQUE constraint failed",
+                            "notnull": "NOT NULL constraint failed",
+                        }[kind]):
+                            connection.execute(insert, row)
+                    else:
+                        connection.execute(insert, row)
+                        if enabled:
+                            # Each of all 28 FKs must defer until COMMIT.
+                            with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+                                connection.commit()
+                        else:
+                            connection.commit()
+                except Exception as exc:
+                    raise AssertionError(f"constraint case {case}, enabled={enabled}: {exc}") from exc
+                finally:
+                    connection.close()
+            visited.add(case)
+    assert visited == expected
+
+
+# Exact test-owned CHECK inventory, in CREATE TABLE occurrence order. The
+# independently frozen whole-schema signature additionally pins each expression.
+EXPECTED_CHECK_RULES = {
+    "metadata": ("metadata-key",), "sources": (),
+    "categories": ("release-range",),
+    "subtypes": ("market", "battery", "evidence"),
+    "variants": ("battery", "evidence"),
+    "identities": ("kind", "market", "battery", "years", "dates", "shape"),
+    "identity_aliases": ("ordinal",), "identity_tokens": ("ordinal",),
+    "identity_variants": ("ordinal",),
+    "lifecycle_records": ("tier", "scope", "endpoint-kind", "lower", "upper",
+                          "precedence", "dates", "years", "scope-tier-evidence",
+                          "endpoint-coupling", "industry-shape"),
+    "lifecycle_required_variants": ("ordinal",),
+    "lifecycle_excluded_variants": ("ordinal",),
+    "lifecycle_assumptions": ("ordinal",), "industry_averages": (),
+    "lifecycle_limitations": ("ordinal",), "components": (),
+    "component_templates": ("kind", "scope", "order", "shape"),
+    "component_associations": ("position", "status", "evidence"),
+    "component_association_notes": ("ordinal",),
+    "hazards": ("scope", "severity", "evidence"),
+    "hazard_triggers": ("ordinal", "observation"),
+    "hazard_actions": ("kind", "ordinal"),
+    "policy_rules": ("priority", "outcome", "evidence"),
+    "policy_predicates": ("group", "ordinal", "predicate"),
+    "coverage_unknowns": ("kind",), "claim_sources": ("kind", "ordinal", "ownership"),
+}
+
+
+def _sql_check_expressions(sql: str) -> list[str]:
+    result = []
+    for part in _sql_constraint_parts(sql):
+        if "CHECK (" not in part:
+            continue
+        start = part.index("CHECK (") + len("CHECK (")
+        depth = 1
+        for end in range(start, len(part)):
+            if part[end] == "(":
+                depth += 1
+            elif part[end] == ")":
+                depth -= 1
+                if depth == 0:
+                    result.append(part[start:end])
+                    break
+    return result
+
+
+def _check_insert_cases() -> list[tuple[str, str, str, dict, dict]]:
+    cases = []
+
+    def add(table: str, rule: str, valid: dict, *invalid: dict) -> None:
+        for index, bad in enumerate(invalid):
+            cases.append((table, rule, f"{table}.{rule}.{len(cases)}.{index}", valid, bad))
+
+    for table, rule, column, bad_values in (
+        ("metadata", "metadata-key", "key", ("other",)),
+        ("categories", "release-range", "release_order", (-1, 5)),
+        ("subtypes", "market", "market_state", ("other",)),
+        ("subtypes", "battery", "battery_architecture", ("other",)),
+        ("subtypes", "evidence", "evidence_level", ("A",)),
+        ("variants", "battery", "battery_architecture", ("other",)),
+        ("variants", "evidence", "evidence_level", ("A",)),
+        ("identities", "kind", "identity_kind", ("other",)),
+        ("identities", "market", "market_state", ("other",)),
+        ("identities", "battery", "battery_architecture", ("other",)),
+        ("lifecycle_records", "tier", "resolution_tier", ("other",)),
+        ("lifecycle_records", "scope", "scope_kind", ("other",)),
+        ("lifecycle_records", "endpoint-kind", "endpoint_kind", ("other",)),
+        ("lifecycle_records", "lower", "lower_bound", (0, -1)),
+        ("lifecycle_records", "precedence", "precedence", (-1,)),
+        ("component_templates", "kind", "template_kind", ("other",)),
+        ("component_templates", "scope", "scope_kind", ("other",)),
+        ("component_templates", "order", "application_order", (-1,)),
+        ("component_associations", "position", "position", (-1,)),
+        ("component_associations", "status", "status", ("other", "user_confirmed")),
+        ("hazards", "scope", "scope_kind", ("other",)),
+        ("hazards", "severity", "severity", ("other",)),
+        ("hazard_triggers", "observation", "observation_key", ("other",)),
+        ("hazard_actions", "kind", "action_kind", ("other",)),
+        ("policy_rules", "priority", "priority", (-1,)),
+        ("policy_rules", "outcome", "outcome", ("other",)),
+        ("policy_rules", "evidence", "evidence_level", ("other",)),
+        ("policy_predicates", "group", "predicate_group", ("other",)),
+        ("policy_predicates", "predicate", "predicate", ("other",)),
+        ("coverage_unknowns", "kind", "claim_kind", ("policy", "other")),
+        ("claim_sources", "kind", "claim_kind", ("other",)),
+    ):
+        add(table, rule, {}, *({column: value} for value in bad_values))
+    for table, rules in EXPECTED_CHECK_RULES.items():
+        if "ordinal" in rules:
+            add(table, "ordinal", {}, {"ordinal": -1})
+    for table in ("identities", "lifecycle_records"):
+        add(table, "years", {}, {"model_year_from": 2030, "model_year_to": 2020})
+        add(table, "dates", {}, {"applicable_from": "2030-01-01", "applicable_to": "2020-01-01"})
+    family = dict(identity_kind="family", identity_id="family", family_id="family",
+                  model_id=None, model_name=None, evidence_level="B")
+    add("identities", "shape", family, {"family_id": "wrong"}, {"model_id": "model"},
+        {"model_name": "Model"}, {"evidence_level": "A"})
+    model = dict(identity_kind="model", identity_id="model", model_id="model",
+                 model_name="Model", evidence_level="A")
+    add("identities", "shape", model, {"model_id": None}, {"model_name": None},
+        {"identity_id": "wrong"}, {"evidence_level": "B"})
+    add("lifecycle_records", "upper", {"lower_bound": 1, "upper_bound": 2},
+        {"lower_bound": -2, "upper_bound": 0}, {"upper_bound": 0.5})
+    for scope, tier, evidence in (("model", "exact_model", "A"), ("family", "family", "B"),
+                                   ("subtype", "subtype", "B"), ("category", "industry_average", "C")):
+        add("lifecycle_records", "scope-tier-evidence",
+            dict(scope_kind=scope, resolution_tier=tier, evidence_level=evidence),
+            {"resolution_tier": "wrong"}, {"evidence_level": "D"}, {"scope_kind": "wrong"})
+    for endpoint, kind in (("service_life", "total_life"), ("capacity_threshold", "capacity_threshold"),
+                           ("battery_runtime", "operating_endurance")):
+        add("lifecycle_records", "endpoint-coupling", dict(endpoint=endpoint, endpoint_kind=kind),
+            {"endpoint_kind": "wrong"})
+    industry = dict(resolution_tier="industry_average", subject="device", endpoint="service_life",
+                    endpoint_kind="total_life", metric="elapsed_time", unit="years",
+                    lower_bound=1, upper_bound=2, applicable_from=None, applicable_to=None,
+                    model_year_from=None, model_year_to=None)
+    add("lifecycle_records", "industry-shape", industry,
+        {"subject": "other"}, {"endpoint": "other"}, {"endpoint_kind": "other"},
+        {"metric": "other"}, {"unit": "other"}, {"upper_bound": 1},
+        {"applicable_from": "2020-01-01"}, {"applicable_to": "2020-01-01"},
+        {"model_year_from": 2020}, {"model_year_to": 2020})
+    add("component_templates", "shape", dict(template_kind="standard", category_id="category",
+        scope_kind="category", scope_id="category", application_order=0),
+        {"scope_kind": "subtype"}, {"scope_id": "other"}, {"application_order": 1})
+    for kind in ("modern_overlay", "legacy_overlay"):
+        for scope in ("subtype", "family", "model"):
+            add("component_templates", "shape", dict(template_kind=kind, scope_kind=scope),
+                {"scope_kind": "category"})
+    add("component_associations", "evidence", dict(status="unknown", evidence_level=None),
+        {"evidence_level": "A"})
+    for status in ("commonly_associated", "conditional", "legacy_specific", "exact_model_confirmed", "not_present"):
+        add("component_associations", "evidence", dict(status=status, evidence_level="B"),
+            {"evidence_level": None}, {"evidence_level": "D"})
+    for scope, evidence in (("model", "A"), ("family", "B"), ("subtype", "B"),
+                            ("category", "C"), ("category", "D")):
+        add("hazards", "evidence", dict(scope_kind=scope, evidence_level=evidence),
+            {"evidence_level": "wrong"})
+    add("claim_sources", "ownership", dict(claim_kind="policy", category_key=""),
+        {"category_key": "0301_computer_mouse"})
+    for kind in ("subtype", "variant", "identity", "specific_lifecycle", "industry_average", "component_association", "hazard"):
+        add("claim_sources", "ownership", dict(claim_kind=kind, category_key="0301_computer_mouse"),
+            {"category_key": ""}, {"category_key": "unreleased"})
+    return cases
+
+
+def test_fix2_every_check_and_conditional_branch_rejects_insert(
+    source_and_documents: tuple[Path, EvidenceDocuments], tmp_path: Path
+) -> None:
+    source, _ = source_and_documents
+    database = tmp_path / "bundle/knowledge.sqlite"
+    compile_knowledge_bundle(source, database.parent)
+    with sqlite3.connect(database) as baseline:
+        schema = dict(baseline.execute("SELECT name,sql FROM sqlite_master WHERE type='table'"))
+        rows = {table: baseline.execute(f'SELECT * FROM "{table}"').fetchone() for table in TABLE_ORDER}
+    rows["lifecycle_excluded_variants"] = rows["lifecycle_required_variants"]
+    assert set(schema) == set(EXPECTED_CHECK_RULES)
+    checks = {table: _sql_check_expressions(ddl) for table, ddl in schema.items()}
+    assert {table: len(values) for table, values in checks.items()} == {
+        table: len(rules) for table, rules in EXPECTED_CHECK_RULES.items()
+    }
+    cases = _check_insert_cases()
+    assert sum(map(len, EXPECTED_CHECK_RULES.values())) == 56
+    assert len(cases) == 126
+    assert {(table, rule) for table, rule, *_ in cases} == {
+        (table, rule) for table, rules in EXPECTED_CHECK_RULES.items() for rule in rules
+    }
+    assert len({name for _, _, name, _, _ in cases}) == len(cases)
+    for table, rule, name, valid, invalid in cases:
+        columns = EXPECTED_TABLE_COLUMNS[table]
+        row = dict(zip(columns, rows[table])) | valid
+        bad = row | invalid
+        expression = checks[table][EXPECTED_CHECK_RULES[table].index(rule)]
+        defs = [" ".join(part.split()[:2]) for part in _sql_constraint_parts(schema[table])
+                if not part.startswith(("CHECK", "PRIMARY KEY", "UNIQUE", "FOREIGN KEY"))]
+        for enabled in (True, False):
+            connection = sqlite3.connect(":memory:")
+            try:
+                ddl = defs + ([f"CHECK ({expression})"] if enabled else [])
+                connection.execute(f'CREATE TABLE "{table}" ({", ".join(ddl)})')
+                insert = f'INSERT INTO "{table}" VALUES ({",".join("?" for _ in columns)})'
+                connection.execute(insert, tuple(row[c] for c in columns))
+                connection.commit()
+                connection.execute("BEGIN")
+                if enabled:
+                    with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
+                        connection.execute(insert, tuple(bad[c] for c in columns))
+                else:
+                    connection.execute(insert, tuple(bad[c] for c in columns))
+                    connection.commit()
+            except Exception as exc:
+                raise AssertionError(f"CHECK case {name}, enabled={enabled}: {exc}") from exc
+            finally:
+                connection.close()
+
+
+@pytest.mark.parametrize("appearing", ["destination", "backup"])
+def test_fix2_atomic_absence_survives_move_seam(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, appearing: str
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    if appearing == "backup":
+        compile_knowledge_bundle(source, destination)
+    before = _snapshot_tree(destination) if destination.exists() else None
+    appeared: list[tuple[Path, int]] = []
+
+    def attack(src: Path, dst: Path) -> None:
+        if not appeared and ((appearing == "destination" and dst == destination)
+                             or (appearing == "backup" and dst.suffix == ".backup")):
+            dst.mkdir()
+            appeared.append((dst, dst.stat().st_ino))
+
+    _intercept_promotion_move(monkeypatch, attack)
+    with pytest.raises(KnowledgeCompilationError):
+        compile_knowledge_bundle(source, destination)
+    assert len(appeared) == 1
+    path, inode = appeared[0]
+    assert path.stat().st_ino == inode
+    assert list(path.iterdir()) == []
+    if before is not None:
+        assert _snapshot_tree(destination) == before
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_fix2_substituted_stage_is_never_accepted_or_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: bool
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    if existing:
+        compile_knowledge_bundle(source, destination)
+    displaced = tmp_path / "genuine-stage"
+    foreign: list[int] = []
+
+    def attack(src: Path, dst: Path) -> None:
+        if not foreign and src.suffix == ".stage" and dst == destination:
+            src.rename(displaced)
+            src.mkdir(mode=0o700)
+            (src / "foreign-marker").write_text("foreign")
+            foreign.append(src.stat().st_ino)
+
+    _intercept_promotion_move(monkeypatch, attack)
+    with pytest.raises(KnowledgeCompilationError, match="identity|replaced") as error:
+        compile_knowledge_bundle(source, destination)
+    assert displaced.is_dir()
+    found = [p for p in tmp_path.iterdir() if p.is_dir() and p.stat().st_ino in foreign]
+    assert len(found) == 1
+    assert (found[0] / "foreign-marker").read_text() == "foreign"
+    assert str(found[0]) in str(error.value)
+
+
+def test_fix2_rollback_never_restores_substituted_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    compile_knowledge_bundle(source, destination)
+    displaced = tmp_path / "genuine-backup"
+    foreign: list[Path] = []
+
+    def attack(src: Path, dst: Path) -> None:
+        if src.suffix == ".stage" and dst == destination:
+            backup = next(tmp_path.glob(".bundle-*.backup"))
+            backup.rename(displaced)
+            backup.mkdir()
+            (backup / "foreign-marker").write_text("foreign")
+            foreign.append(backup)
+            raise OSError("original promotion failure")
+
+    _intercept_promotion_move(monkeypatch, attack)
+    with pytest.raises(KnowledgeCompilationError) as error:
+        compile_knowledge_bundle(source, destination)
+    assert not destination.exists()
+    assert (foreign[0] / "foreign-marker").read_text() == "foreign"
+    assert displaced.is_dir()
+    assert "original promotion failure" in str(error.value)
+    assert str(foreign[0]) in str(error.value)
+
+
+@pytest.mark.parametrize("seam", ["recursive", "bad-mode"])
+def test_fix2_cleanup_seam_preserves_foreign_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, seam: str
+) -> None:
+    destination = tmp_path / "bundle"
+    stage = tmp_path / (".bundle-" + "a" * 32 + ".stage")
+    displaced = tmp_path / "genuine-stage"
+    foreign: list[Path] = []
+    real_rmtree, real_rmdir = shutil.rmtree, os.rmdir
+
+    def substitute(path: Path) -> None:
+        if path == stage and not foreign:
+            path.rename(displaced)
+            path.mkdir()
+            foreign.append(path)
+
+    def rmtree(path: object, *args: object, **kwargs: object):
+        substitute(Path(path))
+        return real_rmtree(path, *args, **kwargs)
+
+    def rmdir(path: object, *args: object, **kwargs: object):
+        # The obsolete full-path seam must no longer be used by safe cleanup.
+        substitute(Path(path))
+        return real_rmdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", rmtree)
+    monkeypatch.setattr(os, "rmdir", rmdir)
+    if seam == "recursive":
+        stage.mkdir(mode=0o700)
+        identity = (stage.stat().st_dev, stage.stat().st_ino)
+        try:
+            compiler_module._remove_owned_directory(stage, destination, ".stage", identity)
+        except KnowledgeCompilationError:
+            pass
+    else:
+        monkeypatch.setattr(compiler_module, "_generated_sibling", lambda *_: stage)
+        real_mkdir = Path.mkdir
+
+        def bad_mode(path: Path, *args: object, **kwargs: object):
+            real_mkdir(path, *args, **kwargs)
+            path.chmod(0o755)
+
+        monkeypatch.setattr(Path, "mkdir", bad_mode)
+        with pytest.raises(KnowledgeCompilationError, match="0700"):
+            compiler_module._create_stage_directory(destination)
+    if foreign:
+        assert foreign[0].is_dir(), "cleanup deleted the foreign replacement"
+        assert displaced.is_dir()
+
+
+def test_fix2_recovery_probe_errors_keep_original_and_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    compile_knowledge_bundle(source, destination)
+    failed = False
+    real_lstat = os.lstat
+
+    def attack(src: Path, dst: Path) -> None:
+        nonlocal failed
+        if src.suffix == ".stage" and dst == destination:
+            failed = True
+            raise OSError("original promotion failure")
+
+    def failed_probe(path: object, *args: object, **kwargs: object):
+        if failed and str(path).endswith(".backup"):
+            raise PermissionError("backup inspection denied")
+        return real_lstat(path, *args, **kwargs)
+
+    _intercept_promotion_move(monkeypatch, attack)
+    monkeypatch.setattr(os, "lstat", failed_probe)
+    with pytest.raises(KnowledgeCompilationError) as error:
+        compile_knowledge_bundle(source, destination)
+    assert "original promotion failure" in str(error.value)
+    assert "backup inspection denied" in str(error.value)
+    for path in tmp_path.iterdir():
+        if path.suffix in {".stage", ".backup"}:
+            assert str(path) in str(error.value)
+
+
+def test_fix2_cleanup_detach_substitution_preserves_both_objects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "bundle"
+    stage = tmp_path / (".bundle-" + "b" * 32 + ".stage")
+    stage.mkdir(mode=0o700)
+    (stage / "owned").write_text("owned")
+    identity = (stage.stat().st_dev, stage.stat().st_ino)
+    displaced = tmp_path / "genuine-stage"
+    attacked = False
+
+    def attack(src: Path, dst: Path) -> None:
+        nonlocal attacked
+        if src == stage and not attacked:
+            attacked = True
+            src.rename(displaced)
+            src.mkdir()
+            (src / "foreign-marker").write_text("foreign")
+
+    if hasattr(compiler_module, "_rename_noreplace"):
+        _intercept_promotion_move(monkeypatch, attack)
+    else:
+        real = shutil.rmtree
+
+        def intercept(path: Path, *args: object, **kwargs: object):
+            attack(path, path)
+            return real(path, *args, **kwargs)
+
+        monkeypatch.setattr(shutil, "rmtree", intercept)
+    with pytest.raises(KnowledgeCompilationError, match="preserved") as error:
+        compiler_module._remove_owned_directory(stage, destination, ".stage", identity)
+    assert attacked
+    assert (displaced / "owned").read_text() == "owned"
+    foreign = list(tmp_path.rglob("foreign-marker"))
+    assert len(foreign) == 1
+    assert str(foreign[0].parent) in str(error.value)
+
+
+@pytest.mark.parametrize("failure", ["missing-symbol", "unsupported", "io-error", "invalid-flags"])
+def test_fix2_native_rename_failures_are_explicit_without_overwrite_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    import ctypes
+    import errno
+    from types import SimpleNamespace
+
+    source = tmp_path / "stage"
+    source.mkdir()
+    (source / "owned").write_text("owned")
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    before = source.stat().st_ino, destination.stat().st_ino
+    symbol = "renameatx_np" if sys.platform == "darwin" else "renameat2"
+    errors = {"unsupported": errno.ENOTSUP, "io-error": errno.EIO, "invalid-flags": errno.EINVAL}
+
+    def native(*_args: object) -> int:
+        ctypes.set_errno(errors[failure])
+        return -1
+
+    library = SimpleNamespace() if failure == "missing-symbol" else SimpleNamespace(**{symbol: native})
+    monkeypatch.setattr(ctypes, "CDLL", lambda *_a, **_k: library)
+    fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(KnowledgeCompilationError, match="atomic no-replace rename") as error:
+            compiler_module._rename_noreplace(source, destination, fd)
+        if failure != "missing-symbol":
+            assert f"errno {errors[failure]}" in str(error.value)
+        assert "\n" not in str(error.value)
+    finally:
+        os.close(fd)
+    assert (source.stat().st_ino, destination.stat().st_ino) == before
+    assert (source / "owned").read_text() == "owned"
+    assert list(destination.iterdir()) == []
+
+
+def test_fix2_old_destination_source_swap_at_native_backup_move_is_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    compile_knowledge_bundle(source, destination)
+    before = _snapshot_tree(destination)
+    displaced = tmp_path / "genuine-old-bundle"
+    attacked = False
+
+    def attack(src: Path, dst: Path) -> None:
+        nonlocal attacked
+        if src == destination and dst.suffix == ".backup" and not attacked:
+            attacked = True
+            src.rename(displaced)
+            src.mkdir()
+            (src / "foreign-marker").write_text("foreign")
+
+    _intercept_promotion_move(monkeypatch, attack)
+    with pytest.raises(KnowledgeCompilationError, match="identity") as error:
+        compile_knowledge_bundle(source, destination)
+    assert attacked
+    assert _snapshot_tree(displaced) == before
+    foreign = list(tmp_path.rglob("foreign-marker"))
+    assert len(foreign) == 1
+    assert str(foreign[0].parent) in str(error.value)
+    assert str(displaced) in str(error.value)
+
+
+@pytest.mark.parametrize("substitution", ["directory", "contents"])
+@pytest.mark.parametrize("boundary", [2, 3])
+def test_fix2_post_fsync_substitution_is_not_accepted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, substitution: str, boundary: int
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    old = compile_knowledge_bundle(source, destination)
+    displaced = tmp_path / "genuine-new-bundle"
+    real_fsync = compiler_module._fsync_directory
+    calls = 0
+
+    def attack(path: Path) -> None:
+        nonlocal calls
+        real_fsync(path)
+        if path == destination.parent:
+            calls += 1
+            if calls == boundary:
+                if substitution == "directory":
+                    destination.rename(displaced)
+                    destination.mkdir()
+                    (destination / "foreign-marker").write_text("foreign")
+                else:
+                    (destination / "evidence-coverage.json").write_bytes(b"tampered")
+
+    monkeypatch.setattr(compiler_module, "_fsync_directory", attack)
+    with pytest.raises(KnowledgeCompilationError):
+        compile_knowledge_bundle(source, destination)
+    if substitution == "directory":
+        assert (destination / "foreign-marker").read_text() == "foreign"
+        assert displaced.is_dir()
+        assert bool(list(tmp_path.glob(".bundle-*.backup"))) is (boundary == 2)
+    elif boundary == 2:
+        assert _metadata(destination / "knowledge.sqlite")["content_sha256"] == old.content_sha256
+    else:
+        assert not list(tmp_path.glob(".bundle-*.backup"))
+
+
+def test_fix2_recovery_error_formatting_cannot_mask_unprintable_original(tmp_path: Path) -> None:
+    class Unprintable(OSError):
+        def __repr__(self) -> str:
+            raise ValueError("repr failure")
+
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    error = compiler_module._promotion_error(Unprintable(), [], tmp_path / "bundle", stage, None)
+    assert isinstance(error, KnowledgeCompilationError)
+    assert "Unprintable" in str(error)
+    assert str(stage) in str(error)
+
+
+def test_fix2_successful_rebuild_cleans_nested_old_bundle_without_following_links(
+    tmp_path: Path,
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    (destination / "old/nested").mkdir(parents=True)
+    (destination / "old/nested/owned").write_text("old")
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "foreign-marker").write_text("foreign")
+    (destination / "old/link").symlink_to(external, target_is_directory=True)
+    before = _snapshot_tree(source)
+    compile_knowledge_bundle(source, destination)
+    assert (external / "foreign-marker").read_text() == "foreign"
+    assert _snapshot_tree(source) == before
+    assert sorted(path.name for path in destination.iterdir()) == ["evidence-coverage.json", "knowledge.sqlite"]
+    assert not list(tmp_path.glob(".bundle-*"))
+
+
+@pytest.mark.parametrize("helper", ["regular", "database", "coverage"])
+def test_fix2_nested_close_failure_does_not_leak_directory_fd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, helper: str
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    real_open, real_close, real_fstat = os.open, os.close, os.fstat
+    opened: dict[int, bool] = {}
+    failed = False
+
+    def tracked_open(*args: object, **kwargs: object) -> int:
+        fd = real_open(*args, **kwargs)
+        opened[fd] = (stat.S_ISREG(real_fstat(fd).st_mode)
+                      and Path(args[0]).name in {"knowledge.sqlite", "evidence-coverage.json"})
+        return fd
+
+    def failed_close(fd: int) -> None:
+        nonlocal failed
+        regular = opened.pop(fd, False)
+        real_close(fd)
+        if regular and not failed:
+            failed = True
+            raise OSError("artifact close failed")
+
+    monkeypatch.setattr(os, "open", tracked_open)
+    monkeypatch.setattr(os, "close", failed_close)
+    if helper == "regular":
+        real_regular = compiler_module._open_stage_regular
+
+        def fail_regular(stage: Path, name: str, *args: object) -> int:
+            def fail_artifact_fstat(fd: int):
+                if opened.get(fd):
+                    raise OSError("artifact fstat failed")
+                return real_fstat(fd)
+            with monkeypatch.context() as patch:
+                patch.setattr(os, "fstat", fail_artifact_fstat)
+                return real_regular(stage, name, *args)
+
+        monkeypatch.setattr(compiler_module, "_open_stage_regular", fail_regular)
+        # Arm the close injection only after the writes complete.
+        real_entries = compiler_module._stage_entries
+        failed = True
+
+        def arm(stage: Path, *args: object):
+            nonlocal failed
+            failed = False
+            return real_entries(stage, *args)
+
+        monkeypatch.setattr(compiler_module, "_stage_entries", arm)
+    elif helper == "coverage":
+        real_write = compiler_module._write_database
+        failed = True
+
+        def write_then_arm(*args: object):
+            nonlocal failed
+            real_write(*args)
+            failed = False
+
+        monkeypatch.setattr(compiler_module, "_write_database", write_then_arm)
+    try:
+        with pytest.raises(KnowledgeCompilationError, match="artifact close failed"):
+            compile_knowledge_bundle(source, tmp_path / "bundle")
+        assert failed
+        assert opened == {}, f"unclosed descriptors: {opened}"
+    finally:
+        for fd in opened:
+            real_close(fd)
 
 
 def test_complete_task2_validation_matrix_never_creates_output(
