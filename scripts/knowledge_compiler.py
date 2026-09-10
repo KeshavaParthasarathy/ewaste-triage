@@ -25,6 +25,8 @@ from scripts.evidence_coverage import (
     build_coverage,
     coverage_json_bytes,
     validate_coverage_report,
+    validate_release_floor,
+    validate_release_floor_inputs,
 )
 from scripts.knowledge_schema import EvidenceDocuments, load_evidence_documents
 from server.evidence_types import KnowledgeManifest, RELEASED_CATEGORY_IDS
@@ -2093,6 +2095,8 @@ def compile_knowledge_bundle(
     rows = normalized_sql_rows(documents)
     content_sha256 = logical_content_sha256(rows)
     coverage = build_coverage(documents, content_sha256)
+    validate_release_floor_inputs(documents)
+    validate_release_floor(coverage)
     validate_coverage_report(coverage)
     coverage_bytes = coverage_json_bytes(coverage)
     coverage_sha256 = hashlib.sha256(coverage_bytes).hexdigest()

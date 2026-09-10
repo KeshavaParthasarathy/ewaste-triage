@@ -5,19 +5,34 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import replace
 import hashlib
+import importlib
 import json
+import os
 from pathlib import Path
+import stat
+import subprocess
+from typing import Mapping
 
 import pytest
 
+import scripts.evidence_coverage as coverage_module
 from scripts.evidence_coverage import (
     CoverageError,
     build_coverage,
     coverage_json_bytes,
     validate_coverage_report,
 )
-from scripts.knowledge_schema import EvidenceDocuments, load_evidence_documents
-from server.evidence_types import AssociationStatus, RELEASED_CATEGORY_IDS
+from scripts.knowledge_schema import (
+    EvidenceDocuments,
+    TemplateKind,
+    load_evidence_documents,
+)
+from server.evidence_types import (
+    AssociationStatus,
+    BatteryArchitecture,
+    MarketState,
+    RELEASED_CATEGORY_IDS,
+)
 from tests.knowledge_helpers import make_valid_knowledge_source
 
 
@@ -52,6 +67,8 @@ CLAIM_KINDS = (
     "component_association",
     "hazard",
 )
+ROOT = Path(__file__).resolve().parents[1]
+PYTHON = ROOT / ".venv/bin/python"
 
 
 @pytest.fixture
@@ -747,3 +764,702 @@ def test_canonical_bytes_have_one_lf_and_a_stable_fixture_digest(
     assert hashlib.sha256(expected).hexdigest() == (
         "35ea0681b991cd15419471fb7fa50d00f30972e4b1786a87976ac093426375b5"
     )
+
+
+def _demote_reviewed_claim(
+    report: dict[str, object], category_id: str, claim_kind: str
+) -> None:
+    claim = next(
+        item
+        for item in report["claims"]
+        if item["category_id"] == category_id
+        and item["claim_kind"] == claim_kind
+        and item["source_state"] == "reviewed"
+    )
+    claim.update(
+        evidence_level=None,
+        source_state="unknown",
+        source_ids=[],
+        unknown_reason="Floor evidence intentionally absent.",
+    )
+    report["summary"]["reviewed_claims"] -= 1
+    report["summary"]["unknown_claims"] += 1
+    summary_field = {
+        "identity": "canonical_identities",
+        "subtype": "subtypes",
+        "specific_lifecycle": "lifecycle_records",
+        "industry_average": "industry_averages",
+    }[claim_kind]
+    report["summary"][summary_field] -= 1
+
+
+@pytest.mark.parametrize("category_id", RELEASED_CATEGORY_IDS)
+@pytest.mark.parametrize(
+    ("claim_kind", "message"),
+    [
+        ("identity", "requires at least ten reviewed identities"),
+        ("subtype", "requires at least four reviewed subtypes"),
+        (
+            "specific_lifecycle",
+            "requires at least three reviewed specific lifecycle records",
+        ),
+        ("industry_average", "requires one industry average"),
+    ],
+)
+def test_release_floor_rejects_each_category_claim_floor_in_isolation(
+    valid_documents: EvidenceDocuments, category_id: str, claim_kind: str, message: str
+) -> None:
+    report = build_coverage(valid_documents, "a" * 64)
+    _demote_reviewed_claim(report, category_id, claim_kind)
+    validate_coverage_report(report)
+    before = deepcopy(report)
+
+    with pytest.raises(CoverageError, match=rf"{category_id} {message}"):
+        coverage_module.validate_release_floor(report)
+
+    assert report == before
+
+
+@pytest.mark.parametrize(
+    ("summary_field", "under_floor", "message"),
+    [
+        ("categories", 4, "requires exactly five categories"),
+        ("component_templates", 14, "requires at least 15 component templates"),
+        ("modern_overlays", 4, "requires at least five modern overlays"),
+        ("legacy_overlays", 4, "requires at least five legacy overlays"),
+    ],
+)
+def test_release_floor_rejects_each_global_floor_in_isolation(
+    valid_documents: EvidenceDocuments,
+    summary_field: str,
+    under_floor: int,
+    message: str,
+) -> None:
+    report = build_coverage(valid_documents, "b" * 64)
+    report["summary"][summary_field] = under_floor
+    validate_coverage_report(report)
+    before = deepcopy(report)
+
+    with pytest.raises(CoverageError, match=message):
+        coverage_module.validate_release_floor(report)
+
+    assert report == before
+
+
+def _replace_category(
+    documents: EvidenceDocuments, category_id: str, **changes: object
+) -> EvidenceDocuments:
+    return replace(
+        documents,
+        categories=tuple(
+            replace(category, **changes)
+            if category.category.category_id == category_id
+            else category
+            for category in documents.categories
+        ),
+    )
+
+
+def _document_floor_mutation(
+    documents: EvidenceDocuments, category_id: str, floor: str
+) -> EvidenceDocuments:
+    category = next(
+        item
+        for item in documents.categories
+        if item.category.category_id == category_id
+    )
+    if floor == "manufacturers":
+        manufacturer_id = category.identities[0].manufacturer_id
+        return _replace_category(
+            documents,
+            category_id,
+            identities=tuple(
+                item
+                for item in category.identities
+                if item.manufacturer_id == manufacturer_id
+            ),
+        )
+    if floor == "subtypes":
+        return _replace_category(
+            documents, category_id, subtypes=category.subtypes[:-1]
+        )
+    if floor == "current":
+        return _replace_category(
+            documents,
+            category_id,
+            subtypes=tuple(
+                replace(item, market_state=MarketState.DISCONTINUED)
+                for item in category.subtypes
+            ),
+        )
+    if floor == "old":
+        return _replace_category(
+            documents,
+            category_id,
+            subtypes=tuple(
+                replace(item, market_state=MarketState.CURRENT)
+                for item in category.subtypes
+            ),
+        )
+    template_kind = {
+        "standard": TemplateKind.STANDARD,
+        "modern": TemplateKind.MODERN_OVERLAY,
+        "legacy": TemplateKind.LEGACY_OVERLAY,
+    }.get(floor)
+    if template_kind is not None:
+        return _replace_category(
+            documents,
+            category_id,
+            component_templates=tuple(
+                item
+                for item in category.component_templates
+                if item.template_kind is not template_kind
+            ),
+        )
+    if floor == "battery_bearing":
+        return _replace_category(
+            documents,
+            category_id,
+            variants=tuple(
+                item
+                for item in category.variants
+                if item.battery_architecture is BatteryArchitecture.BATTERY_FREE
+            ),
+        )
+    if floor == "battery_free":
+        return _replace_category(
+            documents,
+            category_id,
+            variants=tuple(
+                item
+                for item in category.variants
+                if item.battery_architecture is BatteryArchitecture.BATTERY_BEARING
+            ),
+        )
+    raise AssertionError(f"unknown test floor {floor}")
+
+
+@pytest.mark.parametrize("category_id", RELEASED_CATEGORY_IDS)
+@pytest.mark.parametrize(
+    ("floor", "message"),
+    [
+        ("manufacturers", "requires at least two manufacturers"),
+        ("subtypes", "requires at least four subtypes"),
+        ("current", "requires one current subtype"),
+        ("old", "requires one discontinued-or-legacy subtype"),
+        ("standard", "requires exactly one standard category template"),
+        ("modern", "requires one modern overlay"),
+        ("legacy", "requires one legacy overlay"),
+    ],
+)
+def test_release_floor_inputs_reject_each_category_requirement_in_isolation(
+    valid_documents: EvidenceDocuments, category_id: str, floor: str, message: str
+) -> None:
+    changed = _document_floor_mutation(valid_documents, category_id, floor)
+    before = deepcopy(changed)
+
+    with pytest.raises(CoverageError, match=rf"{category_id} {message}"):
+        coverage_module.validate_release_floor_inputs(changed)
+
+    assert changed == before
+
+
+@pytest.mark.parametrize(
+    "category_id",
+    ("0301_computer_mouse", "0301_keyboard", "0401_headphones"),
+)
+@pytest.mark.parametrize("missing", ("battery_bearing", "battery_free"))
+def test_release_floor_inputs_require_both_battery_variant_architectures(
+    valid_documents: EvidenceDocuments, category_id: str, missing: str
+) -> None:
+    changed = _document_floor_mutation(valid_documents, category_id, missing)
+    before = deepcopy(changed)
+
+    with pytest.raises(
+        CoverageError,
+        match=rf"{category_id} requires battery-bearing and battery-free variants",
+    ):
+        coverage_module.validate_release_floor_inputs(changed)
+
+    assert changed == before
+
+
+def test_floor_validation_cannot_mutate_task3_full_report_bytes(
+    valid_documents: EvidenceDocuments,
+) -> None:
+    report = build_coverage(valid_documents, "a" * 64)
+    before_documents = deepcopy(valid_documents)
+    before_object = deepcopy(report)
+    before_bytes = coverage_json_bytes(report)
+
+    coverage_module.validate_release_floor_inputs(valid_documents)
+    coverage_module.validate_release_floor(report)
+
+    assert valid_documents == before_documents
+    assert report == before_object
+    assert coverage_json_bytes(report) == before_bytes
+
+
+def test_task3_full_report_schema_and_golden_semantics_are_unchanged(
+    valid_documents: EvidenceDocuments,
+) -> None:
+    expected = expected_coverage_report(valid_documents, "a" * 64)
+    report = build_coverage(valid_documents, "a" * 64)
+    assert report == expected
+    assert coverage_json_bytes(report) == expected_coverage_bytes(expected)
+
+
+def _claim_key(claim: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "category_id": claim["category_id"],
+        "claim_kind": claim["claim_kind"],
+        "claim_id": claim["claim_id"],
+    }
+
+
+def _known_limitations(report: Mapping[str, object]) -> list[dict[str, object]]:
+    return [
+        {"claim_key": _claim_key(claim), "reason": claim["unknown_reason"]}
+        for claim in report["claims"]
+        if claim["source_state"] == "unknown"
+    ]
+
+
+def test_initial_change_lists_every_current_claim_as_added(
+    valid_documents: EvidenceDocuments,
+) -> None:
+    current = build_coverage(valid_documents, "c" * 64)
+    before = deepcopy(current)
+
+    change = coverage_module.compare_coverage(None, current)
+
+    assert change == {
+        "schema_version": 1,
+        "from_bundle_version": None,
+        "to_bundle_version": "3.0.0",
+        "added": [_claim_key(claim) for claim in current["claims"]],
+        "removed": [],
+        "changed": [],
+        "known_limitations": _known_limitations(current),
+    }
+    assert current == before
+
+
+def _add_reviewed_association(report: dict[str, object]) -> None:
+    report["claims"].append(
+        {
+            "category_id": "0301_computer_mouse",
+            "claim_kind": "component_association",
+            "claim_id": "added_association",
+            "evidence_level": "C",
+            "source_state": "reviewed",
+            "source_ids": ["added_source"],
+            "unknown_reason": None,
+        }
+    )
+    report["claims"].sort(
+        key=lambda item: (
+            item["category_id"], item["claim_kind"], item["claim_id"]
+        )
+    )
+    report["summary"]["reviewed_claims"] += 1
+
+
+def test_comparison_classifies_added_removed_changed_and_current_limitations(
+    valid_documents: EvidenceDocuments,
+) -> None:
+    previous = build_coverage(valid_documents, "1" * 64)
+    _add_reviewed_association(previous)
+    current = build_coverage(valid_documents, "2" * 64)
+    evidence_changed = next(
+        claim
+        for claim in current["claims"]
+        if claim["claim_id"] == "0301_computer_mouse_association_legacy_0"
+    )
+    evidence_changed["evidence_level"] = "C"
+    became_reviewed = next(
+        claim
+        for claim in current["claims"]
+        if claim["claim_id"]
+        == "0301_computer_mouse_association_modern_1_unknown"
+    )
+    became_reviewed.update(
+        evidence_level="D",
+        source_state="reviewed",
+        source_ids=["0301_computer_mouse_claim_source"],
+        unknown_reason=None,
+    )
+    current["summary"]["reviewed_claims"] += 1
+    current["summary"]["unknown_claims"] -= 1
+    validate_coverage_report(previous)
+    validate_coverage_report(current)
+    before_previous = deepcopy(previous)
+    before_current = deepcopy(current)
+
+    change = coverage_module.compare_coverage(previous, current)
+
+    assert change["from_bundle_version"] == "3.0.0"
+    assert change["to_bundle_version"] == "3.0.0"
+    assert change["added"] == []
+    assert change["removed"] == [
+        {
+            "category_id": "0301_computer_mouse",
+            "claim_kind": "component_association",
+            "claim_id": "added_association",
+        }
+    ]
+    assert change["changed"] == [
+        {
+            "claim_key": {
+                "category_id": "0301_computer_mouse",
+                "claim_kind": "component_association",
+                "claim_id": "0301_computer_mouse_association_legacy_0",
+            },
+            "before_source_state": "reviewed",
+            "after_source_state": "reviewed",
+            "before_evidence_level": "B",
+            "after_evidence_level": "C",
+        },
+        {
+            "claim_key": {
+                "category_id": "0301_computer_mouse",
+                "claim_kind": "component_association",
+                "claim_id": "0301_computer_mouse_association_modern_1_unknown",
+            },
+            "before_source_state": "unknown",
+            "after_source_state": "reviewed",
+            "before_evidence_level": None,
+            "after_evidence_level": "D",
+        },
+    ]
+    assert change["known_limitations"] == _known_limitations(current)
+    assert previous == before_previous
+    assert current == before_current
+
+
+def test_comparison_rejects_same_content_hash_with_different_canonical_report(
+    valid_documents: EvidenceDocuments,
+) -> None:
+    previous = build_coverage(valid_documents, "3" * 64)
+    current = deepcopy(previous)
+    current["bundle_version"] = "3.0.1"
+
+    with pytest.raises(CoverageError, match="same knowledge content hash"):
+        coverage_module.compare_coverage(previous, current)
+
+
+def test_change_schema_is_draft_2020_12_and_closes_every_artifact_object() -> None:
+    schema_path = ROOT / "packaging/evidence-coverage-change.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    properties = schema["properties"]
+    claim_key_locations = (
+        properties["added"]["items"],
+        properties["removed"]["items"],
+        properties["changed"]["items"]["properties"]["claim_key"],
+        properties["known_limitations"]["items"]["properties"]["claim_key"],
+    )
+
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["additionalProperties"] is False
+    assert list(schema["required"]) == [
+        "schema_version",
+        "from_bundle_version",
+        "to_bundle_version",
+        "added",
+        "removed",
+        "changed",
+        "known_limitations",
+    ]
+    assert set(properties) == set(schema["required"])
+    assert properties["schema_version"] == {"const": 1}
+    assert properties["changed"]["items"]["additionalProperties"] is False
+    assert properties["known_limitations"]["items"]["additionalProperties"] is False
+    for claim_key in claim_key_locations:
+        assert claim_key["additionalProperties"] is False
+        assert claim_key["properties"]["category_id"]["enum"] == list(
+            RELEASED_CATEGORY_IDS
+        )
+        assert claim_key["properties"]["claim_kind"]["enum"] == list(CLAIM_KINDS)
+
+
+def _run_change_cli(*arguments: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    launcher = (
+        "import runpy,sys,types;"
+        "sys.modules['readline']=types.ModuleType('readline');"
+        "script=sys.argv.pop(1);sys.argv[0]=script;"
+        "runpy.run_path(script,run_name='__main__')"
+    )
+    return subprocess.run(
+        [
+            str(PYTHON),
+            "-c",
+            launcher,
+            str(ROOT / "scripts/compare_evidence_coverage.py"),
+            *arguments,
+        ],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_change_cli_writes_canonical_initial_artifact_to_exact_target(
+    valid_documents: EvidenceDocuments, tmp_path: Path
+) -> None:
+    current = build_coverage(valid_documents, "4" * 64)
+    current_path = tmp_path / "current.json"
+    output = tmp_path / "nested-name.change.json"
+    current_path.write_bytes(coverage_json_bytes(current))
+    expected = {
+        "schema_version": 1,
+        "from_bundle_version": None,
+        "to_bundle_version": "3.0.0",
+        "added": [_claim_key(claim) for claim in current["claims"]],
+        "removed": [],
+        "changed": [],
+        "known_limitations": _known_limitations(current),
+    }
+    expected_bytes = json.dumps(
+        expected,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8") + b"\n"
+
+    result = _run_change_cli(
+        "--current", str(current_path), "--initial", "--out", str(output), cwd=tmp_path
+    )
+
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    assert output.read_bytes() == expected_bytes
+    assert current_path.read_bytes() == coverage_json_bytes(current)
+    assert sorted(
+        path.name for path in tmp_path.iterdir() if path.name != "source"
+    ) == [
+        "current.json",
+        "nested-name.change.json",
+    ]
+
+
+def test_change_cli_requires_exactly_one_comparison_mode(tmp_path: Path) -> None:
+    neither = _run_change_cli(
+        "--current", "current.json", "--out", "change.json", cwd=tmp_path
+    )
+    both = _run_change_cli(
+        "--current",
+        "current.json",
+        "--previous",
+        "previous.json",
+        "--initial",
+        "--out",
+        "change.json",
+        cwd=tmp_path,
+    )
+
+    assert neither.returncode == 2
+    assert neither.stdout == ""
+    assert "one of the arguments --previous --initial is required" in neither.stderr
+    assert both.returncode == 2
+    assert both.stdout == ""
+    assert "argument --initial: not allowed with argument --previous" in both.stderr
+
+
+def test_change_cli_rejects_noncanonical_input_before_preserving_output(
+    valid_documents: EvidenceDocuments, tmp_path: Path
+) -> None:
+    current = build_coverage(valid_documents, "5" * 64)
+    current_path = tmp_path / "current.json"
+    output = tmp_path / "change.json"
+    noncanonical = json.dumps(current, indent=2).encode("utf-8") + b"\n"
+    old_output = b"previous accepted output\n"
+    current_path.write_bytes(noncanonical)
+    output.write_bytes(old_output)
+
+    result = _run_change_cli(
+        "--current", str(current_path), "--initial", "--out", str(output), cwd=tmp_path
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == f"error: coverage report is not canonical: {current_path}\n"
+    assert current_path.read_bytes() == noncanonical
+    assert output.read_bytes() == old_output
+
+
+def test_change_cli_output_replace_failure_preserves_output_and_inputs(
+    valid_documents: EvidenceDocuments,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    change_module = importlib.import_module("scripts.compare_evidence_coverage")
+    previous = build_coverage(valid_documents, "6" * 64)
+    current = build_coverage(valid_documents, "7" * 64)
+    previous_path = tmp_path / "previous.json"
+    current_path = tmp_path / "current.json"
+    output = tmp_path / "change.json"
+    previous_bytes = coverage_json_bytes(previous)
+    current_bytes = coverage_json_bytes(current)
+    old_output = b"previous accepted output\n"
+    previous_path.write_bytes(previous_bytes)
+    current_path.write_bytes(current_bytes)
+    output.write_bytes(old_output)
+
+    def fail_replace(source: object, target: object) -> None:
+        del source, target
+        raise OSError("intentional replace failure")
+
+    monkeypatch.setattr(change_module.os, "replace", fail_replace)
+    result = change_module.main(
+        [
+            "--current",
+            str(current_path),
+            "--previous",
+            str(previous_path),
+            "--out",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert captured.out == ""
+    assert captured.err == "error: cannot write coverage change: intentional replace failure\n"
+    assert previous_path.read_bytes() == previous_bytes
+    assert current_path.read_bytes() == current_bytes
+    assert output.read_bytes() == old_output
+    assert sorted(
+        path.name for path in tmp_path.iterdir() if path.name != "source"
+    ) == [
+        "change.json",
+        "current.json",
+        "previous.json",
+    ]
+
+
+@pytest.mark.parametrize("aliased_input", ("current", "previous"))
+def test_change_cli_rejects_output_alias_of_either_input(
+    valid_documents: EvidenceDocuments,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    aliased_input: str,
+) -> None:
+    change_module = importlib.import_module("scripts.compare_evidence_coverage")
+    previous_path = tmp_path / "previous.json"
+    current_path = tmp_path / "current.json"
+    previous_bytes = coverage_json_bytes(
+        build_coverage(valid_documents, "9" * 64)
+    )
+    current_bytes = coverage_json_bytes(
+        build_coverage(valid_documents, "a" * 64)
+    )
+    previous_path.write_bytes(previous_bytes)
+    current_path.write_bytes(current_bytes)
+    output = current_path if aliased_input == "current" else previous_path
+
+    result = change_module.main(
+        [
+            "--current",
+            str(current_path),
+            "--previous",
+            str(previous_path),
+            "--out",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert captured.out == ""
+    assert captured.err == "error: output must not alias an input report\n"
+    assert previous_path.read_bytes() == previous_bytes
+    assert current_path.read_bytes() == current_bytes
+
+
+def test_change_cli_parent_fsync_failure_keeps_complete_committed_output(
+    valid_documents: EvidenceDocuments,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    change_module = importlib.import_module("scripts.compare_evidence_coverage")
+    current = build_coverage(valid_documents, "b" * 64)
+    current_path = tmp_path / "current.json"
+    output = tmp_path / "change.json"
+    current_bytes = coverage_json_bytes(current)
+    current_path.write_bytes(current_bytes)
+    output.write_bytes(b"previous accepted output\n")
+    expected = {
+        "schema_version": 1,
+        "from_bundle_version": None,
+        "to_bundle_version": "3.0.0",
+        "added": [_claim_key(claim) for claim in current["claims"]],
+        "removed": [],
+        "changed": [],
+        "known_limitations": _known_limitations(current),
+    }
+    expected_bytes = json.dumps(
+        expected,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8") + b"\n"
+    real_fsync = os.fsync
+
+    def fail_parent_fsync(descriptor: int) -> None:
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError("intentional parent fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(change_module.os, "fsync", fail_parent_fsync)
+    result = change_module.main(
+        ["--current", str(current_path), "--initial", "--out", str(output)]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 1
+    assert captured.out == ""
+    assert captured.err == (
+        "error: cannot write coverage change: intentional parent fsync failure\n"
+    )
+    assert current_path.read_bytes() == current_bytes
+    assert output.read_bytes() == expected_bytes
+    assert sorted(
+        path.name for path in tmp_path.iterdir() if path.name != "source"
+    ) == [
+        "change.json",
+        "current.json",
+    ]
+
+
+def test_change_cli_fsyncs_regular_output_and_parent_directory(
+    valid_documents: EvidenceDocuments,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    change_module = importlib.import_module("scripts.compare_evidence_coverage")
+    current_path = tmp_path / "current.json"
+    output = tmp_path / "change.json"
+    current_path.write_bytes(
+        coverage_json_bytes(build_coverage(valid_documents, "8" * 64))
+    )
+    real_fsync = os.fsync
+    synced_modes: list[int] = []
+
+    def observe_fsync(descriptor: int) -> None:
+        synced_modes.append(os.fstat(descriptor).st_mode)
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(change_module.os, "fsync", observe_fsync)
+    result = change_module.main(
+        ["--current", str(current_path), "--initial", "--out", str(output)]
+    )
+
+    captured = capsys.readouterr()
+    assert (result, captured.out, captured.err) == (0, "", "")
+    assert sum(stat.S_ISREG(mode) for mode in synced_modes) == 1
+    assert sum(stat.S_ISDIR(mode) for mode in synced_modes) == 1

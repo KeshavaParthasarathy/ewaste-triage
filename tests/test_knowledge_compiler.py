@@ -24,7 +24,7 @@ import yaml
 
 import scripts.knowledge_compiler as compiler_module
 import scripts.knowledge_schema as schema_module
-from scripts.evidence_coverage import build_coverage, coverage_json_bytes
+from scripts.evidence_coverage import CoverageError, build_coverage, coverage_json_bytes
 from scripts.knowledge_compiler import (
     KnowledgeCompilationError,
     compile_knowledge_bundle,
@@ -6109,3 +6109,70 @@ def test_cli_success_and_summary_are_deterministic_across_output_paths(
     assert lines[-1].startswith("coverage_sha256=")
     assert first.stdout.endswith("\n")
     assert str(tmp_path) not in first.stdout
+
+
+@pytest.mark.parametrize(
+    ("floor", "message"),
+    [
+        (
+            "report_lifecycle",
+            "0301_computer_mouse requires at least three reviewed specific lifecycle records",
+        ),
+        (
+            "input_battery_variants",
+            "0301_computer_mouse requires battery-bearing and battery-free variants",
+        ),
+    ],
+)
+def test_compiler_floor_failure_precedes_staging_and_preserves_old_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    floor: str,
+    message: str,
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    compile_knowledge_bundle(source, destination)
+    before_source = _snapshot_tree(source)
+    before_destination = _snapshot_tree(destination)
+    documents = load_evidence_documents(source)
+    first = documents.categories[0]
+    if floor == "report_lifecycle":
+        changed_first = replace(
+            first, specific_lifecycles=first.specific_lifecycles[:-1]
+        )
+    else:
+        changed_first = replace(
+            first,
+            variants=tuple(
+                variant
+                for variant in first.variants
+                if variant.battery_architecture.value == "battery_free"
+            ),
+        )
+    changed_documents = replace(
+        documents, categories=(changed_first, *documents.categories[1:])
+    )
+    monkeypatch.setattr(
+        compiler_module,
+        "load_evidence_documents",
+        lambda _source: changed_documents,
+    )
+    monkeypatch.setattr(
+        compiler_module,
+        "coverage_json_bytes",
+        lambda _report: pytest.fail("coverage bytes accepted before release floor"),
+    )
+
+    with pytest.raises(CoverageError, match=message):
+        compile_knowledge_bundle(source, destination)
+
+    missing_destination = tmp_path / "missing/inner/bundle"
+    with pytest.raises(CoverageError, match=message):
+        compile_knowledge_bundle(source, missing_destination)
+
+    assert _snapshot_tree(source) == before_source
+    assert _snapshot_tree(destination) == before_destination
+    assert not (tmp_path / "missing").exists()
+    assert not list(tmp_path.glob(".bundle-*.stage"))
+    assert not list(tmp_path.glob(".bundle-*.backup"))

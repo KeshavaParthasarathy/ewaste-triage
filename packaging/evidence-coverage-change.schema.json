@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ewaste/evidence-coverage-change.schema.json",
+  "title": "E-Waste Evidence Coverage Change",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "from_bundle_version",
+    "to_bundle_version",
+    "added",
+    "removed",
+    "changed",
+    "known_limitations"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "from_bundle_version": {
+      "type": ["string", "null"],
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "to_bundle_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "added": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category_id", "claim_kind", "claim_id"],
+        "properties": {
+          "category_id": {
+            "enum": [
+              "0301_computer_mouse",
+              "0301_keyboard",
+              "0303_laptop",
+              "0306_mobile_phone",
+              "0401_headphones"
+            ]
+          },
+          "claim_kind": {
+            "enum": [
+              "subtype",
+              "variant",
+              "identity",
+              "specific_lifecycle",
+              "industry_average",
+              "component_association",
+              "hazard"
+            ]
+          },
+          "claim_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+          }
+        }
+      }
+    },
+    "removed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category_id", "claim_kind", "claim_id"],
+        "properties": {
+          "category_id": {
+            "enum": [
+              "0301_computer_mouse",
+              "0301_keyboard",
+              "0303_laptop",
+              "0306_mobile_phone",
+              "0401_headphones"
+            ]
+          },
+          "claim_kind": {
+            "enum": [
+              "subtype",
+              "variant",
+              "identity",
+              "specific_lifecycle",
+              "industry_average",
+              "component_association",
+              "hazard"
+            ]
+          },
+          "claim_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+          }
+        }
+      }
+    },
+    "changed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_key",
+          "before_source_state",
+          "after_source_state",
+          "before_evidence_level",
+          "after_evidence_level"
+        ],
+        "properties": {
+          "claim_key": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["category_id", "claim_kind", "claim_id"],
+            "properties": {
+              "category_id": {
+                "enum": [
+                  "0301_computer_mouse",
+                  "0301_keyboard",
+                  "0303_laptop",
+                  "0306_mobile_phone",
+                  "0401_headphones"
+                ]
+              },
+              "claim_kind": {
+                "enum": [
+                  "subtype",
+                  "variant",
+                  "identity",
+                  "specific_lifecycle",
+                  "industry_average",
+                  "component_association",
+                  "hazard"
+                ]
+              },
+              "claim_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+              }
+            }
+          },
+          "before_source_state": {"enum": ["reviewed", "unknown"]},
+          "after_source_state": {"enum": ["reviewed", "unknown"]},
+          "before_evidence_level": {
+            "type": ["string", "null"],
+            "enum": ["A", "B", "C", "D", null]
+          },
+          "after_evidence_level": {
+            "type": ["string", "null"],
+            "enum": ["A", "B", "C", "D", null]
+          }
+        },
+        "allOf": [
+          {
+            "oneOf": [
+              {
+                "properties": {
+                  "before_source_state": {"const": "reviewed"},
+                  "before_evidence_level": {"enum": ["A", "B", "C", "D"]}
+                }
+              },
+              {
+                "properties": {
+                  "before_source_state": {"const": "unknown"},
+                  "before_evidence_level": {"const": null}
+                }
+              }
+            ]
+          },
+          {
+            "oneOf": [
+              {
+                "properties": {
+                  "after_source_state": {"const": "reviewed"},
+                  "after_evidence_level": {"enum": ["A", "B", "C", "D"]}
+                }
+              },
+              {
+                "properties": {
+                  "after_source_state": {"const": "unknown"},
+                  "after_evidence_level": {"const": null}
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "known_limitations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_key", "reason"],
+        "properties": {
+          "claim_key": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["category_id", "claim_kind", "claim_id"],
+            "properties": {
+              "category_id": {
+                "enum": [
+                  "0301_computer_mouse",
+                  "0301_keyboard",
+                  "0303_laptop",
+                  "0306_mobile_phone",
+                  "0401_headphones"
+                ]
+              },
+              "claim_kind": {
+                "enum": [
+                  "subtype",
+                  "variant",
+                  "identity",
+                  "specific_lifecycle",
+                  "industry_average",
+                  "component_association",
+                  "hazard"
+                ]
+              },
+              "claim_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+              }
+            }
+          },
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

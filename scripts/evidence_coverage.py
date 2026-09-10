@@ -7,7 +7,7 @@ import re
 from typing import Mapping
 import unicodedata
 
-from scripts.knowledge_schema import EvidenceDocuments
+from scripts.knowledge_schema import EvidenceDocuments, TemplateKind
 from server.evidence_types import AssociationStatus, RELEASED_CATEGORY_IDS
 
 
@@ -318,3 +318,176 @@ def coverage_json_bytes(report: Mapping[str, object]) -> bytes:
         ).encode("utf-8") + b"\n"
     except (TypeError, ValueError) as exc:
         raise CoverageError(f"coverage report is not canonical JSON: {exc}") from exc
+
+
+def validate_release_floor(report: Mapping[str, object]) -> None:
+    """Reject a valid full report that is too sparse for release."""
+
+    validate_coverage_report(report)
+    summary = report["summary"]
+    claims = report["claims"]
+    requirements = (
+        ("identity", 10, "at least ten reviewed identities"),
+        ("subtype", 4, "at least four reviewed subtypes"),
+        (
+            "specific_lifecycle",
+            3,
+            "at least three reviewed specific lifecycle records",
+        ),
+        ("industry_average", 1, "one industry average"),
+    )
+    for category_id in RELEASED_CATEGORY_IDS:
+        for claim_kind, minimum, description in requirements:
+            reviewed = sum(
+                claim["category_id"] == category_id
+                and claim["claim_kind"] == claim_kind
+                and claim["source_state"] == "reviewed"
+                for claim in claims
+            )
+            if reviewed < minimum:
+                raise CoverageError(f"{category_id} requires {description}")
+
+    global_requirements = (
+        ("categories", 5, "exactly five categories", True),
+        ("component_templates", 15, "at least 15 component templates", False),
+        ("modern_overlays", 5, "at least five modern overlays", False),
+        ("legacy_overlays", 5, "at least five legacy overlays", False),
+    )
+    for field, floor, description, exact in global_requirements:
+        value = summary[field]
+        if (exact and value != floor) or (not exact and value < floor):
+            raise CoverageError(f"coverage report requires {description}")
+
+
+def validate_release_floor_inputs(documents: EvidenceDocuments) -> None:
+    """Enforce release facts intentionally absent from the immutable report."""
+
+    categories = {
+        category.category.category_id: category for category in documents.categories
+    }
+    battery_variant_categories = {
+        "0301_computer_mouse",
+        "0301_keyboard",
+        "0401_headphones",
+    }
+    for category_id in RELEASED_CATEGORY_IDS:
+        category = categories.get(category_id)
+        if category is None:
+            raise CoverageError(f"{category_id} requires at least two manufacturers")
+        if len({item.manufacturer_id for item in category.identities}) < 2:
+            raise CoverageError(f"{category_id} requires at least two manufacturers")
+        if len(category.subtypes) < 4:
+            raise CoverageError(f"{category_id} requires at least four subtypes")
+        market_states = {item.market_state.value for item in category.subtypes}
+        if "current" not in market_states:
+            raise CoverageError(f"{category_id} requires one current subtype")
+        if not market_states.intersection({"discontinued", "legacy"}):
+            raise CoverageError(
+                f"{category_id} requires one discontinued-or-legacy subtype"
+            )
+        template_kinds = [item.template_kind for item in category.component_templates]
+        if template_kinds.count(TemplateKind.STANDARD) != 1:
+            raise CoverageError(
+                f"{category_id} requires exactly one standard category template"
+            )
+        if TemplateKind.MODERN_OVERLAY not in template_kinds:
+            raise CoverageError(f"{category_id} requires one modern overlay")
+        if TemplateKind.LEGACY_OVERLAY not in template_kinds:
+            raise CoverageError(f"{category_id} requires one legacy overlay")
+        if category_id in battery_variant_categories:
+            architectures = {
+                item.battery_architecture.value for item in category.variants
+            }
+            if architectures != {"battery_bearing", "battery_free"}:
+                raise CoverageError(
+                    f"{category_id} requires battery-bearing and battery-free variants"
+                )
+
+
+def _claim_key_tuple(claim: Mapping[str, object]) -> tuple[str, str, str]:
+    return (
+        str(claim["category_id"]),
+        str(claim["claim_kind"]),
+        str(claim["claim_id"]),
+    )
+
+
+def _claim_key(claim: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "category_id": claim["category_id"],
+        "claim_kind": claim["claim_kind"],
+        "claim_id": claim["claim_id"],
+    }
+
+
+def compare_coverage(
+    previous: Mapping[str, object] | None, current: Mapping[str, object]
+) -> dict[str, object]:
+    """Return the canonical semantic delta between two full reports."""
+
+    validate_coverage_report(current)
+    current_bytes = coverage_json_bytes(current)
+    previous_claims: dict[tuple[str, str, str], Mapping[str, object]] = {}
+    if previous is not None:
+        validate_coverage_report(previous)
+        previous_bytes = coverage_json_bytes(previous)
+        if (
+            previous["knowledge_content_sha256"]
+            == current["knowledge_content_sha256"]
+            and previous_bytes != current_bytes
+        ):
+            raise CoverageError(
+                "same knowledge content hash has different canonical coverage reports"
+            )
+        previous_claims = {
+            _claim_key_tuple(claim): claim for claim in previous["claims"]
+        }
+
+    current_claims = {
+        _claim_key_tuple(claim): claim for claim in current["claims"]
+    }
+    previous_keys = set(previous_claims)
+    current_keys = set(current_claims)
+    added = [
+        _claim_key(current_claims[key]) for key in sorted(current_keys - previous_keys)
+    ]
+    removed = [
+        _claim_key(previous_claims[key])
+        for key in sorted(previous_keys - current_keys)
+    ]
+    changed: list[dict[str, object]] = []
+    for key in sorted(previous_keys & current_keys):
+        before = previous_claims[key]
+        after = current_claims[key]
+        if (
+            before["source_state"] != after["source_state"]
+            or before["evidence_level"] != after["evidence_level"]
+        ):
+            changed.append(
+                {
+                    "claim_key": _claim_key(after),
+                    "before_source_state": before["source_state"],
+                    "after_source_state": after["source_state"],
+                    "before_evidence_level": before["evidence_level"],
+                    "after_evidence_level": after["evidence_level"],
+                }
+            )
+    known_limitations = [
+        {
+            "claim_key": _claim_key(claim),
+            "reason": claim["unknown_reason"],
+        }
+        for _key, claim in sorted(current_claims.items())
+        if claim["source_state"] == "unknown"
+    ]
+    return {
+        "schema_version": 1,
+        "from_bundle_version": (
+            None if previous is None else previous["bundle_version"]
+        ),
+        "to_bundle_version": current["bundle_version"],
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+        "known_limitations": known_limitations,
+    }
