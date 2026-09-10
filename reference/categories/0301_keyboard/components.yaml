@@ -272,3 +272,17 @@ associations:
     source_ids:
       - logitech_k780_technical_specifications_2025
       - logitech_mx_keys_s_specification_2023
+  - association_id: keyboard_standard_battery_chemistry_unknown
+    template_id: keyboard_standard
+    component_id: battery_chemistry
+    position: 14
+    status: unknown
+    applicability: >-
+      Battery chemistry remains unknown for battery-bearing keyboard subtypes
+      unless exact-model manufacturer evidence or a compliant, legible cell
+      marking establishes it. This conditional association does not assert that a
+      battery is present in a wired or other battery-free keyboard.
+    notes:
+      - Obtain exact-model manufacturer specifications or compliant, legible cell markings before assigning chemistry.
+    evidence_level: null
+    source_ids: []

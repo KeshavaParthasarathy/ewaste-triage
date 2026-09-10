@@ -11,15 +11,20 @@ from scripts.knowledge_schema import (
     UnknownClaimKind,
     load_category_evidence_documents,
 )
+from server.evidence_resolver import EvidenceResolver
 from server.evidence_types import (
     AssociationStatus,
     BatteryArchitecture,
+    CanonicalIdentityScope,
+    ComponentAssociationSnapshot,
     EvidenceLevel,
     HazardSeverity,
     IdentityKind,
     LifecycleEndpointKind,
     ScopeKind,
+    SourceSnapshot,
 )
+from server.knowledge_store import _ComponentTemplateLayer
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,6 +59,93 @@ EXPECTED_UNKNOWN_IDENTITIES = {
 @pytest.fixture(scope="module")
 def keyboard_records():
     return load_category_evidence_documents(REFERENCE, CATEGORY_ID)
+
+
+class _LoadedKeyboardComponentStore:
+    """Adapt loaded corpus records to the resolver's component-layer boundary."""
+
+    def __init__(self, records):
+        self._records = records
+
+    def component_layers(self, scope):
+        scope_ids = {
+            ScopeKind.CATEGORY: scope.category_id,
+            ScopeKind.SUBTYPE: scope.subtype_id,
+            ScopeKind.FAMILY: scope.family_id,
+            ScopeKind.MODEL: scope.model_id,
+        }
+        scope_order = {
+            ScopeKind.CATEGORY: 0,
+            ScopeKind.SUBTYPE: 1,
+            ScopeKind.FAMILY: 2,
+            ScopeKind.MODEL: 3,
+        }
+        definitions = {
+            item.component_id: item for item in self._records.component_definitions
+        }
+        sources = {
+            item.source_id: SourceSnapshot(
+                item.source_id,
+                item.title,
+                item.publisher,
+                item.canonical_url,
+                item.publication_or_revision_date,
+                item.accessed_on,
+                item.license_or_use_basis,
+                item.reviewed_by,
+                item.reviewed_on,
+            )
+            for item in self._records.sources
+        }
+        associations_by_template = {}
+        for item in self._records.component_associations:
+            associations_by_template.setdefault(item.template_id, []).append(item)
+
+        selected = sorted(
+            (
+                template
+                for template in self._records.component_templates
+                if scope_ids[template.scope.kind] == template.scope.id
+            ),
+            key=lambda template: (
+                scope_order[template.scope.kind],
+                template.application_order,
+                template.template_id,
+            ),
+        )
+        layers = []
+        for template in selected:
+            associations = tuple(
+                ComponentAssociationSnapshot(
+                    item.association_id,
+                    item.template_id,
+                    item.component_id,
+                    definitions[item.component_id].display_name,
+                    item.status,
+                    template.scope.kind,
+                    template.scope.id,
+                    item.applicability,
+                    item.notes,
+                    item.evidence_level,
+                    tuple(sources[source_id] for source_id in item.source_ids),
+                )
+                for item in sorted(
+                    associations_by_template[template.template_id],
+                    key=lambda association: association.position,
+                )
+            )
+            layers.append(_ComponentTemplateLayer(template.template_id, associations))
+        return tuple(layers)
+
+
+def _identity_scope(identity):
+    return CanonicalIdentityScope(
+        category_id=identity.category_id,
+        subtype_id=identity.subtype_id,
+        family_id=identity.family_id,
+        model_id=identity.model_id,
+        variant_ids=identity.variant_ids,
+    )
 
 
 def test_keyboard_development_roster_separates_reviewed_and_unknown_identities(
@@ -334,6 +426,7 @@ def test_keyboard_component_layers_cover_standard_and_modern_architectures(
     for item in keyboard_records.component_associations:
         associations.setdefault(item.template_id, []).append(item)
 
+    assert len(keyboard_records.component_associations) == 18
     assert set(templates) == {
         "keyboard_modern_wireless",
         "keyboard_standard",
@@ -380,6 +473,56 @@ def test_keyboard_component_layers_cover_standard_and_modern_architectures(
     assert "does not establish" in buckling.applicability.casefold()
 
 
+def test_keyboard_k780_resolves_structured_battery_chemistry_unknown(
+    keyboard_records,
+):
+    identities = {item.identity_id: item for item in keyboard_records.identities}
+    resolver = EvidenceResolver(_LoadedKeyboardComponentStore(keyboard_records))
+
+    k780 = resolver.resolve_components(_identity_scope(identities["logitech_k780"]))
+    k780_components = {item.component_id: item for item in k780.components}
+    assert k780.applied_template_ids == ("keyboard_standard",)
+    assert "battery_chemistry" in k780_components
+
+    k780_chemistry = k780_components["battery_chemistry"]
+    assert k780_chemistry.association_id == (
+        "keyboard_standard_battery_chemistry_unknown"
+    )
+    assert k780_chemistry.status is AssociationStatus.UNKNOWN
+    assert k780_chemistry.evidence_level is None
+    assert k780_chemistry.sources == ()
+    applicability = k780_chemistry.applicability.casefold()
+    assert "battery-bearing" in applicability
+    assert "does not assert" in applicability
+    assert "battery-free" in applicability
+
+    coverage = next(
+        item
+        for item in keyboard_records.unknowns
+        if item.claim_kind is UnknownClaimKind.COMPONENT_ASSOCIATION
+        and item.claim_id == k780_chemistry.association_id
+    )
+    assert coverage.reason == k780_chemistry.applicability
+    assert coverage.evidence_request == k780_chemistry.notes[0]
+    assert coverage.evidence_level is None
+    assert coverage.source_ids == ()
+
+    mx_keys = resolver.resolve_components(
+        _identity_scope(identities["logitech_mx_keys_s"])
+    )
+    mx_components = {item.component_id: item for item in mx_keys.components}
+    assert mx_keys.applied_template_ids == (
+        "keyboard_standard",
+        "keyboard_modern_wireless",
+    )
+    assert mx_components["battery_chemistry"].association_id == (
+        "keyboard_modern_wireless_battery_chemistry_unknown"
+    )
+    assert mx_components["battery_chemistry"].status is AssociationStatus.UNKNOWN
+    assert mx_components["battery_chemistry"].evidence_level is None
+    assert mx_components["battery_chemistry"].sources == ()
+
+
 def test_keyboard_components_keep_hidden_materials_and_chemistry_unknown(
     keyboard_records,
 ):
@@ -392,6 +535,7 @@ def test_keyboard_components_keep_hidden_materials_and_chemistry_unknown(
         if item.claim_kind is UnknownClaimKind.COMPONENT_ASSOCIATION
     }
     required_unknowns = {
+        "keyboard_standard_battery_chemistry_unknown",
         "keyboard_standard_buckling_spring_material_unknown",
         "keyboard_modern_wireless_battery_chemistry_unknown",
         "keyboard_standard_controller_material_unknown",
@@ -523,3 +667,4 @@ def test_keyboard_packet_does_not_claim_release_completion(keyboard_records):
         "keyboard_buckling_spring_legacy",
         "keyboard_wired_membrane",
     }
+    assert len(keyboard_records.unknowns) == 18

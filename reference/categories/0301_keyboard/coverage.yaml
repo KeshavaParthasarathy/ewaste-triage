@@ -12,6 +12,19 @@ unknowns:
       markings before assigning chemistry.
   - category_id: 0301_keyboard
     claim_kind: component_association
+    claim_id: keyboard_standard_battery_chemistry_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Battery chemistry remains unknown for battery-bearing keyboard subtypes
+      unless exact-model manufacturer evidence or a compliant, legible cell
+      marking establishes it. This conditional association does not assert that a
+      battery is present in a wired or other battery-free keyboard.
+    evidence_request: >-
+      Obtain exact-model manufacturer specifications or compliant, legible cell
+      markings before assigning chemistry.
+  - category_id: 0301_keyboard
+    claim_kind: component_association
     claim_id: keyboard_standard_buckling_spring_material_unknown
     evidence_level: null
     source_ids: []
