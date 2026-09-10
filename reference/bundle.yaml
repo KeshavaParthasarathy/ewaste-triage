@@ -1,0 +1,11 @@
+bundle:
+  schema_version: 3
+  bundle_version: "3.0.0"
+  identity_catalog_version: "1.0.0"
+  policy_revision: "2.0.0"
+  category_ids:
+    - 0301_computer_mouse
+    - 0301_keyboard
+    - 0303_laptop
+    - 0306_mobile_phone
+    - 0401_headphones

@@ -1,0 +1,65 @@
+sources:
+  - source_id: apple_mac_battery_cycles_2026
+    title: Determine battery cycle count for Mac laptops
+    publisher: Apple Support
+    canonical_url: https://support.apple.com/en-au/102888
+    publication_or_revision_date: "2026-03-24"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: epa_electronics_management_2026
+    title: Electronics Basic Information, Research, and Initiatives
+    publisher: United States Environmental Protection Agency
+    canonical_url: https://www.epa.gov/electronics-batteries-management/electronics-basic-information-research-and-initiatives
+    publication_or_revision_date: "2026-03-10"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: epa_used_li_ion_2026
+    title: Used Lithium-Ion Batteries
+    publisher: United States Environmental Protection Agency
+    canonical_url: https://www.epa.gov/recycle/used-lithium-ion-batteries
+    publication_or_revision_date: "2026-03-20"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: eu_phone_ecodesign_2023_1670
+    title: >-
+      Consolidated text: Commission Regulation (EU) 2023/1670 of 16 June 2023
+      laying down ecodesign requirements for smartphones, mobile phones other than
+      smartphones, cordless phones and slate tablets pursuant to Directive
+      2009/125/EC of the European Parliament and of the Council and amending
+      Commission Regulation (EU) 2023/826 (Text with EEA relevance)
+    publisher: EUR-Lex
+    canonical_url: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02023R1670-20250620
+    publication_or_revision_date: "2025-06-20"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: eu_rohs_current
+    title: >-
+      Consolidated text: Directive 2011/65/EU of the European Parliament and of the
+      Council of 8 June 2011 on the restriction of the use of certain hazardous
+      substances in electrical and electronic equipment (recast) (Text with EEA
+      relevance)
+    publisher: EUR-Lex
+    canonical_url: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02011L0065-20260701
+    publication_or_revision_date: "2026-07-01"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"

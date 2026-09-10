@@ -1,0 +1,146 @@
+policy_revision: "2.0.0"
+policies:
+  - rule_id: urgent_hazard_specialist
+    priority: 0
+    outcome: specialist_handling
+    when_all:
+      - hazards.triggered_severity=urgent
+      - identity.state=canonical
+    when_any: []
+    rationale: >-
+      A resolved urgent hazard triggered by a documented user observation requires
+      the source-specific handling guidance to take precedence over reuse, repair,
+      or component assessment.
+    evidence_level: D
+    source_ids:
+      - epa_electronics_management_2026
+      - epa_used_li_ion_2026
+  - rule_id: unknown_identity_more_information
+    priority: 10
+    outcome: more_information_needed
+    when_all:
+      - identity.state=unknown
+    when_any: []
+    rationale: >-
+      Identity is not canonical, so category, lifecycle, component, and hazard
+      evidence cannot be resolved for an item-specific recommendation. Confirm the
+      identity before applying canonical policy.
+    evidence_level: D
+    source_ids:
+      - epa_electronics_management_2026
+  - rule_id: nonworking_repair
+    priority: 20
+    outcome: repair
+    when_all:
+      - hazards.triggered_severity=none
+      - identity.state=canonical
+      - lifecycle.required_usage=present
+      - lifecycle.resolution=resolved
+      - observations.issue_flags.odor=false
+      - observations.issue_flags.overheating=false
+      - observations.issue_flags.recall=false
+      - observations.issue_flags.swelling_or_battery_damage=false
+      - observations.operational_state=not_working
+    when_any:
+      - visible_condition.grade=critical
+      - visible_condition.grade=excellent
+      - visible_condition.grade=fair
+      - visible_condition.grade=good
+      - visible_condition.grade=poor
+    rationale: >-
+      Complete observations for a nonworking item support seeking a repair
+      assessment. This route does not promise that repair is feasible, safe, or
+      economical.
+    evidence_level: D
+    source_ids:
+      - epa_electronics_management_2026
+  - rule_id: recoverable_parts
+    priority: 30
+    outcome: more_information_needed
+    when_all:
+      - component_decisions.any_present=true
+      - hazards.triggered_severity=none
+      - identity.state=canonical
+      - lifecycle.position=within_reference
+      - lifecycle.required_usage=present
+      - lifecycle.resolution=resolved
+      - observations.issue_flags.odor=false
+      - observations.issue_flags.overheating=false
+      - observations.issue_flags.recall=false
+      - observations.issue_flags.swelling_or_battery_damage=false
+      - observations.operational_state=working
+    when_any:
+      - visible_condition.grade=critical
+      - visible_condition.grade=poor
+    rationale: >-
+      A user-confirmed-present component does not establish its condition, safe
+      removability, or recoverability. Request a component assessment before any
+      parts-recovery disposition.
+    evidence_level: D
+    source_ids:
+      - epa_electronics_management_2026
+  - rule_id: supported_reuse
+    priority: 40
+    outcome: reuse
+    when_all:
+      - hazards.triggered_severity=none
+      - identity.state=canonical
+      - lifecycle.position=within_reference
+      - lifecycle.required_usage=present
+      - lifecycle.resolution=resolved
+      - observations.issue_flags.odor=false
+      - observations.issue_flags.overheating=false
+      - observations.issue_flags.recall=false
+      - observations.issue_flags.swelling_or_battery_damage=false
+      - observations.operational_state=working
+    when_any:
+      - visible_condition.grade=excellent
+      - visible_condition.grade=fair
+      - visible_condition.grade=good
+    rationale: >-
+      A working item with complete observations, no triggered hazard, a favorable
+      user-entered visible grade, and usage wholly within a compatible device
+      service-life reference can receive conditional continued-use guidance. This
+      is not a safety or hidden-condition certification.
+    evidence_level: D
+    source_ids:
+      - epa_electronics_management_2026
+  - rule_id: end_of_reference_recycle
+    priority: 50
+    outcome: more_information_needed
+    when_all:
+      - hazards.triggered_severity=none
+      - identity.state=canonical
+      - lifecycle.position=at_or_beyond_reference
+      - lifecycle.required_usage=present
+      - lifecycle.resolution=resolved
+      - observations.issue_flags.odor=false
+      - observations.issue_flags.overheating=false
+      - observations.issue_flags.recall=false
+      - observations.issue_flags.swelling_or_battery_damage=false
+      - observations.operational_state=working
+    when_any:
+      - visible_condition.grade=critical
+      - visible_condition.grade=excellent
+      - visible_condition.grade=fair
+      - visible_condition.grade=good
+      - visible_condition.grade=poor
+    rationale: >-
+      Reaching or exceeding a device service-life reference does not establish
+      failure or that reuse or repair is unviable. Request an operational and service
+      assessment before selecting an end-of-life disposition.
+    evidence_level: D
+    source_ids:
+      - epa_electronics_management_2026
+  - rule_id: missing_required_observation
+    priority: 100
+    outcome: more_information_needed
+    when_all: []
+    when_any: []
+    rationale: >-
+      Required evidence is missing or insufficient for another supported rule.
+      Collect the needed identity, lifecycle, operation, visible-condition,
+      component, or safety observation before making a disposition decision.
+    evidence_level: D
+    source_ids:
+      - epa_electronics_management_2026
