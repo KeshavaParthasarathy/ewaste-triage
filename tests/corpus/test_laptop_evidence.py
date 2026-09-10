@@ -383,12 +383,23 @@ def test_laptop_broad_service_life_is_qualified_historical_iqr(laptop_records):
     assert record.source_ids == ("laptop_swiss_service_lifetime_2017",)
 
     qualification = record.endpoint_qualification.casefold()
-    assert "historical completed first-service" in qualification
+    assert "historical completed first active-service" in qualification
     assert "approximately 3-7 years" in qualification
     assert "weighted interquartile" in qualification
     assert "graph-read" in qualification
+    assert "stored or disposed devices" in qualification
+    assert "still possessed" in qualification
+    assert "possession until first transfer or disposal" not in qualification
     assert "physical" in qualification
     assert "forecast" in qualification
+    assumptions = " ".join(record.assumptions).casefold()
+    assert "active use" in assumptions
+    assert "stored or disposed devices" in assumptions
+    assert "still possess" in assumptions
+    assert "prior-owner" in assumptions
+    assert "age at resale" in assumptions
+    assert "include storage" in assumptions
+    assert "first-service endpoint ends at sale" not in assumptions
     assert "306" in record.population_definition
     assert "1987-2006" in record.population_definition
     assert "Switzerland" in record.population_definition

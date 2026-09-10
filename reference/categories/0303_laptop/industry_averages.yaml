@@ -11,11 +11,12 @@ industry_averages:
     lower_bound: 3.0
     upper_bound: 7.0
     endpoint_qualification: >-
-      Historical completed first-service duration for surveyed laptops, read as an
+      Historical completed first active-service duration for surveyed laptops, read as an
       approximately 3-7 years weighted interquartile range from the one-year-bin
       histogram in Figure 1 and its publisher-linked S1 support. This graph-read
-      reference describes reported possession until first transfer or disposal;
-      it is not physical failure life, a current-item forecast, or an exact model estimate.
+      reference describes completed active use; the completed-service sample includes
+      stored or disposed devices, including stored devices still possessed by respondents.
+      It is not physical failure life, a current-item forecast, or an exact model estimate.
     applicable_from: null
     applicable_to: null
     model_year_from: null
@@ -26,7 +27,7 @@ industry_averages:
     evidence_level: C
     assumptions:
       - The weighted graph quartile positions can be read only approximately from one-year bins.
-      - The first-service endpoint ends at sale, gifting, return, recycling, or disposal as reconstructed by the study.
+      - Completed first service is active use before subsequent storage or disposal; completed observations include stored or disposed devices, including stored devices respondents still possess. Only reconstructed prior-owner service uses age at resale and can include storage.
       - This category reference is historical context and is not selected as an exact identity prediction.
     population_definition: >-
       306 laptop records reported by private households in Switzerland and
