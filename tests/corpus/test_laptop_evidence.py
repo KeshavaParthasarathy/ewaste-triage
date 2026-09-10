@@ -315,6 +315,32 @@ def test_laptop_identity_scopes_preserve_models_families_and_true_variants(
     ).casefold()
 
 
+def test_surface_laptop_5_identity_uses_only_article_supported_tokens(
+    laptop_records,
+):
+    identities = {item.identity_id: item for item in laptop_records.identities}
+    surface = identities["microsoft_surface_laptop_5"]
+
+    assert surface.identity_kind is IdentityKind.FAMILY
+    assert surface.family_id == surface.identity_id
+    assert surface.model_id is None
+    assert surface.model_name is None
+    assert surface.aliases == ("Surface Laptop 5 13.5-inch and 15-inch",)
+    assert surface.distinguishing_tokens == (
+        "surface laptop 5",
+        "13.5 inch or 15 inch pixelsense display",
+        "intel evo platform",
+    )
+    assert "12th generation" not in " ".join(
+        surface.distinguishing_tokens
+    ).casefold()
+    assert surface.model_year_from == surface.model_year_to == 2022
+    assert surface.battery_architecture is BatteryArchitecture.BATTERY_BEARING
+    assert surface.source_ids == (
+        "laptop_microsoft_surface_laptop_5_launch_2022",
+    )
+
+
 def test_laptop_capacity_targets_are_reviewed_or_real_unknowns(laptop_records):
     reviewed = {
         item.record_id: item for item in laptop_records.specific_lifecycles
@@ -478,6 +504,33 @@ def test_laptop_component_templates_cover_required_layers(laptop_records):
     }
     legacy = {item.component_id for item in associations["laptop_legacy_serviceable"]}
     assert legacy >= {"display_backlight", "memory", "storage"}
+
+
+def test_laptop_cooling_association_uses_only_audited_supporting_sources(
+    laptop_records,
+):
+    cooling = next(
+        item
+        for item in laptop_records.component_associations
+        if item.association_id == "laptop_standard_cooling_assembly"
+    )
+
+    assert cooling.template_id == "laptop_standard"
+    assert cooling.component_id == "cooling_assembly"
+    assert cooling.status is AssociationStatus.COMMONLY_ASSOCIATED
+    assert cooling.evidence_level is EvidenceLevel.C
+    assert cooling.source_ids == (
+        "laptop_apple_powerbook_g4_12_133_service_2005",
+        "laptop_hp_elitebook_840_g10_quickspecs_2025",
+    )
+    applicability = cooling.applicability.casefold()
+    assert "thermal-management or cooling assemblies" in applicability
+    assert "fanless and fan-equipped" in applicability
+    notes = " ".join(cooling.notes).casefold()
+    assert all(
+        boundary in notes
+        for boundary in ("fan", "heat pipe", "thermal material", "diagnosed fault")
+    )
 
 
 def test_laptop_resolved_layers_preserve_integrated_serviceable_and_unknown_scopes(

@@ -257,8 +257,6 @@ associations:
     evidence_level: C
     source_ids:
       - laptop_apple_powerbook_g4_12_133_service_2005
-      - laptop_dell_xps_13_9315_specs_2025
-      - laptop_framework_amd_7040_launch_2023
       - laptop_hp_elitebook_840_g10_quickspecs_2025
   - association_id: laptop_standard_display_assembly
     template_id: laptop_standard

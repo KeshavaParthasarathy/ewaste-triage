@@ -295,7 +295,7 @@ identities:
     distinguishing_tokens:
       - surface laptop 5
       - 13.5 inch or 15 inch pixelsense display
-      - 12th generation intel evo platform
+      - intel evo platform
     model_year_from: 2022
     model_year_to: 2022
     applicable_from: null
