@@ -239,6 +239,7 @@ def test_phone_sources_have_honest_dated_automated_reviews(phone_records):
         "phone_motorola_razr_40_ultra_launch_2023": date(2023, 6, 1),
         "phone_motorola_razr_v3_launch_2004": date(2004, 7, 27),
         "phone_motorola_v3_service_manual_2004": date(2004, 7, 30),
+        "phone_osha_small_lithium_devices_2019": date(2019, 6, 20),
         "phone_rim_bold_9900_launch_2011": date(2011, 5, 2),
         "phone_samsung_broken_screen_2023": date(2023, 5, 31),
         "phone_samsung_galaxy_s24_launch_2024": date(2024, 1, 18),
@@ -264,6 +265,20 @@ def test_phone_sources_have_honest_dated_automated_reviews(phone_records):
         for item in sources.values()
     )
     assert all(source_id.startswith("phone_") for source_id in sources)
+
+    osha = sources["phone_osha_small_lithium_devices_2019"]
+    assert osha.title == (
+        "Preventing Fire and/or Explosion Injury from Small and Wearable "
+        "Lithium Battery Powered Devices"
+    )
+    assert osha.publisher == "Occupational Safety and Health Administration"
+    assert osha.canonical_url == "https://obis.osha.gov/dts/shib/shib011819.html"
+    osha_basis = osha.license_or_use_basis.casefold()
+    assert "first-party html" in osha_basis
+    assert "workplace" in osha_basis
+    assert "advisory" in osha_basis
+    assert "not" in osha_basis and "regulation" in osha_basis
+    assert "chemistry" in osha_basis
 
 
 def test_phone_identity_scopes_preserve_models_generations_and_true_variants(
@@ -311,11 +326,19 @@ def test_phone_identity_scopes_preserve_models_generations_and_true_variants(
     assert "3rd generation" in " ".join(
         (se3.display_name, *se3.aliases, *se3.distinguishing_tokens)
     ).casefold()
+    pixel_tokens = " ".join(identities["google_pixel_8"].distinguishing_tokens).casefold()
+    assert "tensor g3" in pixel_tokens
+    assert "6.2 inch" in pixel_tokens
+    assert "actua" not in pixel_tokens
     nokia = identities["nokia_3310_2017"]
     assert nokia.model_year_from == nokia.model_year_to == 2017
-    assert "3g" not in " ".join(
+    nokia_text = " ".join(
         (nokia.display_name, *nokia.aliases, *nokia.distinguishing_tokens)
     ).casefold()
+    assert "2017" in nokia_text and "rebirth" in nokia_text
+    assert "3g" not in nokia_text
+    assert "series 30" not in nokia_text
+    assert "2.4 inch" not in nokia_text
     v3 = identities["motorola_razr_v3"]
     v3_tokens = " ".join(v3.distinguishing_tokens).casefold()
     assert "gsm" in v3_tokens and "gprs" in v3_tokens
@@ -617,7 +640,10 @@ def test_phone_hazards_are_precautionary_and_condition_qualified(phone_records):
         "observations.issue_flags.overheating",
         "observations.issue_flags.swelling_or_battery_damage",
     )
-    assert battery.source_ids == ("phone_epa_used_li_ion_2026",)
+    assert battery.source_ids == (
+        "phone_epa_used_li_ion_2026",
+        "phone_osha_small_lithium_devices_2019",
+    )
     battery_applicability = battery.applicability.casefold()
     assert "activates precautionary guidance" in battery_applicability
     assert "if the installed battery is lithium-ion" in battery_applicability
@@ -632,6 +658,29 @@ def test_phone_hazards_are_precautionary_and_condition_qualified(phone_records):
     for action in battery_actions:
         if "lithium-ion" in action.casefold():
             assert action.casefold().startswith("if ")
+
+    immediate_text = " ".join(battery.immediate_actions).casefold()
+    assert "remove" in immediate_text and "from service" in immediate_text
+    assert "away from flammable materials" in immediate_text
+    assert "physical damage" in immediate_text
+    assert all(
+        unsupported not in " ".join(battery_actions).casefold()
+        for unsupported in (
+            "bending",
+            "fire resistant",
+            "fire-resistant",
+            "prompt transfer",
+            "sand",
+            "stop using and charging",
+        )
+    )
+    assert battery.disposal_guidance
+    for action in battery.disposal_guidance:
+        action_text = action.casefold()
+        assert "damaged" in action_text
+        assert "instructions" in action_text
+        assert "confirm" in action_text
+        assert "accepts" in action_text
 
     exterior = hazards["phone_broken_exterior_handling"]
     assert exterior.scope == type(exterior.scope)(ScopeKind.CATEGORY, CATEGORY_ID)
