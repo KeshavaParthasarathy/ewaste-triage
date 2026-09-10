@@ -341,7 +341,7 @@ def test_mouse_components_keep_materials_chemistry_and_rollers_unknown(
     )
 
 
-def test_mouse_hazards_are_source_specific_and_conditionally_triggered(mouse_records):
+def test_mouse_hazard_triggers_preserve_the_observation_contract(mouse_records):
     hazards = {item.hazard_id: item for item in mouse_records.hazards}
 
     assert set(hazards) == {
@@ -356,18 +356,84 @@ def test_mouse_hazards_are_source_specific_and_conditionally_triggered(mouse_rec
     assert primary.scope == type(primary.scope)(
         ScopeKind.SUBTYPE, "mouse_wireless_replaceable_battery"
     )
+    assert rechargeable.component_id == "power_source"
+    assert primary.component_id == "power_source"
     assert rechargeable.severity is HazardSeverity.URGENT
     assert primary.severity is HazardSeverity.CAUTION
-    assert "observations.issue_flags.swelling_or_battery_damage" in (
-        rechargeable.trigger_observation_keys
+    assert rechargeable.trigger_observation_keys == (
+        "observations.issue_flags.overheating",
+        "observations.issue_flags.swelling_or_battery_damage",
     )
-    assert "observations.issue_flags.swelling_or_battery_damage" in (
-        primary.trigger_observation_keys
+    assert primary.trigger_observation_keys == (
+        "observations.issue_flags.swelling_or_battery_damage",
     )
     assert rechargeable.source_ids == ("epa_used_li_ion_2026",)
     assert primary.source_ids == ("health_canada_battery_safety_2024",)
-    assert "independently establishes lithium-ion" in rechargeable.applicability
-    assert "Subtype architecture alone" in primary.applicability
+
+
+def test_mouse_hazard_guidance_keeps_unobserved_facts_conditional(mouse_records):
+    hazards = {item.hazard_id: item for item in mouse_records.hazards}
+    rechargeable = hazards["mouse_damaged_lithium_ion_battery"]
+    primary = hazards["mouse_leaking_primary_cell"]
+
+    rechargeable_applicability = rechargeable.applicability.casefold()
+    assert "activates precautionary guidance" in rechargeable_applicability
+    assert "if the installed battery is lithium-ion" in rechargeable_applicability
+    assert "do not establish chemistry" in rechargeable_applicability
+    assert "trigger only when" not in rechargeable_applicability
+
+    primary_applicability = primary.applicability.casefold()
+    assert "activates precautionary guidance" in primary_applicability
+    assert "if the installed cell is leaking" in primary_applicability
+    assert "if it is non-rechargeable" in primary_applicability
+    assert "do not establish leakage" in primary_applicability
+    assert "trigger only when" not in primary_applicability
+    assert "user reports a leaking" not in primary_applicability
+
+    rechargeable_actions = (
+        *rechargeable.immediate_actions,
+        *rechargeable.follow_up_actions,
+        *rechargeable.handling_guidance,
+        *rechargeable.disposal_guidance,
+    )
+    for action in rechargeable_actions:
+        action_text = action.casefold()
+        if any(
+            marker in action_text
+            for marker in (
+                "lithium-ion",
+                "certified electronics recycler",
+                "damaged batteries before transport",
+            )
+        ):
+            assert action_text.startswith("if ")
+    assert all(
+        "the damaged battery" not in action.casefold()
+        for action in rechargeable_actions
+    )
+    assert any(
+        "if the installed battery is lithium-ion"
+        in action.casefold()
+        and "can be safely removed" in action.casefold()
+        for action in rechargeable.handling_guidance
+    )
+
+    primary_actions = (
+        *primary.immediate_actions,
+        *primary.follow_up_actions,
+        *primary.handling_guidance,
+        *primary.disposal_guidance,
+    )
+    assert all(
+        "the leaking cell" not in action.casefold() for action in primary_actions
+    )
+    assert "if leakage is present" in primary.immediate_actions[0].casefold()
+    assert "if leakage is present" in primary.follow_up_actions[1].casefold()
+    assert "if the installed cell is non-rechargeable" in (
+        primary.handling_guidance[0].casefold()
+    )
+    assert "if leakage is present" in primary.handling_guidance[1].casefold()
+    assert "if leakage is present" in primary.disposal_guidance[0].casefold()
 
 
 def test_mouse_packet_does_not_claim_release_completion(mouse_records):

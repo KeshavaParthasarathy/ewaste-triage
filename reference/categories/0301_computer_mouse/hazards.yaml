@@ -5,25 +5,27 @@ hazards:
       kind: subtype
       id: mouse_wireless_rechargeable
     applicability: >-
-      Trigger only when item-specific manufacturer evidence or a legible battery
-      marking independently establishes lithium-ion chemistry and the user reports
-      swelling, damage, or overheating. Rechargeability alone is insufficient.
+      For a rechargeable mouse, a user report of overheating, swelling, or battery
+      damage activates precautionary guidance. Lithium-ion-specific guidance applies
+      if the installed battery is lithium-ion; rechargeability and the reported issue
+      do not establish chemistry. Item-specific manufacturer information or battery
+      markings may help identify chemistry.
     trigger_observation_keys:
       - observations.issue_flags.overheating
       - observations.issue_flags.swelling_or_battery_damage
     severity: urgent
     immediate_actions:
-      - Stop using and charging the mouse.
-      - Keep the damaged battery or device away from flammable materials without crushing or puncturing it.
+      - As a precaution after the reported issue, stop using and charging the mouse.
+      - Keep the battery or device away from flammable materials without crushing or puncturing it.
     follow_up_actions:
       - Contact the manufacturer or a qualified specialist for handling instructions.
-      - Arrange prompt transfer to an appropriate battery or household-hazardous-waste collection point.
+      - If the installed battery is lithium-ion, arrange prompt transfer to an appropriate battery or household-hazardous-waste collection point.
     handling_guidance:
-      - Do not place a damaged lithium-ion battery in household trash or a municipal recycling bin.
-      - Prevent terminal contact when the battery can be safely removed and handled without forcing the enclosure.
+      - If the installed battery is lithium-ion, do not place it in household trash or a municipal recycling bin.
+      - If the installed battery is lithium-ion and can be safely removed without forcing the enclosure, prevent terminal contact; otherwise keep the device intact and follow manufacturer or receiving-program instructions.
     disposal_guidance:
-      - Use a certified electronics recycler, battery recycler, or household-hazardous-waste program that accepts damaged lithium-ion batteries.
-      - Follow the receiving program's instructions for damaged batteries before transport.
+      - If the installed battery is lithium-ion, use a certified electronics recycler, battery recycler, or household-hazardous-waste program that accepts lithium-ion batteries.
+      - If the installed battery is lithium-ion and is damaged, follow the receiving program's instructions for damaged batteries before transport.
     evidence_level: B
     source_ids:
       - epa_used_li_ion_2026
@@ -33,23 +35,25 @@ hazards:
       kind: subtype
       id: mouse_wireless_replaceable_battery
     applicability: >-
-      Trigger only when the user reports a leaking installed primary cell in a
-      replaceable-battery mouse. Subtype architecture alone does not prove the
-      chemistry or condition of the cell currently installed.
+      For a replaceable-battery mouse, a user report of swelling or battery damage
+      activates precautionary guidance. Leakage-specific guidance applies if the
+      installed cell is leaking; primary-cell guidance applies if it is
+      non-rechargeable. The reported issue and subtype do not establish leakage,
+      installed-cell type, or chemistry.
     trigger_observation_keys:
       - observations.issue_flags.swelling_or_battery_damage
     severity: caution
     immediate_actions:
-      - Stop using the mouse and avoid direct contact with leaking battery contents.
+      - Stop using the mouse; if leakage is present, avoid direct contact with battery contents.
       - Keep the cell and device away from children and heat sources.
     follow_up_actions:
       - Follow local public-health guidance if battery contents contact skin or eyes.
-      - Check local hazardous-waste instructions before transporting the leaking cell.
+      - If leakage is present, check local hazardous-waste instructions before transporting the cell.
     handling_guidance:
-      - Do not attempt to recharge a non-rechargeable primary cell.
-      - Do not mix the leaking cell with new cells or with a different battery type.
+      - If the installed cell is non-rechargeable, do not attempt to recharge it.
+      - If leakage is present, do not mix that cell with new cells or with a different battery type.
     disposal_guidance:
-      - Take the leaking cell to a municipal household-hazardous-waste or other locally approved battery collection program.
+      - Follow local municipal hazardous-waste requirements for the battery; if leakage is present, confirm that the chosen collection program accepts leaking cells.
       - Protect exposed terminals as directed by the receiving program.
     evidence_level: B
     source_ids:
