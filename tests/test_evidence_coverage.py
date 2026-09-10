@@ -1423,7 +1423,8 @@ def test_change_cli_parent_fsync_failure_keeps_complete_committed_output(
     assert result == 1
     assert captured.out == ""
     assert captured.err == (
-        "error: cannot write coverage change: intentional parent fsync failure\n"
+        "error: coverage change output was replaced but parent-directory "
+        "durability is uncertain: intentional parent fsync failure\n"
     )
     assert current_path.read_bytes() == current_bytes
     assert output.read_bytes() == expected_bytes

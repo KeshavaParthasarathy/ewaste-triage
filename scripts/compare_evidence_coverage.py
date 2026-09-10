@@ -25,6 +25,10 @@ from scripts.evidence_coverage import (
 )
 
 
+class _PostCommitDurabilityError(OSError):
+    """The output was replaced, but its directory entry may not be durable."""
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="compare_evidence_coverage.py",
@@ -97,7 +101,10 @@ def _atomic_write(output: Path, data: bytes) -> None:
         parent_descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
         os.replace(temporary, output)
         committed = True
-        os.fsync(parent_descriptor)
+        try:
+            os.fsync(parent_descriptor)
+        except OSError as exc:
+            raise _PostCommitDurabilityError(str(exc)) from exc
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -128,6 +135,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         data = _change_json_bytes(change)
         try:
             _atomic_write(arguments.out, data)
+        except _PostCommitDurabilityError as exc:
+            raise CoverageError(
+                "coverage change output was replaced but parent-directory "
+                f"durability is uncertain: {exc}"
+            ) from exc
         except OSError as exc:
             raise CoverageError(f"cannot write coverage change: {exc}") from exc
     except CoverageError as exc:
