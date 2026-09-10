@@ -1,0 +1,94 @@
+unknowns:
+  - category_id: 0301_computer_mouse
+    claim_kind: component_association
+    claim_id: mouse_legacy_ball_roller_details_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The reviewed dated manufacturer history establishes a ball-versus-optical
+      distinction but not roller count, layout, material, or coupling.
+    evidence_request: >-
+      Obtain a fully dated manufacturer service manual or qualified teardown for a
+      properly scoped mechanical-ball mouse population.
+  - category_id: 0301_computer_mouse
+    claim_kind: component_association
+    claim_id: mouse_modern_wireless_battery_chemistry_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Charging and rechargeability claims do not establish lithium-ion or any other
+      hidden battery chemistry across the rechargeable wireless subtype.
+    evidence_request: >-
+      Obtain exact-model manufacturer battery specifications or legible compliant
+      battery markings before assigning chemistry.
+  - category_id: 0301_computer_mouse
+    claim_kind: component_association
+    claim_id: mouse_standard_controller_pcb_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      No reviewed product source establishes controller-board material composition
+      across the category.
+    evidence_request: >-
+      Obtain scope-qualified bills of materials, environmental declarations, or
+      qualified teardown evidence.
+  - category_id: 0301_computer_mouse
+    claim_kind: component_association
+    claim_id: mouse_standard_controller_pcb_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The reviewed public sources do not expose a category-wide controller-board
+      assembly claim.
+    evidence_request: >-
+      Obtain representative, scope-qualified service documentation or teardown
+      evidence for controller assemblies.
+  - category_id: 0301_computer_mouse
+    claim_kind: component_association
+    claim_id: mouse_standard_enclosure_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      One exact Dell model's ABS-HB case declaration cannot establish category-wide
+      enclosure material composition.
+    evidence_request: >-
+      Obtain representative, scope-qualified material declarations rather than
+      projecting a single-model composition.
+  - category_id: 0301_computer_mouse
+    claim_kind: identity
+    claim_id: hp_x3000_g3
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      HP's exact 683N7AA battery-use document is dated only December 2025, and its
+      locale-variable support page does not provide a verified publication or
+      revision date. Schema-3 requires an exact date belonging to the claim source.
+    evidence_request: >-
+      Obtain an official exact-model HP source for 683N7AA with a verified full
+      publication or revision date; do not substitute an access, crawl, or inferred
+      first-of-month date.
+  - category_id: 0301_computer_mouse
+    claim_kind: identity
+    claim_id: microsoft_intellimouse_1_1
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      No reviewed dated first-party source establishes the exact unqualified
+      IntelliMouse 1.1 as a mechanical-ball product; inspected Optical 1.1 and 1.1a
+      sources identify different versions.
+    evidence_request: >-
+      Obtain a fully dated first-party source for the exact unqualified IntelliMouse
+      1.1 and its mechanical and power architecture without substituting an Optical
+      edition or another model.
+  - category_id: 0301_computer_mouse
+    claim_kind: industry_average
+    claim_id: mouse_industry_service_life
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      No reviewed comparable-population source supplies a defensible interval for
+      total computer-mouse service life.
+    evidence_request: >-
+      Obtain a dated population study with mouse-specific sampling, a proper
+      service-life interval, methodology, uncertainty, and limitations; do not infer
+      the interval from warranty, runtime, or mean plus or minus standard deviation.

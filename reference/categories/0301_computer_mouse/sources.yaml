@@ -1,0 +1,152 @@
+sources:
+  - source_id: apple_magic_mouse_usb_c_2024
+    title: Apple unveils the new iMac with M4, supercharged by Apple Intelligence and available in fresh colors
+    publisher: Apple Newsroom
+    canonical_url: https://www.apple.com/newsroom/2024/10/apple-introduces-new-imac-supercharged-by-m4-and-apple-intelligence/
+    publication_or_revision_date: "2024-10-28"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document or media redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: dell_ms116_regulatory_2018
+    title: Product Safety, EMC & Environmental Datasheet - Dell Optical Mouse MS116, Revision A10
+    publisher: Dell Technologies
+    canonical_url: https://i.dell.com/sites/csdocuments/Shared-Content_solutions_Documents/en/us/mouse_MS116t1.pdf
+    publication_or_revision_date: "2018-06-01"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official PDF;
+      no source-document, table, or image redistribution. The date is the effective
+      date printed in the exact product's regulatory document.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: dell_ms116_support_2025
+    title: Support for Dell Wired Mouse MS116 - Manuals & Documents
+    publisher: Dell Technologies
+    canonical_url: https://www.dell.com/support/product-details/en-us/product/dell-wired-mouse-ms116/resources/manuals
+    publication_or_revision_date: "2025-02-26"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document or media redistribution. The date is the update date
+      displayed beside the exact Dell Wired Mouse MS116 technical-specification
+      document on the same official product-support page.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: health_canada_battery_safety_2024
+    title: Battery safety
+    publisher: Health Canada
+    canonical_url: https://www.canada.ca/en/health-canada/services/household-products/battery-safety.html
+    publication_or_revision_date: "2024-11-26"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible Government of
+      Canada page; no source-document redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: logitech_g502_hero_launch_2018
+    title: Award-Winning Logitech G502 Gaming Mouse Gets an Upgrade
+    publisher: Logitech Newsroom
+    canonical_url: https://news.logitech.com/press-releases/news-details/2018/Award-Winning-Logitech-G502-Gaming-Mouse-Gets-an-Upgrade/default.aspx
+    publication_or_revision_date: "2018-08-30"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document or media redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: logitech_m185_runtime_2019
+    title: M185 battery life and replacement
+    publisher: Logitech Support
+    canonical_url: https://support.logi.com/hc/en-us/articles/360023241914-M185-battery-life-and-replacement
+    publication_or_revision_date: "2019-07-16"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document redistribution. The date is the content edited_at value
+      from the same article's public official Help Center record.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: logitech_m185_specs_2026
+    title: M185 Technical Specifications
+    publisher: Logitech Support
+    canonical_url: https://support.logi.com/hc/en-us/articles/360023302074-M185-Technical-Specifications
+    publication_or_revision_date: "2026-05-08"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document redistribution. The date is the content edited_at value
+      from the same article's public official Help Center record.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: logitech_mx_master_3s_launch_2022
+    title: Feel the Performance with Logitech's First-Ever MX Mechanical Keyboards Designed for Creation and Productivity
+    publisher: Logitech Newsroom
+    canonical_url: https://news.logitech.com/press-releases/news-details/2022/Feel-the-Performance-with-Logitechs-First-Ever-MX-Mechanical-Keyboards-Designed-for-Creation-and-Productivity/default.aspx
+    publication_or_revision_date: "2022-05-24"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document or media redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: logitech_mx_master_3s_setup_2024
+    title: MX Master 3S - Setup guide
+    publisher: Logitech Support
+    canonical_url: https://hub.sync.logitech.com/mx-master-3s/post/mx-master-3s---setup-guide-logIbt80SWDODOk
+    publication_or_revision_date: "2024-07-29"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document redistribution. Publication date comes from the exact
+      embedded post metadata. The displayed English rendering carries an
+      AI-translation accuracy notice.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: microsoft_arc_mouse_launch_2008
+    title: Microsoft Arc Mouse - Where Fashion and Technology Collide
+    publisher: Microsoft Source
+    canonical_url: https://news.microsoft.com/source/2008/09/09/microsoft-arc-mouse-where-fashion-and-technology-collide/
+    publication_or_revision_date: "2008-09-09"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document or media redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: microsoft_ball_to_optical_1999
+    title: Microsoft's Sleek New IntelliMouse Explorer and IntelliEye Technology Toss Out the Mouse Ball Today at COMDEX
+    publisher: Microsoft Source
+    canonical_url: https://news.microsoft.com/source/1999/04/19/microsofts-sleek-new-intellimouse-explorer-and-intellieye-technology-toss-out-the-mouse-ball-today-at-comdex/
+    publication_or_revision_date: "1999-04-19"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document or media redistribution. This source supports only the
+      general ball-to-optical architecture distinction, not IntelliMouse 1.1.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: microsoft_basic_optical_business_2011
+    title: Microsoft Hardware for Business product lineup for Japan
+    publisher: Microsoft Source Japan
+    canonical_url: https://news.microsoft.com/source/asia/2011/07/03/110704-hardware-business/?lang=ja
+    publication_or_revision_date: "2011-07-03"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document, translation, or media redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: razer_deathadder_v3_launch_2023
+    title: Razer welcomes the DeathAdder V3 Pro Faker Edition and DeathAdder V3 to the cult-favorite mouse line
+    publisher: Razer Newsroom
+    canonical_url: https://www.razer.com/newsroom/product-news/razer-welcomes-the-deathadder-v3-pro-faker-edition-and-deathadder-v3-to-the-cult-favorite-mouse-line
+    publication_or_revision_date: "2023-02-21"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document or media redistribution.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"

@@ -1,0 +1,85 @@
+lifecycles:
+  - record_id: logitech_m185_cell_runtime
+    scope:
+      kind: family
+      id: logitech_m185
+    subject: replaceable_cell
+    endpoint: cell_runtime
+    endpoint_kind: operating_endurance
+    metric: elapsed_time
+    unit: months
+    lower_bound: 12.0
+    upper_bound: 12.0
+    endpoint_qualification: >-
+      Manufacturer expectation of up to 12 months before replacement for the
+      specified single AA alkaline cell; this is not total mouse service life.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: null
+    model_year_to: null
+    required_variant_ids:
+      - mouse_replaceable_primary_cell
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: B
+    assumptions:
+      - Runtime varies with user and computing conditions.
+      - Runtime depends on surface and use; the reviewed source recommends an alkaline cell.
+    source_ids:
+      - logitech_m185_runtime_2019
+      - logitech_m185_specs_2026
+  - record_id: logitech_mx_master_3s_charge_runtime
+    scope:
+      kind: model
+      id: logitech_mx_master_3s
+    subject: device
+    endpoint: charge_runtime
+    endpoint_kind: operating_endurance
+    metric: elapsed_time
+    unit: days
+    lower_bound: 70.0
+    upper_bound: 70.0
+    endpoint_qualification: >-
+      Manufacturer claim of up to 70 days on a full charge; equal bounds encode
+      the qualified maximum and not a guaranteed minimum or total service life.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: null
+    model_year_to: null
+    required_variant_ids:
+      - mouse_rechargeable_usb_c
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: A
+    assumptions:
+      - Battery life varies with user and operating conditions.
+      - The result applies to the exact reviewed MX Master 3S setup-guide scope.
+    source_ids:
+      - logitech_mx_master_3s_setup_2024
+  - record_id: razer_deathadder_v3_optical_switch_click_endurance
+    scope:
+      kind: model
+      id: razer_deathadder_v3
+    subject: optical_switch
+    endpoint: click_endurance
+    endpoint_kind: operating_endurance
+    metric: actuation_count
+    unit: clicks
+    lower_bound: 90000000.0
+    upper_bound: 90000000.0
+    endpoint_qualification: >-
+      Manufacturer rating of up to 90,000,000 clicks for the installed Gen-3
+      optical mouse switches; equal bounds encode the qualified maximum only.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: null
+    model_year_to: null
+    required_variant_ids: []
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: A
+    assumptions:
+      - The rating applies only to the documented switch component, not the whole mouse.
+      - The reviewed source does not map the rated switches to particular physical buttons.
+    source_ids:
+      - razer_deathadder_v3_launch_2023

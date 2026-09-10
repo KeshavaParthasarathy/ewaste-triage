@@ -1,0 +1,286 @@
+components:
+  - component_id: battery_chemistry
+    display_name: Battery chemistry
+  - component_id: connectivity
+    display_name: Wired or wireless connectivity
+  - component_id: controller_pcb
+    display_name: Controller printed circuit board
+  - component_id: controller_pcb_material
+    display_name: Controller PCB material composition
+  - component_id: enclosure
+    display_name: Enclosure
+  - component_id: enclosure_material
+    display_name: Enclosure material composition
+  - component_id: mechanical_ball
+    display_name: Mechanical tracking ball
+  - component_id: power_source
+    display_name: Power source
+  - component_id: roller_mechanism
+    display_name: Ball-contact roller mechanism
+  - component_id: scroll_wheel
+    display_name: Scroll wheel or scrolling control
+  - component_id: switches
+    display_name: Input switches
+  - component_id: tracking_mechanism
+    display_name: Tracking mechanism
+  - component_id: wired_cable
+    display_name: Wired cable
+  - component_id: wireless_module
+    display_name: Wireless connectivity module
+
+templates:
+  - template_id: mouse_legacy_ball
+    template_kind: legacy_overlay
+    scope:
+      kind: subtype
+      id: mouse_ball_legacy
+    application_order: 0
+  - template_id: mouse_modern_wireless
+    template_kind: modern_overlay
+    scope:
+      kind: subtype
+      id: mouse_wireless_rechargeable
+    application_order: 0
+  - template_id: mouse_standard
+    template_kind: standard
+    scope:
+      kind: category
+      id: 0301_computer_mouse
+    application_order: 0
+
+associations:
+  - association_id: mouse_legacy_ball_mechanical_ball
+    template_id: mouse_legacy_ball
+    component_id: mechanical_ball
+    position: 0
+    status: legacy_specific
+    applicability: >-
+      Applies only when the item is independently resolved to the legacy
+      mechanical-ball subtype.
+    notes:
+      - The source establishes the ball-versus-optical architecture distinction, not an exact legacy model.
+    evidence_level: B
+    source_ids:
+      - microsoft_ball_to_optical_1999
+  - association_id: mouse_legacy_ball_tracking_mechanism
+    template_id: mouse_legacy_ball
+    component_id: tracking_mechanism
+    position: 1
+    status: legacy_specific
+    applicability: >-
+      Applies only to a reviewed mechanical-ball subtype resolution; it does not
+      identify the mechanism of the intended IntelliMouse 1.1 record.
+    notes:
+      - The source distinguishes moving ball mechanics from Microsoft's optical replacement.
+    evidence_level: B
+    source_ids:
+      - microsoft_ball_to_optical_1999
+  - association_id: mouse_legacy_ball_roller_details_unknown
+    template_id: mouse_legacy_ball
+    component_id: roller_mechanism
+    position: 2
+    status: unknown
+    applicability: >-
+      Roller count, layout, material, and exact coupling are not established by
+      the reviewed general ball-to-optical history.
+    notes:
+      - Requires a dated primary teardown, service manual, or manufacturer mechanical specification for the scoped legacy subtype.
+    evidence_level: null
+    source_ids: []
+  - association_id: mouse_modern_wireless_power_source
+    template_id: mouse_modern_wireless
+    component_id: power_source
+    position: 0
+    status: commonly_associated
+    applicability: >-
+      Applies to the reviewed rechargeable wireless subtype examples that expose
+      a USB-C charging path; this does not establish hidden cell chemistry.
+    notes:
+      - Apple and Logitech establish charging architecture for their reviewed products.
+    evidence_level: B
+    source_ids:
+      - apple_magic_mouse_usb_c_2024
+      - logitech_mx_master_3s_setup_2024
+  - association_id: mouse_modern_wireless_wireless_module
+    template_id: mouse_modern_wireless
+    component_id: wireless_module
+    position: 1
+    status: commonly_associated
+    applicability: >-
+      Applies to reviewed rechargeable wireless mice; radio implementation remains
+      model-specific.
+    notes:
+      - The reviewed sources name Bluetooth and, for MX Master 3S, Logi Bolt connectivity.
+    evidence_level: B
+    source_ids:
+      - apple_magic_mouse_usb_c_2024
+      - logitech_mx_master_3s_launch_2022
+  - association_id: mouse_modern_wireless_battery_chemistry_unknown
+    template_id: mouse_modern_wireless
+    component_id: battery_chemistry
+    position: 2
+    status: unknown
+    applicability: >-
+      Rechargeability and USB-C charging do not establish lithium-ion chemistry
+      for every mouse in this subtype.
+    notes:
+      - Requires an exact-model manufacturer specification or compliant battery marking.
+    evidence_level: null
+    source_ids: []
+  - association_id: mouse_standard_connectivity
+    template_id: mouse_standard
+    component_id: connectivity
+    position: 0
+    status: commonly_associated
+    applicability: >-
+      A mouse requires an input connection, but whether it is wired, receiver-based,
+      or Bluetooth depends on the resolved subtype and identity.
+    notes:
+      - Reviewed roster examples establish both wired and wireless connection architectures.
+    evidence_level: C
+    source_ids:
+      - apple_magic_mouse_usb_c_2024
+      - dell_ms116_support_2025
+      - logitech_g502_hero_launch_2018
+      - microsoft_arc_mouse_launch_2008
+      - razer_deathadder_v3_launch_2023
+  - association_id: mouse_standard_controller_pcb_unknown
+    template_id: mouse_standard
+    component_id: controller_pcb
+    position: 1
+    status: unknown
+    applicability: >-
+      The reviewed public product sources do not expose a category-wide controller
+      board assembly claim.
+    notes:
+      - Requires qualified teardown or service documentation across the category population.
+    evidence_level: null
+    source_ids: []
+  - association_id: mouse_standard_controller_pcb_material_unknown
+    template_id: mouse_standard
+    component_id: controller_pcb_material
+    position: 2
+    status: unknown
+    applicability: >-
+      Controller-board material composition is not established for the category by
+      the reviewed product sources.
+    notes:
+      - Requires exact bill-of-materials, environmental, or teardown evidence.
+    evidence_level: null
+    source_ids: []
+  - association_id: mouse_standard_enclosure
+    template_id: mouse_standard
+    component_id: enclosure
+    position: 3
+    status: commonly_associated
+    applicability: >-
+      Applies as the external housing concept across the reviewed physical mouse
+      products; shape and construction remain identity-specific.
+    notes:
+      - No category-wide material composition is inferred.
+    evidence_level: C
+    source_ids:
+      - apple_magic_mouse_usb_c_2024
+      - dell_ms116_regulatory_2018
+      - logitech_g502_hero_launch_2018
+      - microsoft_arc_mouse_launch_2008
+  - association_id: mouse_standard_enclosure_material_unknown
+    template_id: mouse_standard
+    component_id: enclosure_material
+    position: 4
+    status: unknown
+    applicability: >-
+      Dell's regulatory sheet establishes ABS-HB for its scoped MS116 case only;
+      it cannot establish category-wide mouse enclosure composition.
+    notes:
+      - Requires representative, scope-qualified material evidence rather than projection from one model.
+    evidence_level: null
+    source_ids: []
+  - association_id: mouse_standard_power_source
+    template_id: mouse_standard
+    component_id: power_source
+    position: 5
+    status: conditional
+    applicability: >-
+      Present for battery-bearing subtypes and not asserted for battery-free wired
+      subtypes; exact installed cell or charging implementation remains model-specific.
+    notes:
+      - Subtype architecture determines whether this association applies.
+    evidence_level: C
+    source_ids:
+      - apple_magic_mouse_usb_c_2024
+      - logitech_m185_specs_2026
+      - microsoft_arc_mouse_launch_2008
+  - association_id: mouse_standard_scroll_wheel
+    template_id: mouse_standard
+    component_id: scroll_wheel
+    position: 6
+    status: conditional
+    applicability: >-
+      Present only where the resolved model documentation identifies a physical
+      wheel or wheel mechanism; touch-scrolling designs are not collapsed into it.
+    notes:
+      - The G502 HERO launch source specifically discusses its scroll wheel mechanism.
+    evidence_level: C
+    source_ids:
+      - logitech_g502_hero_launch_2018
+      - logitech_mx_master_3s_launch_2022
+  - association_id: mouse_standard_switches
+    template_id: mouse_standard
+    component_id: switches
+    position: 7
+    status: conditional
+    applicability: >-
+      Physical switch technology and rated controls require identity-specific
+      support; no switch type is projected across every mouse.
+    notes:
+      - G502 HERO documents mechanical switches; DeathAdder V3 documents Gen-3 optical switches.
+    evidence_level: C
+    source_ids:
+      - logitech_g502_hero_launch_2018
+      - razer_deathadder_v3_launch_2023
+  - association_id: mouse_standard_tracking_mechanism
+    template_id: mouse_standard
+    component_id: tracking_mechanism
+    position: 8
+    status: commonly_associated
+    applicability: >-
+      Applies as the position-tracking function, while mechanical-ball and optical
+      implementations remain subtype- or model-specific.
+    notes:
+      - Reviewed sources distinguish ball and optical tracking and identify optical sensor examples.
+    evidence_level: C
+    source_ids:
+      - logitech_g502_hero_launch_2018
+      - microsoft_ball_to_optical_1999
+      - razer_deathadder_v3_launch_2023
+  - association_id: mouse_standard_wired_cable
+    template_id: mouse_standard
+    component_id: wired_cable
+    position: 9
+    status: conditional
+    applicability: >-
+      Applies to resolved wired mouse identities and is not projected onto wireless
+      subtypes.
+    notes:
+      - Dell MS116, G502 HERO, and the wired DeathAdder V3 provide reviewed wired examples.
+    evidence_level: C
+    source_ids:
+      - dell_ms116_support_2025
+      - logitech_g502_hero_launch_2018
+      - razer_deathadder_v3_launch_2023
+  - association_id: mouse_standard_wireless_module
+    template_id: mouse_standard
+    component_id: wireless_module
+    position: 10
+    status: conditional
+    applicability: >-
+      Applies only to a resolved wireless subtype; radio protocol and receiver form
+      remain identity-specific.
+    notes:
+      - Reviewed roster sources establish Bluetooth and 2.4 GHz wireless examples.
+    evidence_level: C
+    source_ids:
+      - apple_magic_mouse_usb_c_2024
+      - logitech_mx_master_3s_launch_2022
+      - microsoft_arc_mouse_launch_2008

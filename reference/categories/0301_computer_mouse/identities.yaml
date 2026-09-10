@@ -1,0 +1,293 @@
+category:
+  category_id: 0301_computer_mouse
+  display_name: Computer mouse
+
+subtypes:
+  - subtype_id: mouse_ball_legacy
+    category_id: 0301_computer_mouse
+    display_name: Legacy mechanical-ball mouse
+    market_state: legacy
+    battery_architecture: battery_free
+    evidence_level: B
+    source_ids:
+      - microsoft_ball_to_optical_1999
+  - subtype_id: mouse_wired_optical
+    category_id: 0301_computer_mouse
+    display_name: Wired optical mouse
+    market_state: current
+    battery_architecture: battery_free
+    evidence_level: B
+    source_ids:
+      - dell_ms116_regulatory_2018
+      - dell_ms116_support_2025
+      - logitech_g502_hero_launch_2018
+      - microsoft_basic_optical_business_2011
+      - razer_deathadder_v3_launch_2023
+  - subtype_id: mouse_wireless_rechargeable
+    category_id: 0301_computer_mouse
+    display_name: Rechargeable wireless mouse
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - apple_magic_mouse_usb_c_2024
+      - logitech_mx_master_3s_launch_2022
+      - logitech_mx_master_3s_setup_2024
+  - subtype_id: mouse_wireless_replaceable_battery
+    category_id: 0301_computer_mouse
+    display_name: Replaceable-battery wireless mouse
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - logitech_m185_specs_2026
+      - microsoft_arc_mouse_launch_2008
+
+variants:
+  - variant_id: mouse_rechargeable_usb_c
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wireless_rechargeable
+    display_name: USB-C rechargeable wireless mouse
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - apple_magic_mouse_usb_c_2024
+      - logitech_mx_master_3s_setup_2024
+  - variant_id: mouse_replaceable_primary_cell
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wireless_replaceable_battery
+    display_name: Replaceable primary-cell wireless mouse
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - logitech_m185_runtime_2019
+      - logitech_m185_specs_2026
+  - variant_id: mouse_wired_tethered
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wired_optical
+    display_name: Tethered wired optical mouse
+    battery_architecture: battery_free
+    evidence_level: B
+    source_ids:
+      - logitech_g502_hero_launch_2018
+      - razer_deathadder_v3_launch_2023
+
+identities:
+  - identity_id: apple_magic_mouse_usb_c
+    identity_kind: model
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wireless_rechargeable
+    manufacturer_id: apple
+    manufacturer_name: Apple
+    family_id: apple_magic_mouse
+    family_name: Magic Mouse
+    model_id: apple_magic_mouse_usb_c
+    model_name: Magic Mouse (USB-C)
+    display_name: Apple Magic Mouse (USB-C)
+    aliases:
+      - Apple USB-C Magic Mouse
+    distinguishing_tokens:
+      - magic mouse usb c
+      - usb c charging port
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - mouse_rechargeable_usb_c
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - apple_magic_mouse_usb_c_2024
+  - identity_id: dell_ms116
+    identity_kind: model
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wired_optical
+    manufacturer_id: dell
+    manufacturer_name: Dell
+    family_id: dell_ms116_family
+    family_name: Dell Optical Mouse MS116
+    model_id: dell_ms116
+    model_name: MS116
+    display_name: Dell Optical Mouse MS116
+    aliases:
+      - Dell MS116t1 regulatory model
+    distinguishing_tokens:
+      - dell ms116
+      - regulatory model ms116t1
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - mouse_wired_tethered
+    market_state: current
+    battery_architecture: battery_free
+    evidence_level: A
+    source_ids:
+      - dell_ms116_regulatory_2018
+      - dell_ms116_support_2025
+  - identity_id: logitech_g502_hero
+    identity_kind: model
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wired_optical
+    manufacturer_id: logitech
+    manufacturer_name: Logitech
+    family_id: logitech_g502
+    family_name: Logitech G502
+    model_id: logitech_g502_hero
+    model_name: G502 HERO
+    display_name: Logitech G502 HERO Gaming Mouse
+    aliases:
+      - Logitech G502 HERO 16K
+    distinguishing_tokens:
+      - g502 hero
+      - hero 16k sensor
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - mouse_wired_tethered
+    market_state: current
+    battery_architecture: battery_free
+    evidence_level: A
+    source_ids:
+      - logitech_g502_hero_launch_2018
+  - identity_id: logitech_m185
+    identity_kind: family
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wireless_replaceable_battery
+    manufacturer_id: logitech
+    manufacturer_name: Logitech
+    family_id: logitech_m185
+    family_name: Logitech M185
+    model_id: null
+    model_name: null
+    display_name: Logitech M185 Wireless Mouse family
+    aliases:
+      - Logitech Wireless Mouse M185 family
+    distinguishing_tokens:
+      - m185 wireless mouse
+      - one aa alkaline cell
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - mouse_replaceable_primary_cell
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - logitech_m185_runtime_2019
+      - logitech_m185_specs_2026
+  - identity_id: logitech_mx_master_3s
+    identity_kind: model
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wireless_rechargeable
+    manufacturer_id: logitech
+    manufacturer_name: Logitech
+    family_id: logitech_mx_master
+    family_name: Logitech MX Master
+    model_id: logitech_mx_master_3s
+    model_name: MX Master 3S
+    display_name: Logitech MX Master 3S
+    aliases:
+      - Logitech MX Master 3S Wireless Mouse
+    distinguishing_tokens:
+      - mx master 3s
+      - logi bolt bluetooth
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - mouse_rechargeable_usb_c
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - logitech_mx_master_3s_launch_2022
+      - logitech_mx_master_3s_setup_2024
+  - identity_id: microsoft_arc_mouse
+    identity_kind: family
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wireless_replaceable_battery
+    manufacturer_id: microsoft
+    manufacturer_name: Microsoft
+    family_id: microsoft_arc_mouse
+    family_name: Microsoft Arc Mouse
+    model_id: null
+    model_name: null
+    display_name: Microsoft Arc Mouse family
+    aliases:
+      - Microsoft Arc wireless mouse family
+    distinguishing_tokens:
+      - arc mouse
+      - foldable wireless mouse
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids: []
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - microsoft_arc_mouse_launch_2008
+  - identity_id: microsoft_basic_optical_mouse
+    identity_kind: family
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wired_optical
+    manufacturer_id: microsoft
+    manufacturer_name: Microsoft
+    family_id: microsoft_basic_optical_mouse
+    family_name: Microsoft Basic Optical Mouse
+    model_id: null
+    model_name: null
+    display_name: Microsoft Basic Optical Mouse family
+    aliases:
+      - Microsoft Basic Optical Mouse for Business family
+    distinguishing_tokens:
+      - basic optical mouse
+      - wired three button mouse
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - mouse_wired_tethered
+    market_state: current
+    battery_architecture: battery_free
+    evidence_level: B
+    source_ids:
+      - microsoft_basic_optical_business_2011
+  - identity_id: razer_deathadder_v3
+    identity_kind: model
+    category_id: 0301_computer_mouse
+    subtype_id: mouse_wired_optical
+    manufacturer_id: razer
+    manufacturer_name: Razer
+    family_id: razer_deathadder
+    family_name: Razer DeathAdder
+    model_id: razer_deathadder_v3
+    model_name: DeathAdder V3
+    display_name: Razer DeathAdder V3
+    aliases:
+      - Razer wired DeathAdder V3
+    distinguishing_tokens:
+      - deathadder v3 wired
+      - speedflex cable
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - mouse_wired_tethered
+    market_state: current
+    battery_architecture: battery_free
+    evidence_level: A
+    source_ids:
+      - razer_deathadder_v3_launch_2023
