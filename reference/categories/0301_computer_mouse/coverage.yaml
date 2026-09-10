@@ -5,11 +5,13 @@ unknowns:
     evidence_level: null
     source_ids: []
     reason: >-
-      The reviewed dated manufacturer history establishes a ball-versus-optical
-      distinction but not roller count, layout, material, or coupling.
+      No roller is asserted present. The reviewed general ball-to-optical history
+      does not establish roller count, layout, material, or coupling for a reviewed
+      legacy subtype.
     evidence_request: >-
-      Obtain a fully dated manufacturer service manual or qualified teardown for a
-      properly scoped mechanical-ball mouse population.
+      After resolving the legacy subtype and its power architecture, obtain a fully
+      dated manufacturer service manual or qualified teardown for its roller
+      mechanism before authoring a legacy overlay.
   - category_id: 0301_computer_mouse
     claim_kind: component_association
     claim_id: mouse_modern_wireless_battery_chemistry_unknown
@@ -49,11 +51,11 @@ unknowns:
     evidence_level: null
     source_ids: []
     reason: >-
-      One exact Dell model's ABS-HB case declaration cannot establish category-wide
-      enclosure material composition.
+      The reviewed product specifications do not establish category-wide enclosure
+      material composition.
     evidence_request: >-
       Obtain representative, scope-qualified material declarations rather than
-      projecting a single-model composition.
+      projecting material from product appearance or form factor.
   - category_id: 0301_computer_mouse
     claim_kind: identity
     claim_id: hp_x3000_g3
@@ -67,6 +69,19 @@ unknowns:
       Obtain an official exact-model HP source for 683N7AA with a verified full
       publication or revision date; do not substitute an access, crawl, or inferred
       first-of-month date.
+  - category_id: 0301_computer_mouse
+    claim_kind: identity
+    claim_id: microsoft_arc_mouse
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Microsoft's dated Arc launch documents a battery indicator and 2.4 GHz
+      wireless connection, but it does not establish user-replaceable cells for
+      Arc. Its one-AA replacement paragraph describes Wireless Mobile Mouse 3000.
+    evidence_request: >-
+      Obtain a fully dated Arc-specific primary source that establishes the intended
+      family scope and replaceable-cell architecture without borrowing claims from
+      a separately introduced mouse.
   - category_id: 0301_computer_mouse
     claim_kind: identity
     claim_id: microsoft_intellimouse_1_1
@@ -92,3 +107,16 @@ unknowns:
       Obtain a dated population study with mouse-specific sampling, a proper
       service-life interval, methodology, uncertainty, and limitations; do not infer
       the interval from warranty, runtime, or mean plus or minus standard deviation.
+  - category_id: 0301_computer_mouse
+    claim_kind: subtype
+    claim_id: mouse_ball_legacy
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The dated Microsoft history establishes the ball-versus-optical tracking
+      distinction but not the battery-free power architecture required to author
+      this subtype under the frozen schema.
+    evidence_request: >-
+      Obtain a fully dated primary source for a properly scoped legacy
+      mechanical-ball mouse population that establishes both its tracking and power
+      architecture, then review the dependent legacy overlay and roller facts.

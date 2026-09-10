@@ -10,29 +10,18 @@ sources:
       no source-document or media redistribution.
     reviewed_by: OpenAI Codex automated source review
     reviewed_on: "2026-09-10"
-  - source_id: dell_ms116_regulatory_2018
-    title: Product Safety, EMC & Environmental Datasheet - Dell Optical Mouse MS116, Revision A10
+  - source_id: dell_ms116_technical_specifications_2025
+    title: Dell Wired Mouse MS116 Technical Specifications
     publisher: Dell Technologies
-    canonical_url: https://i.dell.com/sites/csdocuments/Shared-Content_solutions_Documents/en/us/mouse_MS116t1.pdf
-    publication_or_revision_date: "2018-06-01"
-    accessed_on: "2026-09-10"
-    license_or_use_basis: >-
-      Factual paraphrase and citation/link to a publicly accessible official PDF;
-      no source-document, table, or image redistribution. The date is the effective
-      date printed in the exact product's regulatory document.
-    reviewed_by: OpenAI Codex automated source review
-    reviewed_on: "2026-09-10"
-  - source_id: dell_ms116_support_2025
-    title: Support for Dell Wired Mouse MS116 - Manuals & Documents
-    publisher: Dell Technologies
-    canonical_url: https://www.dell.com/support/product-details/en-us/product/dell-wired-mouse-ms116/resources/manuals
+    canonical_url: https://dl.dell.com/content/manual16876931-dell-wired-mouse-ms116-technical-specifications.pdf?language=en-us
     publication_or_revision_date: "2025-02-26"
     accessed_on: "2026-09-10"
     license_or_use_basis: >-
-      Factual paraphrase and citation/link to a publicly accessible official page;
-      no source-document or media redistribution. The date is the update date
-      displayed beside the exact Dell Wired Mouse MS116 technical-specification
-      document on the same official product-support page.
+      Factual paraphrase and citation/link to the publicly accessible exact official
+      specification PDF; no source-document, table, image, or media redistribution.
+      The publication_or_revision_date is the update date displayed beside this
+      exact document on Dell's official product-support listing, independently
+      reviewed at https://www.dell.com/support/product-details/en-us/product/dell-wired-mouse-ms116/resources/manuals.
     reviewed_by: OpenAI Codex automated source review
     reviewed_on: "2026-09-10"
   - source_id: health_canada_battery_safety_2024
@@ -103,17 +92,6 @@ sources:
       no source-document redistribution. Publication date comes from the exact
       embedded post metadata. The displayed English rendering carries an
       AI-translation accuracy notice.
-    reviewed_by: OpenAI Codex automated source review
-    reviewed_on: "2026-09-10"
-  - source_id: microsoft_arc_mouse_launch_2008
-    title: Microsoft Arc Mouse - Where Fashion and Technology Collide
-    publisher: Microsoft Source
-    canonical_url: https://news.microsoft.com/source/2008/09/09/microsoft-arc-mouse-where-fashion-and-technology-collide/
-    publication_or_revision_date: "2008-09-09"
-    accessed_on: "2026-09-10"
-    license_or_use_basis: >-
-      Factual paraphrase and citation/link to a publicly accessible official page;
-      no source-document or media redistribution.
     reviewed_by: OpenAI Codex automated source review
     reviewed_on: "2026-09-10"
   - source_id: microsoft_ball_to_optical_1999

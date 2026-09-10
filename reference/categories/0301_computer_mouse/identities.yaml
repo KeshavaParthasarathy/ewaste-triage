@@ -3,14 +3,6 @@ category:
   display_name: Computer mouse
 
 subtypes:
-  - subtype_id: mouse_ball_legacy
-    category_id: 0301_computer_mouse
-    display_name: Legacy mechanical-ball mouse
-    market_state: legacy
-    battery_architecture: battery_free
-    evidence_level: B
-    source_ids:
-      - microsoft_ball_to_optical_1999
   - subtype_id: mouse_wired_optical
     category_id: 0301_computer_mouse
     display_name: Wired optical mouse
@@ -18,8 +10,7 @@ subtypes:
     battery_architecture: battery_free
     evidence_level: B
     source_ids:
-      - dell_ms116_regulatory_2018
-      - dell_ms116_support_2025
+      - dell_ms116_technical_specifications_2025
       - logitech_g502_hero_launch_2018
       - microsoft_basic_optical_business_2011
       - razer_deathadder_v3_launch_2023
@@ -41,7 +32,6 @@ subtypes:
     evidence_level: B
     source_ids:
       - logitech_m185_specs_2026
-      - microsoft_arc_mouse_launch_2008
 
 variants:
   - variant_id: mouse_rechargeable_usb_c
@@ -107,15 +97,15 @@ identities:
     manufacturer_id: dell
     manufacturer_name: Dell
     family_id: dell_ms116_family
-    family_name: Dell Optical Mouse MS116
+    family_name: Dell Wired Mouse MS116
     model_id: dell_ms116
     model_name: MS116
-    display_name: Dell Optical Mouse MS116
+    display_name: Dell Wired Mouse MS116
     aliases:
-      - Dell MS116t1 regulatory model
+      - Dell MS116 wired optical mouse
     distinguishing_tokens:
-      - dell ms116
-      - regulatory model ms116t1
+      - dell wired mouse ms116
+      - wired usb optical led
     model_year_from: null
     model_year_to: null
     applicable_from: null
@@ -126,8 +116,7 @@ identities:
     battery_architecture: battery_free
     evidence_level: A
     source_ids:
-      - dell_ms116_regulatory_2018
-      - dell_ms116_support_2025
+      - dell_ms116_technical_specifications_2025
   - identity_id: logitech_g502_hero
     identity_kind: model
     category_id: 0301_computer_mouse
@@ -211,32 +200,6 @@ identities:
     source_ids:
       - logitech_mx_master_3s_launch_2022
       - logitech_mx_master_3s_setup_2024
-  - identity_id: microsoft_arc_mouse
-    identity_kind: family
-    category_id: 0301_computer_mouse
-    subtype_id: mouse_wireless_replaceable_battery
-    manufacturer_id: microsoft
-    manufacturer_name: Microsoft
-    family_id: microsoft_arc_mouse
-    family_name: Microsoft Arc Mouse
-    model_id: null
-    model_name: null
-    display_name: Microsoft Arc Mouse family
-    aliases:
-      - Microsoft Arc wireless mouse family
-    distinguishing_tokens:
-      - arc mouse
-      - foldable wireless mouse
-    model_year_from: null
-    model_year_to: null
-    applicable_from: null
-    applicable_to: null
-    variant_ids: []
-    market_state: current
-    battery_architecture: battery_bearing
-    evidence_level: B
-    source_ids:
-      - microsoft_arc_mouse_launch_2008
   - identity_id: microsoft_basic_optical_mouse
     identity_kind: family
     category_id: 0301_computer_mouse

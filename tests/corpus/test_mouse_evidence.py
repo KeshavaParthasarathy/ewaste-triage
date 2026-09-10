@@ -57,18 +57,34 @@ def test_mouse_development_roster_separates_reviewed_and_unknown_identities(
 
     assert reviewed.isdisjoint(unknown)
     assert reviewed | unknown == EXPECTED_MOUSE_IDENTITIES
-    assert len(reviewed) == 8
-    assert unknown == {"hp_x3000_g3", "microsoft_intellimouse_1_1"}
+    assert len(reviewed) == 7
+    assert unknown == {
+        "hp_x3000_g3",
+        "microsoft_arc_mouse",
+        "microsoft_intellimouse_1_1",
+    }
     assert "hp_x3000_g3" not in reviewed
+    assert "microsoft_arc_mouse" not in reviewed
     assert "microsoft_intellimouse_1_1" not in reviewed
     assert len({item.manufacturer_id for item in mouse_records.identities}) >= 2
 
 
-def test_mouse_subtypes_and_battery_variants_are_explicit(mouse_records):
+def test_mouse_reviewed_subtypes_and_intended_legacy_gap_are_explicit(mouse_records):
     subtypes = {item.subtype_id: item for item in mouse_records.subtypes}
     variants = {item.variant_id: item for item in mouse_records.variants}
+    unknown_subtypes = {
+        item.claim_id: item
+        for item in mouse_records.unknowns
+        if item.claim_kind is UnknownClaimKind.SUBTYPE
+    }
 
     assert set(subtypes) == {
+        "mouse_wired_optical",
+        "mouse_wireless_rechargeable",
+        "mouse_wireless_replaceable_battery",
+    }
+    assert set(unknown_subtypes) == {"mouse_ball_legacy"}
+    assert set(subtypes) | set(unknown_subtypes) == {
         "mouse_ball_legacy",
         "mouse_wired_optical",
         "mouse_wireless_rechargeable",
@@ -103,9 +119,11 @@ def test_mouse_subtypes_and_battery_variants_are_explicit(mouse_records):
         BatteryArchitecture.BATTERY_FREE,
         BatteryArchitecture.BATTERY_BEARING,
     }
-    assert subtypes["mouse_ball_legacy"].battery_architecture is (
-        BatteryArchitecture.BATTERY_FREE
-    )
+    legacy_unknown = unknown_subtypes["mouse_ball_legacy"]
+    assert legacy_unknown.evidence_level is None
+    assert legacy_unknown.source_ids == ()
+    assert "power architecture" in legacy_unknown.reason
+    assert "legacy overlay" in legacy_unknown.evidence_request
 
 
 def test_mouse_sources_have_honest_dated_automated_reviews(mouse_records):
@@ -128,19 +146,24 @@ def test_mouse_sources_have_honest_dated_automated_reviews(mouse_records):
     )
     known_source_ids = {item.source_id for item in mouse_records.sources}
     sources = {item.source_id: item for item in mouse_records.sources}
-    assert sources["dell_ms116_regulatory_2018"].title.endswith("Revision A10")
+    assert "dell_ms116_regulatory_2018" not in sources
+    assert "dell_ms116_support_2025" not in sources
+    dell = sources["dell_ms116_technical_specifications_2025"]
+    assert dell.title == "Dell Wired Mouse MS116 Technical Specifications"
+    assert dell.canonical_url == (
+        "https://dl.dell.com/content/manual16876931-"
+        "dell-wired-mouse-ms116-technical-specifications.pdf?language=en-us"
+    )
     assert {
         source_id: sources[source_id].publication_or_revision_date
         for source_id in {
-            "dell_ms116_regulatory_2018",
-            "dell_ms116_support_2025",
+            "dell_ms116_technical_specifications_2025",
             "logitech_m185_runtime_2019",
             "logitech_mx_master_3s_setup_2024",
             "razer_deathadder_v3_launch_2023",
         }
     } == {
-        "dell_ms116_regulatory_2018": date(2018, 6, 1),
-        "dell_ms116_support_2025": date(2025, 2, 26),
+        "dell_ms116_technical_specifications_2025": date(2025, 2, 26),
         "logitech_m185_runtime_2019": date(2019, 7, 16),
         "logitech_mx_master_3s_setup_2024": date(2024, 7, 29),
         "razer_deathadder_v3_launch_2023": date(2023, 2, 21),
@@ -169,6 +192,7 @@ def test_mouse_endurance_records_preserve_exact_scope_and_qualified_maxima(
             "elapsed_time",
             "months",
             12.0,
+            ("mouse_replaceable_primary_cell",),
         ),
         "logitech_mx_master_3s_charge_runtime": (
             ScopeKind.MODEL,
@@ -179,6 +203,7 @@ def test_mouse_endurance_records_preserve_exact_scope_and_qualified_maxima(
             "elapsed_time",
             "days",
             70.0,
+            ("mouse_rechargeable_usb_c",),
         ),
         "razer_deathadder_v3_optical_switch_click_endurance": (
             ScopeKind.MODEL,
@@ -189,6 +214,7 @@ def test_mouse_endurance_records_preserve_exact_scope_and_qualified_maxima(
             "actuation_count",
             "clicks",
             90_000_000.0,
+            (),
         ),
     }
     for record_id, record in records.items():
@@ -201,6 +227,7 @@ def test_mouse_endurance_records_preserve_exact_scope_and_qualified_maxima(
             metric,
             unit,
             maximum,
+            required_variants,
         ) = expected[record_id]
         assert record.scope.kind is scope_kind
         assert record.scope.id == scope_id
@@ -210,6 +237,7 @@ def test_mouse_endurance_records_preserve_exact_scope_and_qualified_maxima(
         assert record.metric == metric
         assert record.unit == unit
         assert (record.lower_bound, record.upper_bound) == (maximum, maximum)
+        assert record.required_variant_ids == required_variants
         assert "up to" in record.endpoint_qualification.casefold()
         assert record.evidence_level is evidence_level
 
@@ -242,17 +270,21 @@ def test_mouse_component_layers_cover_required_architectures(mouse_records):
     for item in mouse_records.component_associations:
         associations.setdefault(item.template_id, []).append(item)
 
-    assert set(templates) == {
-        "mouse_legacy_ball",
-        "mouse_modern_wireless",
-        "mouse_standard",
-    }
+    assert set(templates) == {"mouse_modern_wireless", "mouse_standard"}
     assert templates["mouse_standard"].template_kind is TemplateKind.STANDARD
-    assert templates["mouse_standard"].scope.kind is ScopeKind.CATEGORY
+    assert templates["mouse_standard"].scope == type(
+        templates["mouse_standard"].scope
+    )(ScopeKind.CATEGORY, CATEGORY_ID)
     assert templates["mouse_modern_wireless"].template_kind is (
         TemplateKind.MODERN_OVERLAY
     )
-    assert templates["mouse_legacy_ball"].template_kind is TemplateKind.LEGACY_OVERLAY
+    assert templates["mouse_modern_wireless"].scope == type(
+        templates["mouse_modern_wireless"].scope
+    )(ScopeKind.SUBTYPE, "mouse_wireless_rechargeable")
+    assert all(
+        item.template_id != "mouse_legacy_ball"
+        for item in mouse_records.component_associations
+    )
 
     standard_components = {
         item.component_id for item in associations["mouse_standard"]
@@ -262,6 +294,7 @@ def test_mouse_component_layers_cover_required_architectures(mouse_records):
         "controller_pcb",
         "enclosure",
         "power_source",
+        "roller_mechanism",
         "scroll_wheel",
         "switches",
         "tracking_mechanism",
@@ -270,10 +303,6 @@ def test_mouse_component_layers_cover_required_architectures(mouse_records):
         item.component_id for item in associations["mouse_modern_wireless"]
     }
     assert modern_components >= {"power_source", "wireless_module"}
-    legacy_components = {
-        item.component_id for item in associations["mouse_legacy_ball"]
-    }
-    assert legacy_components >= {"roller_mechanism", "tracking_mechanism"}
 
 
 def test_mouse_components_keep_materials_chemistry_and_rollers_unknown(
@@ -307,6 +336,9 @@ def test_mouse_components_keep_materials_chemistry_and_rollers_unknown(
         assert association.status is AssociationStatus.UNKNOWN
         assert association.evidence_level is None
         assert association.source_ids == ()
+    assert by_id["mouse_legacy_ball_roller_details_unknown"].template_id == (
+        "mouse_standard"
+    )
 
 
 def test_mouse_hazards_are_source_specific_and_conditionally_triggered(mouse_records):
@@ -349,7 +381,13 @@ def test_mouse_packet_does_not_claim_release_completion(mouse_records):
         for item in mouse_records.unknowns
         if item.claim_kind is UnknownClaimKind.INDUSTRY_AVERAGE
     }
+    subtype_unknowns = {
+        item.claim_id
+        for item in mouse_records.unknowns
+        if item.claim_kind is UnknownClaimKind.SUBTYPE
+    }
 
     assert len(mouse_records.identities) < 10
     assert identity_unknowns
     assert average_unknowns
+    assert subtype_unknowns == {"mouse_ball_legacy"}
