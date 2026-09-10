@@ -1,0 +1,227 @@
+sources:
+  - source_id: phone_apple_iphone_15_battery_2024
+    title: iPhone 15 Battery
+    publisher: Apple Support
+    canonical_url: https://support.apple.com/en-us/104907
+    publication_or_revision_date: "2024-09-16"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Apple's publicly accessible exact-model
+      repair procedure; no text, images, or document are redistributed. The displayed
+      publication day supports adhesive-retained technician-serviceable construction
+      for iPhone 15, not easy user removability or installed-battery chemistry.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_apple_iphone_15_battery_performance_2025
+    title: About the battery and performance of iPhone 11 and later
+    publisher: Apple Support
+    canonical_url: https://support.apple.com/en-us/106348
+    publication_or_revision_date: "2025-12-05"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Apple's publicly accessible support
+      article; no source-document redistribution. The displayed publication day and
+      explicit iPhone 15-model statement support the designed 80-percent original-
+      capacity point at 1,000 complete charge cycles under ideal conditions, not a
+      guarantee or whole-device service life.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_apple_iphone_15_launch_2023
+    title: Apple debuts iPhone 15 and iPhone 15 Plus
+    publisher: Apple Newsroom
+    canonical_url: https://www.apple.com/newsroom/2023/09/apple-debuts-iphone-15-and-iphone-15-plus/
+    publication_or_revision_date: "2023-09-12"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Apple's publicly accessible dated release;
+      no source-document or image redistribution. Use is limited to the exact iPhone 15
+      identity, conventional single-display smartphone construction, named assemblies,
+      and affirmative battery operation; chemistry is not inferred.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_apple_iphone_se_3_battery_2024
+    title: iPhone SE (3rd generation) Battery
+    publisher: Apple Support
+    canonical_url: https://support.apple.com/en-us/101536
+    publication_or_revision_date: "2024-09-16"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Apple's publicly accessible exact-
+      generation repair procedure; no text or images are redistributed. The displayed
+      publication day supports adhesive-retained technician-serviceable construction
+      for iPhone SE (3rd generation), not easy user removability or chemistry.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_apple_iphone_se_3_launch_2022
+    title: "Apple announces the new iPhone SE: a powerful smartphone in an iconic design"
+    publisher: Apple Newsroom
+    canonical_url: https://www.apple.com/newsroom/2022/03/apple-announces-the-new-iphone-se-a-powerful-smartphone-in-an-iconic-design/
+    publication_or_revision_date: "2022-03-08"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Apple's publicly accessible dated release;
+      no source-document or image redistribution. Use is limited to the 2022 iPhone SE
+      generation, slate-smartphone form, named assemblies, and battery-powered charging
+      architecture. Its unnamed battery-chemistry wording is not promoted to a class.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_epa_used_li_ion_2026
+    title: Used Lithium-Ion Batteries
+    publisher: United States Environmental Protection Agency
+    canonical_url: https://www.epa.gov/recycle/used-lithium-ion-batteries
+    publication_or_revision_date: "2026-03-20"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible U.S. government
+      page; no source-document or media redistribution. The displayed last-updated day
+      supports conditional damaged-lithium-ion handling and recycling guidance. It does
+      not establish that a selected phone's installed battery is lithium-ion.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_fairphone_5_launch_2023
+    title: "The Fairphone 5: iconic modular design with 8 years of software support"
+    publisher: Fairphone B.V.
+    canonical_url: https://www.fairphone.com/wp-content/uploads/2023/08/Press_release_Fairphone_5.pdf
+    publication_or_revision_date: "2023-08-30"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from Fairphone's
+      publicly accessible dated release; the PDF, images, and expressive text are not
+      redistributed. Use supports exact Fairphone 5 identity, modular smartphone form,
+      replaceable 4,200 mAh battery architecture, and listed assemblies, not installed
+      chemistry or an exact retained-capacity endpoint.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_google_pixel_8_intro_2023
+    title: "Google Pixel 8: latest model packed with new AI"
+    publisher: Google Store Japan Magazine
+    canonical_url: https://store.google.com/jp/magazine/introducing-google-pixel-8?hl=ja
+    publication_or_revision_date: "2023-10-04"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Google's publicly accessible dated exact-
+      model article; no source-document or image redistribution. Use supports Pixel 8
+      identity, conventional single-display smartphone form, camera/storage assemblies,
+      and battery presence. The article's ambiguous capacity punctuation is not imported,
+      and separate undated chemistry or repair pages are not joined to this date.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_hmd_nokia_3310_launch_2017
+    title: A new era for Nokia smartphones
+    publisher: HMD Global
+    canonical_url: https://www.hmd.com/en_int/press/a-new-era-for-nokia-smartphones
+    publication_or_revision_date: "2017-02-26"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to HMD Global's publicly accessible dated
+      release; no source-document or media redistribution. Use supports the exact 2017
+      Nokia 3310 rebirth, feature-phone classification, and battery-powered operation;
+      it does not support removability, chemistry, or later 3G/4G variants.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_motorola_razr_40_ultra_launch_2023
+    title: Reimagine the possibilities with the new motorola razr family
+    publisher: Lenovo StoryHub / Motorola Mobility
+    canonical_url: https://news.lenovo.com/pressroom/press-releases/reimagine-possibilities-new-motorola-razr-family/
+    publication_or_revision_date: "2023-06-01"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to the publicly accessible manufacturer
+      release; no source-document or media redistribution. Use supports the explicit
+      razr+/razr 40 ultra alias, exact foldable smartphone, display/hinge architecture,
+      and battery operation, not the lower razr 40, removability, or chemistry.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_motorola_razr_v3_launch_2004
+    title: Introducing the Motorola RAZR V3
+    publisher: Motorola-authored release archived by Esato
+    canonical_url: https://www.esato.com/news/introducing-the-motorola-razr-v3-191
+    publication_or_revision_date: "2004-07-27"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from a publicly
+      accessible archive of a Motorola-authored release; the page, release text, and
+      imagery are not redistributed. The archive's displayed day supports exact RAZR V3
+      naming and clamshell/keypad form, not battery or later RAZR revisions.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_motorola_v3_service_manual_2004
+    title: "Level 1 and 2 Service Manual: V3 Digital Wireless Telephone, 6809485A72-O"
+    publisher: Motorola, Inc. (manufacturer document mirrored by firmware.center)
+    canonical_url: "https://firmware.center/firmware/Motorola/RAZR%20V3%20(Razor)/Service%20Docs/SM_V3_A4_C_L12_V1.pdf"
+    publication_or_revision_date: "2004-07-30"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from a publicly
+      accessible mirror of Motorola's service manual; the PDF, figures, and expressive
+      text are not redistributed. Its printed date and current-to-printing statement
+      support the exact GSM/GPRS V3, removable-battery construction, original Li-ion
+      architecture, and documented assemblies, not later V3 revisions or present-pack chemistry.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_rim_bold_9900_launch_2011
+    title: RIM Introduces New BlackBerry Bold Smartphones
+    publisher: Research In Motion release distributed by Marketwire / GlobeNewswire
+    canonical_url: https://www.globenewswire.com/news-release/2011/05/02/1430509/0/en/RIM-Introduces-New-BlackBerry-Bold-Smartphones.html
+    publication_or_revision_date: "2011-05-02"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from the public
+      distributor archive of a RIM-authored release; release text and images are not
+      redistributed. Shared 9900/9930 keyboard and removable rechargeable-battery facts
+      are used for exact 9900 scope while its distinct HSPA+/GSM network facts prevent
+      9930 substitution; chemistry is not inferred.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_samsung_broken_screen_2023
+    title: My device is shattered and there is a crack on my screen
+    publisher: Samsung UK Support
+    canonical_url: https://www.samsung.com/uk/support/mobile-devices/my-device-is-shattered-and-there-is-a-crack-on-my-screen/
+    publication_or_revision_date: "2023-05-31"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Samsung's publicly accessible dated mobile-
+      device support guidance; no text or images are redistributed. The displayed update
+      day supports conditional cracked-screen/back-glass inspection and repair guidance.
+      It does not establish exterior breakage from the frozen battery-damage flag.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_samsung_galaxy_s24_launch_2024
+    title: Enter the New Era of Mobile AI With Samsung Galaxy S24 Series
+    publisher: Samsung Global Newsroom
+    canonical_url: https://news.samsung.com/global/enter-the-new-era-of-mobile-ai-with-samsung-galaxy-s24-series
+    publication_or_revision_date: "2024-01-18"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Samsung's publicly accessible dated release;
+      no source-document or media redistribution. The Global Newsroom's displayed USA
+      day supports exact Galaxy S24 identity, conventional smartphone construction,
+      named assemblies, and battery presence, not removability or named chemistry.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_samsung_galaxy_s5_launch_2014
+    title: Samsung Unveils Galaxy S5 to Focus on What Matters Most to Consumers
+    publisher: Samsung Global Newsroom
+    canonical_url: https://news.samsung.com/global/samsung-unveils-galaxy-s5-to-focus-on-what-matters-most-to-consumers
+    publication_or_revision_date: "2014-02-25"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Samsung's publicly accessible dated release;
+      no source-document or media redistribution. Use supports exact Galaxy S5 identity,
+      slate-smartphone form, display/camera/connectivity facts, and battery operation;
+      chemistry is not inferred.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: phone_samsung_galaxy_s5_teardown_2014
+    title: "Galaxy S5 Tear Down: Do you See what we see?"
+    publisher: Samsung Global Newsroom
+    canonical_url: https://news.samsung.com/global/galaxy-s5-tear-down-do-you-see-what-we-see
+    publication_or_revision_date: "2014-04-29"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Samsung's publicly accessible dated
+      teardown article; no source-document or image redistribution. Its exact S5 scope
+      supports a changeable/removable battery behind a reattachable back cover and named
+      assemblies, not user authorization, installed chemistry, or another Galaxy model.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"

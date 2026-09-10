@@ -1,0 +1,97 @@
+unknowns:
+  - category_id: 0306_mobile_phone
+    claim_kind: component_association
+    claim_id: phone_standard_battery_chemistry_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed launch, repair, and legacy records do not establish the chemistry
+      currently installed in every supported phone identity, especially where a
+      battery may have been replaced.
+    evidence_request: >-
+      Obtain exact current-item manufacturer documentation or a compliant, legible installed-battery marking before assigning chemistry.
+  - category_id: 0306_mobile_phone
+    claim_kind: component_association
+    claim_id: phone_standard_battery_construction_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Battery presence does not establish integrated, removable, adhesive-retained,
+      or modular construction for every supported phone identity; only a reviewed
+      exact-model overlay may replace this Unknown.
+    evidence_request: >-
+      Obtain exact-model service or construction documentation before assigning battery retention or replacement architecture.
+  - category_id: 0306_mobile_phone
+    claim_kind: component_association
+    claim_id: phone_standard_display_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Product descriptions for selected phone surfaces do not establish representative
+      material composition for every display assembly or the layers in a current item.
+    evidence_request: >-
+      Obtain scope-qualified material declarations or a qualified exact-model teardown before assigning display materials.
+  - category_id: 0306_mobile_phone
+    claim_kind: component_association
+    claim_id: phone_standard_enclosure_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Materials named for isolated models or surfaces do not establish complete
+      enclosure composition across the reviewed phone population or a current item.
+    evidence_request: >-
+      Obtain identity-specific material declarations or qualified teardown evidence; do not infer material from appearance.
+  - category_id: 0306_mobile_phone
+    claim_kind: component_association
+    claim_id: phone_standard_logic_board_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed product and service records do not establish representative logic-board
+      material composition or substance content for a current phone item.
+    evidence_request: >-
+      Obtain a scope-qualified bill of materials, environmental declaration, or qualified teardown before assigning board materials.
+  - category_id: 0306_mobile_phone
+    claim_kind: industry_average
+    claim_id: phone_industry_service_life
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The bounded broad-reference lead reports completed first service for phones and
+      presents an approximate weighted result, but its phone sample is stated as 748
+      in one place and 784 in another. The graph precision, population, observation
+      unit, and full publication-date basis therefore remain unresolved for a numeric
+      phone service-life record.
+    evidence_request: >-
+      Obtain a fully dated publication with reconciled phone sample size, transparent
+      weighted method, comparable population and observation unit, and a defensible
+      numeric completed-first-service statistic before publishing an industry average.
+  - category_id: 0306_mobile_phone
+    claim_kind: specific_lifecycle
+    claim_id: eu_phone_battery_800_cycles_80_percent
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The EU provision states 800 cycles and 80 percent for a qualifying smartphone
+      placed on the EU market from 2025-06-20, but the frozen assessment date is not
+      the first market-placement date and the current item scope has no structured
+      jurisdiction, placement, or conformity representation.
+    evidence_request: >-
+      Add reviewed structured evidence for qualifying-smartphone status, first placed
+      on the EU market date, jurisdiction, and applicable conformity before using the
+      regulatory endpoint for an assessed item; do not substitute the assessment date.
+  - category_id: 0306_mobile_phone
+    claim_kind: specific_lifecycle
+    claim_id: fairphone_5_battery_capacity_threshold
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The current EPREL trail reports a 1,300-cycle threshold under default settings
+      and a 4,080 mAh rated capacity, while the dated launch describes a replaceable
+      4,200 mAh typical-capacity battery without the retained-capacity endpoint. The
+      exact endpoint publication or revision date and configuration mapping were not
+      independently verified, so these documents cannot be joined into one record.
+    evidence_request: >-
+      Obtain a fully dated Fairphone 5 claim source that maps the 1,300-cycle retained-
+      capacity endpoint and 4,080 mAh rated battery to an independently selectable
+      configuration, preserving default-setting and algorithm qualifications.

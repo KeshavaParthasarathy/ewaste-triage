@@ -1,0 +1,387 @@
+category:
+  category_id: 0306_mobile_phone
+  display_name: Mobile phone
+
+subtypes:
+  - subtype_id: phone_feature_legacy
+    category_id: 0306_mobile_phone
+    display_name: Legacy feature phone
+    market_state: legacy
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_hmd_nokia_3310_launch_2017
+      - phone_motorola_razr_v3_launch_2004
+      - phone_motorola_v3_service_manual_2004
+  - subtype_id: phone_foldable_smartphone
+    category_id: 0306_mobile_phone
+    display_name: Foldable smartphone
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_motorola_razr_40_ultra_launch_2023
+  - subtype_id: phone_keyboard_legacy
+    category_id: 0306_mobile_phone
+    display_name: Legacy physical-keyboard smartphone
+    market_state: legacy
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_rim_bold_9900_launch_2011
+  - subtype_id: phone_modular_smartphone
+    category_id: 0306_mobile_phone
+    display_name: Modular smartphone
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_fairphone_5_launch_2023
+  - subtype_id: phone_slate_smartphone
+    category_id: 0306_mobile_phone
+    display_name: Slate smartphone
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_apple_iphone_15_launch_2023
+      - phone_apple_iphone_se_3_launch_2022
+      - phone_google_pixel_8_intro_2023
+      - phone_samsung_galaxy_s24_launch_2024
+      - phone_samsung_galaxy_s5_launch_2014
+
+variants:
+  - variant_id: phone_apple_integrated_adhesive_battery
+    category_id: 0306_mobile_phone
+    subtype_id: phone_slate_smartphone
+    display_name: Apple adhesive-retained service battery
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_apple_iphone_15_battery_2024
+      - phone_apple_iphone_se_3_battery_2024
+  - variant_id: phone_bold_physical_keyboard_removable_battery
+    category_id: 0306_mobile_phone
+    subtype_id: phone_keyboard_legacy
+    display_name: BlackBerry Bold physical keyboard and removable battery
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_rim_bold_9900_launch_2011
+  - variant_id: phone_fairphone_modular_removable_battery
+    category_id: 0306_mobile_phone
+    subtype_id: phone_modular_smartphone
+    display_name: Fairphone modular replaceable battery
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_fairphone_5_launch_2023
+  - variant_id: phone_motorola_v3_clamshell_keypad_removable_battery
+    category_id: 0306_mobile_phone
+    subtype_id: phone_feature_legacy
+    display_name: Motorola V3 clamshell, keypad, and removable battery
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_motorola_razr_v3_launch_2004
+      - phone_motorola_v3_service_manual_2004
+  - variant_id: phone_razr40_foldable_hinge
+    category_id: 0306_mobile_phone
+    subtype_id: phone_foldable_smartphone
+    display_name: Motorola razr 40 ultra foldable display and hinge
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_motorola_razr_40_ultra_launch_2023
+  - variant_id: phone_s5_removable_battery
+    category_id: 0306_mobile_phone
+    subtype_id: phone_slate_smartphone
+    display_name: Samsung Galaxy S5 changeable battery
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - phone_samsung_galaxy_s5_teardown_2014
+
+identities:
+  - identity_id: apple_iphone_15
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_slate_smartphone
+    manufacturer_id: apple
+    manufacturer_name: Apple
+    family_id: apple_iphone
+    family_name: Apple iPhone
+    model_id: apple_iphone_15
+    model_name: iPhone 15
+    display_name: Apple iPhone 15
+    aliases:
+      - iPhone 15 (6.1-inch model)
+    distinguishing_tokens:
+      - iphone 15
+      - dynamic island
+      - usb c connector
+    model_year_from: 2023
+    model_year_to: 2023
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - phone_apple_integrated_adhesive_battery
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_apple_iphone_15_battery_2024
+      - phone_apple_iphone_15_launch_2023
+  - identity_id: apple_iphone_se_3
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_slate_smartphone
+    manufacturer_id: apple
+    manufacturer_name: Apple
+    family_id: apple_iphone
+    family_name: Apple iPhone
+    model_id: apple_iphone_se_3
+    model_name: iPhone SE (3rd generation)
+    display_name: Apple iPhone SE (3rd generation)
+    aliases:
+      - iPhone SE 3rd generation
+      - iPhone SE (2022)
+    distinguishing_tokens:
+      - iphone se 3rd generation
+      - 2022 iphone se
+      - a15 bionic
+    model_year_from: 2022
+    model_year_to: 2022
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - phone_apple_integrated_adhesive_battery
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_apple_iphone_se_3_battery_2024
+      - phone_apple_iphone_se_3_launch_2022
+  - identity_id: blackberry_bold_9900
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_keyboard_legacy
+    manufacturer_id: rim
+    manufacturer_name: Research In Motion
+    family_id: blackberry_bold
+    family_name: BlackBerry Bold
+    model_id: blackberry_bold_9900
+    model_name: BlackBerry Bold 9900
+    display_name: RIM BlackBerry Bold 9900
+    aliases:
+      - BlackBerry Bold Touch 9900
+    distinguishing_tokens:
+      - blackberry bold 9900
+      - hspa plus gsm
+      - physical keyboard
+    model_year_from: 2011
+    model_year_to: 2011
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - phone_bold_physical_keyboard_removable_battery
+    market_state: legacy
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_rim_bold_9900_launch_2011
+  - identity_id: fairphone_5
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_modular_smartphone
+    manufacturer_id: fairphone
+    manufacturer_name: Fairphone
+    family_id: fairphone_5_family
+    family_name: Fairphone 5
+    model_id: fairphone_5
+    model_name: Fairphone 5
+    display_name: Fairphone 5
+    aliases:
+      - Fairphone 5 5G
+    distinguishing_tokens:
+      - fairphone 5
+      - modular smartphone
+      - replaceable 4200 mah battery
+    model_year_from: 2023
+    model_year_to: 2023
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - phone_fairphone_modular_removable_battery
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_fairphone_5_launch_2023
+  - identity_id: google_pixel_8
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_slate_smartphone
+    manufacturer_id: google
+    manufacturer_name: Google
+    family_id: google_pixel
+    family_name: Google Pixel
+    model_id: google_pixel_8
+    model_name: Pixel 8
+    display_name: Google Pixel 8
+    aliases:
+      - Google Pixel 8 smartphone
+    distinguishing_tokens:
+      - google pixel 8
+      - tensor g3
+      - 6.2 inch actua display
+    model_year_from: 2023
+    model_year_to: 2023
+    applicable_from: null
+    applicable_to: null
+    variant_ids: []
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_google_pixel_8_intro_2023
+  - identity_id: motorola_razr_40_ultra
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_foldable_smartphone
+    manufacturer_id: motorola
+    manufacturer_name: Motorola
+    family_id: motorola_razr_foldable
+    family_name: Motorola razr foldable
+    model_id: motorola_razr_40_ultra
+    model_name: motorola razr 40 ultra
+    display_name: Motorola razr 40 ultra
+    aliases:
+      - motorola razr+
+    distinguishing_tokens:
+      - motorola razr 40 ultra
+      - razr plus foldable
+      - flex view hinge
+    model_year_from: 2023
+    model_year_to: 2023
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - phone_razr40_foldable_hinge
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_motorola_razr_40_ultra_launch_2023
+  - identity_id: motorola_razr_v3
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_feature_legacy
+    manufacturer_id: motorola
+    manufacturer_name: Motorola
+    family_id: motorola_razr_v3_family
+    family_name: Motorola RAZR V3
+    model_id: motorola_razr_v3
+    model_name: Motorola RAZR V3 GSM/GPRS
+    display_name: Motorola RAZR V3 GSM/GPRS
+    aliases:
+      - Motorola V3 Digital Wireless Telephone
+    distinguishing_tokens:
+      - motorola razr v3 gsm
+      - gprs digital wireless telephone
+      - clamshell keypad
+    model_year_from: 2004
+    model_year_to: 2004
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - phone_motorola_v3_clamshell_keypad_removable_battery
+    market_state: legacy
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_motorola_razr_v3_launch_2004
+      - phone_motorola_v3_service_manual_2004
+  - identity_id: nokia_3310_2017
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_feature_legacy
+    manufacturer_id: hmd
+    manufacturer_name: HMD Global
+    family_id: nokia_3310_family
+    family_name: Nokia 3310
+    model_id: nokia_3310_2017
+    model_name: Nokia 3310 (2017)
+    display_name: HMD Nokia 3310 (2017)
+    aliases:
+      - New Nokia 3310 (2017)
+    distinguishing_tokens:
+      - nokia 3310 2017 rebirth
+      - series 30 plus
+      - 2.4 inch colour screen
+    model_year_from: 2017
+    model_year_to: 2017
+    applicable_from: null
+    applicable_to: null
+    variant_ids: []
+    market_state: legacy
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_hmd_nokia_3310_launch_2017
+  - identity_id: samsung_galaxy_s24
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_slate_smartphone
+    manufacturer_id: samsung
+    manufacturer_name: Samsung
+    family_id: samsung_galaxy_s
+    family_name: Samsung Galaxy S
+    model_id: samsung_galaxy_s24
+    model_name: Galaxy S24
+    display_name: Samsung Galaxy S24
+    aliases:
+      - Samsung Galaxy S24 base model
+    distinguishing_tokens:
+      - samsung galaxy s24
+      - galaxy ai
+      - 6.2 inch display
+    model_year_from: 2024
+    model_year_to: 2024
+    applicable_from: null
+    applicable_to: null
+    variant_ids: []
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_samsung_galaxy_s24_launch_2024
+  - identity_id: samsung_galaxy_s5
+    identity_kind: model
+    category_id: 0306_mobile_phone
+    subtype_id: phone_slate_smartphone
+    manufacturer_id: samsung
+    manufacturer_name: Samsung
+    family_id: samsung_galaxy_s
+    family_name: Samsung Galaxy S
+    model_id: samsung_galaxy_s5
+    model_name: Galaxy S5
+    display_name: Samsung Galaxy S5
+    aliases:
+      - Samsung Galaxy S5 smartphone
+    distinguishing_tokens:
+      - samsung galaxy s5
+      - 5.1 inch super amoled
+      - changeable battery
+    model_year_from: 2014
+    model_year_to: 2014
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - phone_s5_removable_battery
+    market_state: legacy
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - phone_samsung_galaxy_s5_launch_2014
+      - phone_samsung_galaxy_s5_teardown_2014

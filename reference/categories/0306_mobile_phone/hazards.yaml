@@ -1,0 +1,57 @@
+hazards:
+  - hazard_id: phone_broken_exterior_handling
+    component_id: enclosure
+    scope:
+      kind: category
+      id: 0306_mobile_phone
+    applicability: >-
+      For a phone, the frozen swelling-or-battery-damage observation activates
+      precautionary consideration of possible exterior damage. That structured flag
+      does not establish a broken exterior, cracked screen, damaged back glass, or
+      universal glass construction. Samsung's guidance supports professional,
+      model-dependent inspection and repair only when exterior damage is independently
+      observed; it does not establish a special handling or disposal protocol.
+    trigger_observation_keys:
+      - observations.issue_flags.swelling_or_battery_damage
+    severity: caution
+    immediate_actions:
+      - If a broken exterior is independently observed, obtain professional inspection before choosing a repair.
+    follow_up_actions:
+      - If exterior damage is independently observed, use a professional repair service that can inspect the model and determine the model-dependent repair.
+    handling_guidance:
+      - If a cracked screen or back glass is independently observed, do not infer any additional handling protocol from this Samsung source beyond professional inspection and repair.
+    disposal_guidance:
+      - If a broken exterior is independently observed, do not infer a special disposal route from this Samsung guidance because it addresses inspection and repair.
+    evidence_level: D
+    source_ids:
+      - phone_samsung_broken_screen_2023
+  - hazard_id: phone_damaged_lithium_ion_battery
+    component_id: battery
+    scope:
+      kind: category
+      id: 0306_mobile_phone
+    applicability: >-
+      For a phone, a report of overheating, swelling, or battery damage activates
+      precautionary guidance. Lithium-ion-specific guidance applies if the installed
+      battery is lithium-ion; a battery-bearing identity and the reported issue do not
+      establish chemistry. Item-specific manufacturer information or a compliant
+      battery marking may help identify chemistry.
+    trigger_observation_keys:
+      - observations.issue_flags.overheating
+      - observations.issue_flags.swelling_or_battery_damage
+    severity: urgent
+    immediate_actions:
+      - If the installed battery is lithium-ion and is damaged, stop using and charging the phone.
+      - If the installed battery is lithium-ion and is damaged, keep it away from flammable materials without crushing, bending, or puncturing it.
+    follow_up_actions:
+      - If the installed battery is lithium-ion, contact the manufacturer or a qualified battery specialist for handling instructions.
+      - If the installed battery is lithium-ion and damaged, arrange prompt transfer to an appropriate battery or household-hazardous-waste collection point.
+    handling_guidance:
+      - If the installed battery is lithium-ion, do not place it in household trash or a municipal recycling bin.
+      - If the installed battery is lithium-ion and can be safely removed without forcing or opening a non-serviceable enclosure, prevent terminal contact; otherwise keep the phone intact and follow manufacturer or receiving-program instructions.
+    disposal_guidance:
+      - If the installed battery is lithium-ion, use a certified electronics recycler, battery recycler, or household-hazardous-waste program that accepts lithium-ion batteries.
+      - If the installed battery is lithium-ion and damaged, follow the receiving program's instructions for damaged batteries before transport.
+    evidence_level: C
+    source_ids:
+      - phone_epa_used_li_ion_2026

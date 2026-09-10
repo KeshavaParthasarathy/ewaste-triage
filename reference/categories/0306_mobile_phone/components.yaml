@@ -1,0 +1,449 @@
+components:
+  - component_id: battery
+    display_name: Rechargeable battery assembly
+  - component_id: battery_chemistry
+    display_name: Current installed battery chemistry
+  - component_id: battery_construction
+    display_name: Battery retention and replacement construction
+  - component_id: camera
+    display_name: Camera assembly
+  - component_id: display_assembly
+    display_name: Display assembly
+  - component_id: display_material
+    display_name: Display material composition
+  - component_id: enclosure
+    display_name: Exterior enclosure
+  - component_id: enclosure_material
+    display_name: Enclosure material composition
+  - component_id: hinge
+    display_name: Folding hinge assembly
+  - component_id: logic_board
+    display_name: Logic board
+  - component_id: logic_board_material
+    display_name: Logic-board material composition
+  - component_id: microphones
+    display_name: Microphone assembly
+  - component_id: original_battery_chemistry
+    display_name: Original factory battery chemistry architecture
+  - component_id: physical_keyboard
+    display_name: Physical keyboard or keypad assembly
+  - component_id: ports
+    display_name: External ports and connectors
+  - component_id: speakers
+    display_name: Speaker assembly
+  - component_id: storage
+    display_name: Internal storage
+  - component_id: vibration_device
+    display_name: Vibration or haptic device
+
+templates:
+  - template_id: phone_bold_removable_battery
+    template_kind: legacy_overlay
+    scope:
+      kind: model
+      id: blackberry_bold_9900
+    application_order: 0
+  - template_id: phone_fairphone_modular_removable
+    template_kind: modern_overlay
+    scope:
+      kind: model
+      id: fairphone_5
+    application_order: 0
+  - template_id: phone_galaxy_s5_removable
+    template_kind: legacy_overlay
+    scope:
+      kind: model
+      id: samsung_galaxy_s5
+    application_order: 0
+  - template_id: phone_iphone_se3_integrated
+    template_kind: modern_overlay
+    scope:
+      kind: model
+      id: apple_iphone_se_3
+    application_order: 0
+  - template_id: phone_legacy_removable_battery
+    template_kind: legacy_overlay
+    scope:
+      kind: model
+      id: motorola_razr_v3
+    application_order: 0
+  - template_id: phone_modern_integrated
+    template_kind: modern_overlay
+    scope:
+      kind: model
+      id: apple_iphone_15
+    application_order: 0
+  - template_id: phone_razr40_foldable
+    template_kind: modern_overlay
+    scope:
+      kind: model
+      id: motorola_razr_40_ultra
+    application_order: 0
+  - template_id: phone_standard
+    template_kind: standard
+    scope:
+      kind: category
+      id: 0306_mobile_phone
+    application_order: 0
+
+associations:
+  - association_id: phone_bold_removable_battery_construction
+    template_id: phone_bold_removable_battery
+    component_id: battery_construction
+    position: 0
+    status: legacy_specific
+    applicability: >-
+      Applies only to the BlackBerry Bold 9900: RIM's dated release describes a
+      removable and rechargeable battery. This construction fact does not establish
+      the chemistry or condition of the battery currently installed.
+    notes:
+      - The shared 9900/9930 battery statement supports the exact 9900 construction but does not substitute 9930 network facts or authorize disassembly.
+    evidence_level: A
+    source_ids:
+      - phone_rim_bold_9900_launch_2011
+  - association_id: phone_bold_removable_battery_physical_keyboard
+    template_id: phone_bold_removable_battery
+    component_id: physical_keyboard
+    position: 1
+    status: legacy_specific
+    applicability: >-
+      Applies only to the BlackBerry Bold 9900, whose dated RIM release identifies
+      its physical BlackBerry keyboard as part of the reviewed model architecture.
+    notes:
+      - Keyboard presence does not establish current condition or repairability.
+    evidence_level: A
+    source_ids:
+      - phone_rim_bold_9900_launch_2011
+  - association_id: phone_fairphone_modular_removable_battery_construction
+    template_id: phone_fairphone_modular_removable
+    component_id: battery_construction
+    position: 0
+    status: exact_model_confirmed
+    applicability: >-
+      Applies only to Fairphone 5: the dated launch describes a modular architecture
+      with a replaceable battery. Replaceable construction does not identify the
+      current installed chemistry or current battery condition.
+    notes:
+      - The modular and replaceable design statement is construction evidence, not a retained-capacity endpoint or confirmation of current installed chemistry.
+    evidence_level: A
+    source_ids:
+      - phone_fairphone_5_launch_2023
+  - association_id: phone_galaxy_s5_removable_battery_construction
+    template_id: phone_galaxy_s5_removable
+    component_id: battery_construction
+    position: 0
+    status: legacy_specific
+    applicability: >-
+      Applies only to Samsung Galaxy S5: Samsung's dated exact-model teardown calls
+      the battery changeable and shows it behind a reattachable back cover.
+    notes:
+      - Changeable construction does not establish current battery presence, condition, chemistry, or user authorization to perform service.
+    evidence_level: A
+    source_ids:
+      - phone_samsung_galaxy_s5_teardown_2014
+  - association_id: phone_iphone_se3_integrated_battery_construction
+    template_id: phone_iphone_se3_integrated
+    component_id: battery_construction
+    position: 0
+    status: exact_model_confirmed
+    applicability: >-
+      Applies only to iPhone SE (3rd generation): Apple's exact-generation repair
+      procedure documents adhesive strips and a technician service sequence. The
+      battery is service-replaceable but not represented here as user-removable.
+    notes:
+      - The technician procedure does not authorize user disassembly or establish current installed chemistry.
+    evidence_level: A
+    source_ids:
+      - phone_apple_iphone_se_3_battery_2024
+  - association_id: phone_legacy_removable_battery_construction
+    template_id: phone_legacy_removable_battery
+    component_id: battery_construction
+    position: 0
+    status: legacy_specific
+    applicability: >-
+      Applies only to the original GSM/GPRS Motorola RAZR V3 described by service
+      manual 6809485A72-O, which documents removing the battery cover and battery.
+    notes:
+      - The service procedure does not cover later V3 revisions, prove the present battery, or authorize unqualified user disassembly.
+    evidence_level: A
+    source_ids:
+      - phone_motorola_v3_service_manual_2004
+  - association_id: phone_legacy_removable_original_battery_chemistry
+    template_id: phone_legacy_removable_battery
+    component_id: original_battery_chemistry
+    position: 1
+    status: legacy_specific
+    applicability: >-
+      Applies only to the original GSM/GPRS Motorola RAZR V3 architecture: the
+      dated service manual identifies the original specified battery as Li-ion.
+    notes:
+      - Original architecture does not establish the chemistry of a present replacement battery; current installed battery chemistry remains Unknown.
+    evidence_level: A
+    source_ids:
+      - phone_motorola_v3_service_manual_2004
+  - association_id: phone_modern_integrated_battery_construction
+    template_id: phone_modern_integrated
+    component_id: battery_construction
+    position: 0
+    status: exact_model_confirmed
+    applicability: >-
+      Applies only to iPhone 15: Apple's exact-model repair procedure documents
+      adhesive strips and a technician service sequence. The battery is service-
+      replaceable but not represented here as user-removable.
+    notes:
+      - The technician procedure does not authorize user disassembly or establish current installed chemistry.
+    evidence_level: A
+    source_ids:
+      - phone_apple_iphone_15_battery_2024
+  - association_id: phone_razr40_foldable_display_assembly
+    template_id: phone_razr40_foldable
+    component_id: display_assembly
+    position: 0
+    status: exact_model_confirmed
+    applicability: >-
+      Applies only to motorola razr 40 ultra, whose dated manufacturer release
+      describes a foldable main display and external display architecture.
+    notes:
+      - Foldable-display presence does not establish layer materials, durability, current condition, or repairability.
+    evidence_level: A
+    source_ids:
+      - phone_motorola_razr_40_ultra_launch_2023
+  - association_id: phone_razr40_foldable_hinge
+    template_id: phone_razr40_foldable
+    component_id: hinge
+    position: 1
+    status: exact_model_confirmed
+    applicability: >-
+      Applies only to motorola razr 40 ultra, whose dated manufacturer release
+      identifies a hinge enabling the reviewed foldable form and Flex View positions.
+    notes:
+      - Hinge presence does not establish material, durability, current condition, or safe disassembly.
+    evidence_level: A
+    source_ids:
+      - phone_motorola_razr_40_ultra_launch_2023
+  - association_id: phone_standard_battery
+    template_id: phone_standard
+    component_id: battery
+    position: 0
+    status: commonly_associated
+    applicability: >-
+      A rechargeable or battery-powered architecture is documented across all five
+      reviewed phone subtypes; current presence, condition, capacity, and chemistry
+      remain identity- or item-specific.
+    notes:
+      - Battery-bearing classification does not diagnose a battery or identify its chemistry.
+    evidence_level: C
+    source_ids:
+      - phone_apple_iphone_15_launch_2023
+      - phone_fairphone_5_launch_2023
+      - phone_hmd_nokia_3310_launch_2017
+      - phone_motorola_razr_40_ultra_launch_2023
+      - phone_motorola_v3_service_manual_2004
+      - phone_rim_bold_9900_launch_2011
+      - phone_samsung_galaxy_s5_launch_2014
+  - association_id: phone_standard_battery_chemistry_unknown
+    template_id: phone_standard
+    component_id: battery_chemistry
+    position: 1
+    status: unknown
+    applicability: >-
+      Reviewed launch, repair, and legacy records do not establish the chemistry
+      currently installed in every supported phone identity, especially where a
+      battery may have been replaced.
+    notes:
+      - Obtain exact current-item manufacturer documentation or a compliant, legible installed-battery marking before assigning chemistry.
+    evidence_level: null
+    source_ids: []
+  - association_id: phone_standard_battery_construction_unknown
+    template_id: phone_standard
+    component_id: battery_construction
+    position: 2
+    status: unknown
+    applicability: >-
+      Battery presence does not establish integrated, removable, adhesive-retained,
+      or modular construction for every supported phone identity; only a reviewed
+      exact-model overlay may replace this Unknown.
+    notes:
+      - Obtain exact-model service or construction documentation before assigning battery retention or replacement architecture.
+    evidence_level: null
+    source_ids: []
+  - association_id: phone_standard_camera
+    template_id: phone_standard
+    component_id: camera
+    position: 3
+    status: commonly_associated
+    applicability: >-
+      Camera assemblies are documented in representative reviewed smartphone and
+      legacy-phone records; camera count, sensor design, and current condition remain
+      identity-specific.
+    notes:
+      - A category association does not infer a particular camera configuration or diagnosed fault.
+    evidence_level: C
+    source_ids:
+      - phone_apple_iphone_15_launch_2023
+      - phone_google_pixel_8_intro_2023
+      - phone_motorola_v3_service_manual_2004
+      - phone_samsung_galaxy_s5_launch_2014
+  - association_id: phone_standard_display_assembly
+    template_id: phone_standard
+    component_id: display_assembly
+    position: 4
+    status: commonly_associated
+    applicability: >-
+      A display assembly is documented across representative reviewed feature-phone,
+      keyboard-phone, slate, modular, and foldable identities; configuration and
+      current condition remain identity-specific.
+    notes:
+      - Display presence does not establish cover material, panel layers, foldability, or breakage.
+    evidence_level: C
+    source_ids:
+      - phone_fairphone_5_launch_2023
+      - phone_hmd_nokia_3310_launch_2017
+      - phone_motorola_razr_40_ultra_launch_2023
+      - phone_motorola_v3_service_manual_2004
+      - phone_rim_bold_9900_launch_2011
+      - phone_samsung_galaxy_s24_launch_2024
+  - association_id: phone_standard_display_material_unknown
+    template_id: phone_standard
+    component_id: display_material
+    position: 5
+    status: unknown
+    applicability: >-
+      Product descriptions for selected phone surfaces do not establish representative
+      material composition for every display assembly or the layers in a current item.
+    notes:
+      - Obtain scope-qualified material declarations or a qualified exact-model teardown before assigning display materials.
+    evidence_level: null
+    source_ids: []
+  - association_id: phone_standard_enclosure
+    template_id: phone_standard
+    component_id: enclosure
+    position: 6
+    status: commonly_associated
+    applicability: >-
+      The enclosure is the exterior housing concept across representative reviewed
+      phones; shape, finish, construction, and current damage remain identity-specific.
+    notes:
+      - Appearance or category identity does not establish material composition or a broken exterior.
+    evidence_level: C
+    source_ids:
+      - phone_apple_iphone_se_3_launch_2022
+      - phone_fairphone_5_launch_2023
+      - phone_motorola_razr_v3_launch_2004
+      - phone_samsung_galaxy_s24_launch_2024
+  - association_id: phone_standard_enclosure_material_unknown
+    template_id: phone_standard
+    component_id: enclosure_material
+    position: 7
+    status: unknown
+    applicability: >-
+      Materials named for isolated models or surfaces do not establish complete
+      enclosure composition across the reviewed phone population or a current item.
+    notes:
+      - Obtain identity-specific material declarations or qualified teardown evidence; do not infer material from appearance.
+    evidence_level: null
+    source_ids: []
+  - association_id: phone_standard_logic_board
+    template_id: phone_standard
+    component_id: logic_board
+    position: 8
+    status: commonly_associated
+    applicability: >-
+      Logic-board or main-board architecture is documented in representative reviewed
+      exact-model service and modular records; configuration and current condition
+      remain identity-specific.
+    notes:
+      - Board presence does not establish material composition, repairability, or a diagnosed fault.
+    evidence_level: C
+    source_ids:
+      - phone_fairphone_5_launch_2023
+      - phone_motorola_v3_service_manual_2004
+      - phone_samsung_galaxy_s5_teardown_2014
+  - association_id: phone_standard_logic_board_material_unknown
+    template_id: phone_standard
+    component_id: logic_board_material
+    position: 9
+    status: unknown
+    applicability: >-
+      Reviewed product and service records do not establish representative logic-board
+      material composition or substance content for a current phone item.
+    notes:
+      - Obtain a scope-qualified bill of materials, environmental declaration, or qualified teardown before assigning board materials.
+    evidence_level: null
+    source_ids: []
+  - association_id: phone_standard_microphones
+    template_id: phone_standard
+    component_id: microphones
+    position: 10
+    status: commonly_associated
+    applicability: >-
+      Microphone assemblies are documented in representative reviewed service records;
+      quantity, location, design, and current condition remain identity-specific.
+    notes:
+      - This association does not diagnose audio faults or establish microphone materials.
+    evidence_level: C
+    source_ids:
+      - phone_motorola_v3_service_manual_2004
+      - phone_samsung_galaxy_s5_teardown_2014
+  - association_id: phone_standard_ports
+    template_id: phone_standard
+    component_id: ports
+    position: 11
+    status: commonly_associated
+    applicability: >-
+      External charging, data, or accessory connectors are documented across
+      representative reviewed phone identities; connector type and current condition
+      remain identity-specific.
+    notes:
+      - Connector appearance does not establish electrical compatibility or a diagnosed port fault.
+    evidence_level: C
+    source_ids:
+      - phone_apple_iphone_15_launch_2023
+      - phone_motorola_v3_service_manual_2004
+      - phone_rim_bold_9900_launch_2011
+  - association_id: phone_standard_speakers
+    template_id: phone_standard
+    component_id: speakers
+    position: 12
+    status: commonly_associated
+    applicability: >-
+      Speaker assemblies are documented in representative reviewed service and product
+      records; quantity, design, and current condition remain identity-specific.
+    notes:
+      - This association does not diagnose audio faults or establish speaker materials.
+    evidence_level: C
+    source_ids:
+      - phone_hmd_nokia_3310_launch_2017
+      - phone_motorola_v3_service_manual_2004
+      - phone_samsung_galaxy_s5_teardown_2014
+  - association_id: phone_standard_storage
+    template_id: phone_standard
+    component_id: storage
+    position: 13
+    status: commonly_associated
+    applicability: >-
+      Internal storage is documented across representative reviewed smartphone and
+      legacy-phone identities; capacity, integration, data recoverability, and current
+      condition remain identity-specific.
+    notes:
+      - Storage presence does not establish removability, serviceability, or recoverable user data.
+    evidence_level: C
+    source_ids:
+      - phone_fairphone_5_launch_2023
+      - phone_google_pixel_8_intro_2023
+      - phone_motorola_v3_service_manual_2004
+      - phone_samsung_galaxy_s24_launch_2024
+  - association_id: phone_standard_vibration_device
+    template_id: phone_standard
+    component_id: vibration_device
+    position: 14
+    status: commonly_associated
+    applicability: >-
+      A vibration or haptic assembly is documented in representative reviewed service
+      records; implementation and current condition remain identity-specific.
+    notes:
+      - This association does not establish motor type, material composition, or a diagnosed fault.
+    evidence_level: C
+    source_ids:
+      - phone_motorola_v3_service_manual_2004
+      - phone_samsung_galaxy_s5_teardown_2014

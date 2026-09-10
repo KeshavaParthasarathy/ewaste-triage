@@ -1,0 +1,31 @@
+lifecycles:
+  - record_id: apple_iphone_15_battery_capacity_threshold
+    scope:
+      kind: model
+      id: apple_iphone_15
+    subject: battery
+    endpoint: capacity_threshold
+    endpoint_kind: capacity_threshold
+    metric: full_charge_cycles
+    unit: cycles
+    lower_bound: 1000.0
+    upper_bound: 1000.0
+    endpoint_qualification: >-
+      Apple states that iPhone 15-model batteries are designed to retain 80 percent
+      of their original capacity at 1,000 complete charge cycles under ideal
+      conditions. This designed capacity point is not total life and is not a
+      guaranteed result; actual performance depends on regular use and charging.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: 2023
+    model_year_to: 2023
+    required_variant_ids: []
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: A
+    assumptions:
+      - A complete charge cycle means use totaling 100 percent of battery capacity, including use accumulated across partial charges.
+      - Apple's normalized maximum-capacity comparison is to original capacity and can vary with usage and charging patterns.
+      - The record is a battery retained-capacity endpoint, not whole-phone service life, failure, or warranty duration.
+    source_ids:
+      - phone_apple_iphone_15_battery_performance_2025
