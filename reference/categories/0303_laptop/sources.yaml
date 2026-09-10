@@ -1,0 +1,248 @@
+sources:
+  - source_id: laptop_acer_nitro_5_spin_2017
+    title: Acer Introduces Convertible Nitro 5 Spin Notebook Designed for Casual Gaming
+    publisher: Acer Newsroom
+    canonical_url: https://news.acer.com/acer-introduces-convertible-nitro-5-spin-notebook-designed-for-casual-gaming
+    publication_or_revision_date: "2017-08-21"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official Acer
+      release; no source-document or image redistribution. The displayed release
+      day supports only the battery-bearing convertible two-in-one notebook
+      archetype, not an intended roster identity.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_acer_nitro_gaming_notebooks_2019
+    title: Acer Brings Gamers into Battle with New Nitro 7 and Updated Nitro 5 Series Gaming Notebooks
+    publisher: Acer Newsroom
+    canonical_url: https://news.acer.com/acer-brings-gamers-into-battle-with-new-nitro-7-and-updated-nitro-5-series-gaming-notebooks
+    publication_or_revision_date: "2019-04-11"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official Acer
+      release; no source-document or image redistribution. The displayed release
+      day and the explicit notebook and battery-runtime statements support only
+      the battery-bearing gaming-notebook archetype, not an intended roster identity.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_apple_macbook_air_cycle_count_2026
+    title: Determine battery cycle count for Mac laptops
+    publisher: Apple Support
+    canonical_url: https://support.apple.com/en-au/102888
+    publication_or_revision_date: "2026-03-24"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to the publicly accessible Apple support
+      article; no source-document redistribution. The displayed publication day
+      and the exact MacBook Air (M2, 2022) table row support a designed 80-percent
+      capacity endpoint at the listed maximum cycle count, not a warranty promise.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_apple_macbook_air_launch_2022
+    title: Apple unveils all-new MacBook Air, supercharged by the new M2 chip
+    publisher: Apple Newsroom
+    canonical_url: https://www.apple.com/newsroom/2022/06/apple-unveils-all-new-macbook-air-supercharged-by-the-new-m2-chip/
+    publication_or_revision_date: "2022-06-06"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible dated Apple
+      release; no source-document or image redistribution. Use is limited to exact
+      M2 MacBook Air identity, 2022 introduction, notebook architecture, battery
+      operation, and the described integrated system design.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_apple_macbook_air_parts_2023
+    title: MacBook Air (M2, 2022) Parts
+    publisher: Apple Support
+    canonical_url: https://support.apple.com/en-mide/100604
+    publication_or_revision_date: "2023-12-04"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to the publicly accessible dated Apple
+      parts article; no document or image redistribution. Use is limited to the
+      exact M2 2022 parts scope, including separately listed battery and logic-board
+      configurations that encode memory and storage capacities; chemistry is not inferred.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_apple_powerbook_g4_12_133_service_2005
+    title: Apple Service Source PowerBook G4 (12-inch 1.33 GHz)
+    publisher: Apple Computer, Inc. (manufacturer document mirrored by MacDat)
+    canonical_url: https://www.macdat.net/files/pdf/apple/servicesource/powerbook_g4_12_1.33.pdf
+    publication_or_revision_date: "2005-10-25"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from a
+      publicly accessible manufacturer-authored service document mirrored by
+      MacDat; the PDF is not redistributed. The cover's explicit update day is
+      used for the 1.33 GHz revision's battery, conditional expansion memory, and HDD procedures.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_apple_powerbook_g4_12_15_service_2007
+    title: Apple Service Source PowerBook G4 (12-inch 1.5 GHz)
+    publisher: Apple Inc. (manufacturer document mirrored by MacDat)
+    canonical_url: https://www.macdat.net/files/pdf/apple/servicesource/powerbook_g4_12_1.5.pdf
+    publication_or_revision_date: "2007-08-01"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from a
+      publicly accessible manufacturer-authored service document mirrored by
+      MacDat; the PDF is not redistributed. The cover's explicit update day is
+      used for the 1.5 GHz revision's battery, conditional expansion memory, and HDD procedures.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_apple_powerbook_g4_12_launch_2003
+    title: Apple Introduces Its Smallest Notebook Ever
+    publisher: Apple Newsroom
+    canonical_url: https://www.apple.com/newsroom/2003/01/07Apple-Introduces-Its-Smallest-Notebook-Ever/
+    publication_or_revision_date: "2003-01-07"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible dated Apple
+      release; no source-document or image redistribution. Use is limited to the
+      original 12-inch PowerBook G4's historical notebook classification and battery operation.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_apple_powerbook_g4_12_original_service_2005
+    title: Apple Service Source PowerBook G4 (12-inch) and PowerBook G4 (12-inch DVI)
+    publisher: Apple Computer, Inc. (manufacturer document mirrored by MacDat)
+    canonical_url: https://www.macdat.net/files/pdf/apple/servicesource/powerbook_g4_12_original.pdf
+    publication_or_revision_date: "2005-10-25"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from a
+      publicly accessible manufacturer-authored service document mirrored by
+      MacDat; the PDF is not redistributed. The cover's explicit update day is
+      used for original/DVI battery, conditional expansion memory, and HDD procedures.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_asus_zenbook_14_ux3402_launch_2022
+    title: ASUS Announces All-New Zenbook 14 OLED (UX3402)
+    publisher: ASUS Pressroom
+    canonical_url: https://press.asus.com/news/press-releases/1277/
+    publication_or_revision_date: "2022-01-05"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official ASUS
+      release; no source-document or media redistribution. The displayed day
+      supports the exact UX3402 laptop, its thin-and-light design, and 75 Wh battery.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_dell_xps_13_9315_specs_2025
+    title: XPS 13 9315 / XPS 9315 Setup and Specifications
+    publisher: Dell Support
+    canonical_url: https://www.dell.com/support/product-details/en-us/product/xps-13-9315-laptop/resources/manuals
+    publication_or_revision_date: "2025-01-03"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to Dell's exact-model documentation
+      listing and its linked Setup and Specifications content; no document
+      redistribution. The listing explicitly assigns the update day to that exact
+      document, whose battery section identifies the 3-cell 51 Wh smart lithium-ion battery.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_epa_used_li_ion_2026
+    title: Used Lithium-Ion Batteries
+    publisher: United States Environmental Protection Agency
+    canonical_url: https://www.epa.gov/recycle/used-lithium-ion-batteries
+    publication_or_revision_date: "2026-03-20"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible U.S. government
+      page; no source-document or media redistribution. The displayed last-updated
+      day supports conditional damaged lithium-ion handling and recycling guidance.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_framework_amd_7040_launch_2023
+    title: Framework Laptop 13 with 13th Gen Intel Core and AMD Ryzen 7040 Series
+    publisher: Framework Computer
+    canonical_url: https://frame.work/blog/framework-laptop-13-with-13th-gen-intel-core-and-amd-ryzen-7040-series
+    publication_or_revision_date: "2023-03-23"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible dated Framework
+      announcement; no source-document or media redistribution. Use supports the
+      exact AMD Ryzen 7040 identity and modular expansion-card architecture. The
+      optional 61 Wh cycle claim is not transferred to every identity configuration.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_hp_elitebook_840_g10_quickspecs_2025
+    title: QuickSpecs HP EliteBook 840 14 inch G10 Notebook PC
+    publisher: HP Development Company, L.P.
+    canonical_url: https://h20195.www2.hp.com/v2/getpdf.aspx/c08487722.pdf
+    publication_or_revision_date: "2025-05-23"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from HP's
+      publicly accessible exact-model QuickSpecs; the PDF is not redistributed.
+      The current inspected PDF footer states Worldwide Version 21, May 23, 2025,
+      and its battery sections list internal 38 Wh and 51 Wh lithium-ion polymer options.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_lenovo_t14_gen4_amd_psref_2024
+    title: ThinkPad T14 Gen 4 AMD Platform Specifications
+    publisher: Lenovo Product Specifications Reference
+    canonical_url: https://psref.lenovo.com/syspool/Sys/PDF/ThinkPad/ThinkPad_T14_Gen_4_AMD/ThinkPad_T14_Gen_4_AMD_Spec.PDF
+    publication_or_revision_date: "2024-08-07"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from the
+      publicly accessible manufacturer PDF; the PDF is not redistributed. Its
+      printed day supports AMD family scope and battery-bearing architecture, not
+      a cycles-to-retained-capacity endpoint.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_lenovo_t14_gen4_intel_psref_2025
+    title: ThinkPad T14 Gen 4 Intel Platform Specifications
+    publisher: Lenovo Product Specifications Reference
+    canonical_url: https://psref.lenovo.com/syspool/Sys/PDF/ThinkPad/ThinkPad_T14_Gen_4_Intel/ThinkPad_T14_Gen_4_Intel_Spec.PDF
+    publication_or_revision_date: "2025-05-14"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from the
+      publicly accessible manufacturer PDF; the PDF is not redistributed. Its
+      printed day supports Intel family scope, battery-bearing architecture, and
+      rapid-charge wording, not a cycles-to-retained-capacity endpoint.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_microsoft_surface_laptop_5_launch_2022
+    title: Presentamos los nuevos dispositivos Surface que llevan las PC con Windows a la siguiente era de cómputo
+    publisher: Microsoft Source LATAM
+    canonical_url: https://news.microsoft.com/source/latam/company-news-es/presentamos-los-nuevos-dispositivos-surface-que-llevan-las-pc-con-windows-a-la-siguiente-era-de-computo/
+    publication_or_revision_date: "2022-10-12"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible dated Microsoft
+      release; no source-document or media redistribution. Use supports the Surface
+      Laptop 5 family, its 13.5- and 15-inch alternatives, and battery-bearing laptop architecture.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_swiss_service_lifetime_2017
+    title: Service lifetime, storage time, and disposal pathways of electronic equipment (article, accepted manuscript, and publisher-linked S1)
+    publisher: Journal of Industrial Ecology / Wiley; accepted manuscript hosted by Lib4RI DORA
+    canonical_url: https://onlinelibrary.wiley.com/doi/10.1111/jiec.12551
+    publication_or_revision_date: "2017-02-24"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from the
+      publicly accessible primary accepted manuscript and publisher-linked Supporting
+      Information S1; neither PDFs, figures, expressive text, nor underlying data are
+      redistributed. The day is the publisher-verified article first-publication day,
+      not a separately established date for S1; the journal issue is February 2018.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: laptop_toshiba_110cs_specification_1996
+    title: Satellite 110 Series Product Specifications
+    publisher: Toshiba America Information Systems, Inc. (manufacturer document mirrored by minuszerodegrees.net)
+    canonical_url: https://www.minuszerodegrees.net/manuals/Toshiba/Satellite/Toshiba%20Satellite%20110CS%20and%20110CT%20-%20Product%20Specifications.pdf
+    publication_or_revision_date: "1996-08-05"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from a
+      publicly accessible manufacturer-authored specification mirrored by
+      minuszerodegrees.net; the PDF is not redistributed. The literal footer
+      `110.DOC Rev. 17 08/05/96 JP/nmm` is interpreted as August 5, 1996 under
+      Toshiba America Information Systems' U.S. month/day/year context. Use is
+      limited to exact 110CS PA1224U-S2A architecture and listed components; the
+      separate undated maintenance manual is not imported under this date.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"

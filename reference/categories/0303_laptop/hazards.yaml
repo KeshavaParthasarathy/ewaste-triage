@@ -1,0 +1,31 @@
+hazards:
+  - hazard_id: laptop_damaged_lithium_ion_battery
+    component_id: battery
+    scope:
+      kind: category
+      id: 0303_laptop
+    applicability: >-
+      For a laptop, a user report of overheating, swelling, or battery damage
+      activates precautionary guidance. Lithium-ion-specific guidance applies if
+      the installed battery is lithium-ion; a battery-bearing identity and the
+      reported issue do not establish chemistry. Item-specific manufacturer
+      information or a compliant battery marking may help identify chemistry.
+    trigger_observation_keys:
+      - observations.issue_flags.overheating
+      - observations.issue_flags.swelling_or_battery_damage
+    severity: urgent
+    immediate_actions:
+      - As a precaution after the reported issue, stop using and charging the laptop.
+      - Keep the battery or device away from flammable materials without crushing, bending, or puncturing it.
+    follow_up_actions:
+      - Contact the manufacturer or a qualified battery specialist for handling instructions.
+      - If the installed battery is lithium-ion, arrange prompt transfer to an appropriate battery or household-hazardous-waste collection point.
+    handling_guidance:
+      - If the installed battery is lithium-ion, do not place it in household trash or a municipal recycling bin.
+      - If the installed battery is lithium-ion and can be safely removed without forcing or opening a non-serviceable enclosure, prevent terminal contact; otherwise keep the device intact and follow manufacturer or receiving-program instructions.
+    disposal_guidance:
+      - If the installed battery is lithium-ion, use a certified electronics recycler, battery recycler, or household-hazardous-waste program that accepts lithium-ion batteries.
+      - If the installed battery is lithium-ion and is damaged, follow the receiving program's instructions for damaged batteries before transport.
+    evidence_level: C
+    source_ids:
+      - laptop_epa_used_li_ion_2026

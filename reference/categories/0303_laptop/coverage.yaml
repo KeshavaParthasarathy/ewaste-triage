@@ -1,0 +1,129 @@
+unknowns:
+  - category_id: 0303_laptop
+    claim_kind: component_association
+    claim_id: laptop_legacy_serviceable_display_backlight_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The dated Apple Service Source documents establish LCD-panel and inverter
+      connections for the reviewed PowerBook revisions but do not establish mercury
+      or an exact fluorescent or CCFL lamp construction.
+    evidence_request: >-
+      Obtain an independently dated exact-revision construction record before assigning lamp type or substance content.
+  - category_id: 0303_laptop
+    claim_kind: component_association
+    claim_id: laptop_standard_battery_chemistry_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Category and historical factory-option evidence does not establish the
+      chemistry currently installed in every reviewed laptop scope, including a
+      replacement pack in a surviving legacy item.
+    evidence_request: >-
+      Obtain exact current-item manufacturer documentation or a compliant, legible installed-battery marking before assigning chemistry.
+  - category_id: 0303_laptop
+    claim_kind: component_association
+    claim_id: laptop_standard_display_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed product and service records do not establish representative material
+      composition for laptop display assemblies or a particular item's panel layers.
+    evidence_request: >-
+      Obtain scope-qualified material declarations or a qualified teardown before assigning display materials.
+  - category_id: 0303_laptop
+    claim_kind: component_association
+    claim_id: laptop_standard_enclosure_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Materials named for isolated models or visible surfaces do not establish
+      enclosure composition across the reviewed laptop population or a current item.
+    evidence_request: >-
+      Obtain identity-specific material declarations or qualified teardown evidence; do not infer material from appearance.
+  - category_id: 0303_laptop
+    claim_kind: component_association
+    claim_id: laptop_standard_logic_board_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed identity and service records do not establish representative logic-
+      board material composition or substance content for a current laptop item.
+    evidence_request: >-
+      Obtain a scope-qualified bill of materials, environmental declaration, or qualified teardown before assigning board materials.
+  - category_id: 0303_laptop
+    claim_kind: component_association
+    claim_id: laptop_standard_memory_serviceability_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      System-memory presence does not establish removability or serviceability
+      across reviewed laptop identities; only a correctly scoped overlay may replace this Unknown.
+    evidence_request: >-
+      Obtain exact-model service documentation before treating memory as socketed, removable, or replaceable.
+  - category_id: 0303_laptop
+    claim_kind: component_association
+    claim_id: laptop_standard_storage_serviceability_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Internal-storage presence does not establish removability or serviceability
+      across reviewed laptop identities; only a correctly scoped overlay may replace this Unknown.
+    evidence_request: >-
+      Obtain exact-model service documentation before treating storage as removable, replaceable, or separately recoverable.
+  - category_id: 0303_laptop
+    claim_kind: hazard
+    claim_id: laptop_legacy_backlight_breakage
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The dated Apple legacy service sources show display and inverter connections
+      but do not prove fluorescent or CCFL lamp construction or mercury content. The
+      exact Toshiba maintenance manual describes a fluorescent lamp but is undated,
+      and it does not establish mercury. Age, an inverter, or RoHS status cannot fill the gap.
+    evidence_request: >-
+      Obtain independently dated exact-revision construction evidence plus qualified
+      safety guidance before authoring any lamp-breakage or mercury-specific hazard.
+  - category_id: 0303_laptop
+    claim_kind: identity
+    claim_id: acer_aspire_5_a515_58m
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Acer's dated January 2023 Aspire release names A515-58P rather than the intended
+      A515-58M. Its current generic press-kit redirect does not prove that the separately
+      located A515-58M specification sheet accompanied that dated release, so the exact
+      intended identity cannot inherit the article or URL-path date.
+    evidence_request: >-
+      Obtain a fully dated Acer-authored exact A515-58M specification, or a publisher-
+      verifiable dated release that explicitly links the exact accompanying model sheet
+      and establishes battery-bearing laptop architecture.
+  - category_id: 0303_laptop
+    claim_kind: specific_lifecycle
+    claim_id: framework_laptop_13_battery_capacity_threshold
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Framework's dated 2023 announcement states an 80-percent-after-1000-cycles
+      endpoint for its then-new optional 61Wh battery, but the reviewed identity also
+      existed with a 55Wh battery and the current configuration matrix lacks a
+      trustworthy full publication or revision day. The optional 61Wh configuration
+      therefore cannot be independently selected through the present identity contract.
+    evidence_request: >-
+      Obtain dated Framework evidence that maps the 61 Wh battery endpoint to an
+      independently selectable exact AMD Ryzen 7040 configuration, or add a separately
+      authorized identity/variant contract that can express that configuration without generalizing.
+  - category_id: 0303_laptop
+    claim_kind: specific_lifecycle
+    claim_id: lenovo_thinkpad_t14_battery_capacity_threshold
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The dated Intel and AMD PSREF documents establish 39.3 Wh and 52.5 Wh battery
+      options and rapid charge to 80 percent in one hour, but rapid charge is not a
+      retained-capacity endpoint and neither source states a capacity threshold after
+      a defined number of full charge cycles.
+    evidence_request: >-
+      Obtain dated Lenovo documentation for an exact T14 Gen 4 battery option that
+      states both the full-cycle count and retained-capacity threshold, without
+      converting rapid-charge duration, runtime, warranty, or battery-care prose into that endpoint.

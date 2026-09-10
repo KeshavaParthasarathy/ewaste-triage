@@ -1,0 +1,32 @@
+lifecycles:
+  - record_id: apple_macbook_air_m2_battery_capacity_threshold
+    scope:
+      kind: model
+      id: apple_macbook_air_m2_2022
+    subject: battery
+    endpoint: capacity_threshold
+    endpoint_kind: capacity_threshold
+    metric: full_charge_cycles
+    unit: cycles
+    lower_bound: 1000.0
+    upper_bound: 1000.0
+    endpoint_qualification: >-
+      Apple states that the battery is designed to retain up to 80% of its
+      original capacity at its maximum cycle count, and lists 1000 as that
+      maximum cycle count for MacBook Air (M2, 2022). Equal bounds encode the
+      documented designed point endpoint, not a warranty promise or whole-device life.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: 2022
+    model_year_to: 2022
+    required_variant_ids: []
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: A
+    assumptions:
+      - The cycle table's exact MacBook Air (M2, 2022) row is the selected model scope.
+      - A full charge cycle may accumulate across partial discharges as Apple defines it.
+      - Actual retained capacity varies with use and age; the statement is a designed endpoint, not a warranty or guaranteed minimum.
+      - The record concerns battery capacity at cycle count and does not estimate physical device service life.
+    source_ids:
+      - laptop_apple_macbook_air_cycle_count_2026

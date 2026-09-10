@@ -1,0 +1,474 @@
+components:
+  - component_id: adapter
+    display_name: External power adapter
+  - component_id: battery
+    display_name: Rechargeable battery assembly
+  - component_id: battery_chemistry
+    display_name: Installed battery chemistry
+  - component_id: cooling_assembly
+    display_name: Cooling assembly
+  - component_id: display_assembly
+    display_name: Display assembly
+  - component_id: display_backlight
+    display_name: Display backlight construction
+  - component_id: display_material
+    display_name: Display material composition
+  - component_id: enclosure
+    display_name: Enclosure
+  - component_id: enclosure_material
+    display_name: Enclosure material composition
+  - component_id: input_assembly
+    display_name: Keyboard, pointing, and input assembly
+  - component_id: logic_board
+    display_name: Logic board or system board
+  - component_id: logic_board_material
+    display_name: Logic-board material composition
+  - component_id: memory
+    display_name: System memory
+  - component_id: memory_serviceability
+    display_name: System-memory serviceability
+  - component_id: ports
+    display_name: External ports and connectors
+  - component_id: speakers
+    display_name: Speaker assembly
+  - component_id: storage
+    display_name: Internal storage
+  - component_id: storage_serviceability
+    display_name: Internal-storage serviceability
+
+templates:
+  - template_id: laptop_legacy_serviceable
+    template_kind: legacy_overlay
+    scope:
+      kind: family
+      id: apple_powerbook_g4_12_inch
+    application_order: 0
+  - template_id: laptop_modern_integrated
+    template_kind: modern_overlay
+    scope:
+      kind: model
+      id: apple_macbook_air_m2_2022
+    application_order: 0
+  - template_id: laptop_standard
+    template_kind: standard
+    scope:
+      kind: category
+      id: 0303_laptop
+    application_order: 0
+
+associations:
+  - association_id: laptop_legacy_serviceable_display_backlight_unknown
+    template_id: laptop_legacy_serviceable
+    component_id: display_backlight
+    position: 0
+    status: unknown
+    applicability: >-
+      The dated Apple Service Source documents establish LCD-panel and inverter
+      connections for the reviewed PowerBook revisions but do not establish mercury
+      or an exact fluorescent or CCFL lamp construction.
+    notes:
+      - Obtain an independently dated exact-revision construction record before assigning lamp type or substance content.
+    evidence_level: null
+    source_ids: []
+  - association_id: laptop_legacy_serviceable_memory
+    template_id: laptop_legacy_serviceable
+    component_id: memory
+    position: 1
+    status: legacy_specific
+    applicability: >-
+      Applies to a removable expansion memory card if installed in the reviewed
+      original, DVI, 1.33 GHz, or 1.5 GHz PowerBook G4 12-inch revision; onboard
+      memory is distinct and this does not assert that an expansion card is present.
+    notes:
+      - Service documentation shows the conditional expansion-card procedure, not user authorization or all-memory removability.
+    evidence_level: B
+    source_ids:
+      - laptop_apple_powerbook_g4_12_133_service_2005
+      - laptop_apple_powerbook_g4_12_15_service_2007
+      - laptop_apple_powerbook_g4_12_original_service_2005
+  - association_id: laptop_legacy_serviceable_memory_serviceability
+    template_id: laptop_legacy_serviceable
+    component_id: memory_serviceability
+    position: 2
+    status: legacy_specific
+    applicability: >-
+      The reviewed Apple Service Source documents establish access to and replacement
+      of the optional expansion memory card if installed across the source-covered
+      PowerBook G4 12-inch revisions; onboard RAM remains distinct.
+    notes:
+      - Service documentation does not establish that an expansion card is installed or authorize a user to perform the procedure.
+    evidence_level: B
+    source_ids:
+      - laptop_apple_powerbook_g4_12_133_service_2005
+      - laptop_apple_powerbook_g4_12_15_service_2007
+      - laptop_apple_powerbook_g4_12_original_service_2005
+  - association_id: laptop_legacy_serviceable_storage
+    template_id: laptop_legacy_serviceable
+    component_id: storage
+    position: 3
+    status: legacy_specific
+    applicability: >-
+      The reviewed Apple Service Source documents provide hard-drive assembly
+      removal and replacement procedures for the original, DVI, 1.33 GHz, and
+      1.5 GHz PowerBook G4 12-inch revisions.
+    notes:
+      - This is construction and service information; it does not establish the current drive, its condition, or permission for disassembly.
+    evidence_level: B
+    source_ids:
+      - laptop_apple_powerbook_g4_12_133_service_2005
+      - laptop_apple_powerbook_g4_12_15_service_2007
+      - laptop_apple_powerbook_g4_12_original_service_2005
+  - association_id: laptop_legacy_serviceable_storage_serviceability
+    template_id: laptop_legacy_serviceable
+    component_id: storage_serviceability
+    position: 4
+    status: legacy_specific
+    applicability: >-
+      The reviewed Apple Service Source documents establish hard-drive assembly
+      removal and replacement procedures across the source-covered PowerBook G4
+      12-inch revisions.
+    notes:
+      - Service documentation does not establish the current drive or its condition and does not authorize disassembly.
+    evidence_level: B
+    source_ids:
+      - laptop_apple_powerbook_g4_12_133_service_2005
+      - laptop_apple_powerbook_g4_12_15_service_2007
+      - laptop_apple_powerbook_g4_12_original_service_2005
+  - association_id: laptop_modern_integrated_memory
+    template_id: laptop_modern_integrated
+    component_id: memory
+    position: 0
+    status: exact_model_confirmed
+    applicability: >-
+      Applies only to Apple MacBook Air (M2, 2022), whose exact-model parts article
+      lists logic-board assemblies by unified-memory capacity.
+    notes:
+      - The integrated parts mapping does not establish material composition or authorize board-level repair.
+    evidence_level: A
+    source_ids:
+      - laptop_apple_macbook_air_parts_2023
+  - association_id: laptop_modern_integrated_memory_serviceability
+    template_id: laptop_modern_integrated
+    component_id: memory_serviceability
+    position: 1
+    status: exact_model_confirmed
+    applicability: >-
+      Applies only to Apple MacBook Air (M2, 2022): the exact-model parts article
+      identifies memory capacity as part of the logic-board assembly rather than as
+      a separately listed memory service part.
+    notes:
+      - This parts relationship does not authorize board-level repair or establish data recoverability.
+    evidence_level: A
+    source_ids:
+      - laptop_apple_macbook_air_parts_2023
+  - association_id: laptop_modern_integrated_storage
+    template_id: laptop_modern_integrated
+    component_id: storage
+    position: 2
+    status: exact_model_confirmed
+    applicability: >-
+      Applies only to Apple MacBook Air (M2, 2022), whose exact-model parts article
+      lists logic-board assemblies by solid-state storage capacity.
+    notes:
+      - This exact parts mapping does not assert recoverability, service authorization, or current condition.
+    evidence_level: A
+    source_ids:
+      - laptop_apple_macbook_air_parts_2023
+  - association_id: laptop_modern_integrated_storage_serviceability
+    template_id: laptop_modern_integrated
+    component_id: storage_serviceability
+    position: 3
+    status: exact_model_confirmed
+    applicability: >-
+      Applies only to Apple MacBook Air (M2, 2022): the exact-model parts article
+      identifies storage capacity as part of the logic-board assembly rather than as
+      a separately listed storage service part.
+    notes:
+      - This parts relationship does not establish data recoverability, service authorization, or current condition.
+    evidence_level: A
+    source_ids:
+      - laptop_apple_macbook_air_parts_2023
+  - association_id: laptop_standard_adapter
+    template_id: laptop_standard
+    component_id: adapter
+    position: 0
+    status: commonly_associated
+    applicability: >-
+      External mains power adapters are documented across reviewed modern and
+      legacy battery-bearing laptop identities; connector, output, and current
+      installed adapter remain identity-specific.
+    notes:
+      - Never infer electrical compatibility from connector appearance alone.
+    evidence_level: C
+    source_ids:
+      - laptop_asus_zenbook_14_ux3402_launch_2022
+      - laptop_dell_xps_13_9315_specs_2025
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+      - laptop_lenovo_t14_gen4_amd_psref_2024
+      - laptop_toshiba_110cs_specification_1996
+  - association_id: laptop_standard_battery
+    template_id: laptop_standard
+    component_id: battery
+    position: 1
+    status: commonly_associated
+    applicability: >-
+      A rechargeable battery assembly is part of each reviewed laptop subtype's
+      documented architecture, but current presence, condition, capacity, and
+      chemistry remain item- or identity-specific.
+    notes:
+      - Architecture evidence does not diagnose a battery or prove the chemistry installed in a particular item.
+    evidence_level: C
+    source_ids:
+      - laptop_acer_nitro_5_spin_2017
+      - laptop_acer_nitro_gaming_notebooks_2019
+      - laptop_apple_macbook_air_launch_2022
+      - laptop_apple_powerbook_g4_12_original_service_2005
+      - laptop_asus_zenbook_14_ux3402_launch_2022
+      - laptop_dell_xps_13_9315_specs_2025
+      - laptop_framework_amd_7040_launch_2023
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+      - laptop_lenovo_t14_gen4_amd_psref_2024
+      - laptop_microsoft_surface_laptop_5_launch_2022
+      - laptop_toshiba_110cs_specification_1996
+  - association_id: laptop_standard_battery_chemistry_unknown
+    template_id: laptop_standard
+    component_id: battery_chemistry
+    position: 2
+    status: unknown
+    applicability: >-
+      Category and historical factory-option evidence does not establish the
+      chemistry currently installed in every reviewed laptop scope, including a
+      replacement pack in a surviving legacy item.
+    notes:
+      - Obtain exact current-item manufacturer documentation or a compliant, legible installed-battery marking before assigning chemistry.
+    evidence_level: null
+    source_ids: []
+  - association_id: laptop_standard_cooling_assembly
+    template_id: laptop_standard
+    component_id: cooling_assembly
+    position: 3
+    status: commonly_associated
+    applicability: >-
+      Reviewed service and specification records show thermal-management or cooling
+      assemblies in representative laptop architectures; fanless and fan-equipped
+      implementations remain identity-specific.
+    notes:
+      - This category association does not infer a fan, heat pipe, thermal material, or diagnosed fault for a particular item.
+    evidence_level: C
+    source_ids:
+      - laptop_apple_powerbook_g4_12_133_service_2005
+      - laptop_dell_xps_13_9315_specs_2025
+      - laptop_framework_amd_7040_launch_2023
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+  - association_id: laptop_standard_display_assembly
+    template_id: laptop_standard
+    component_id: display_assembly
+    position: 4
+    status: commonly_associated
+    applicability: >-
+      An integrated display assembly is documented across the reviewed notebook
+      identities; panel technology, touch support, backlight, and current condition
+      remain scope-specific.
+    notes:
+      - Display terminology does not establish hidden lamp chemistry or material composition.
+    evidence_level: C
+    source_ids:
+      - laptop_apple_macbook_air_parts_2023
+      - laptop_apple_powerbook_g4_12_133_service_2005
+      - laptop_asus_zenbook_14_ux3402_launch_2022
+      - laptop_dell_xps_13_9315_specs_2025
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+      - laptop_lenovo_t14_gen4_intel_psref_2025
+      - laptop_microsoft_surface_laptop_5_launch_2022
+      - laptop_toshiba_110cs_specification_1996
+  - association_id: laptop_standard_display_material_unknown
+    template_id: laptop_standard
+    component_id: display_material
+    position: 5
+    status: unknown
+    applicability: >-
+      Reviewed product and service records do not establish representative material
+      composition for laptop display assemblies or a particular item's panel layers.
+    notes:
+      - Obtain scope-qualified material declarations or a qualified teardown before assigning display materials.
+    evidence_level: null
+    source_ids: []
+  - association_id: laptop_standard_enclosure
+    template_id: laptop_standard
+    component_id: enclosure
+    position: 6
+    status: commonly_associated
+    applicability: >-
+      The enclosure is the external housing concept across reviewed laptop products;
+      shell construction, finish, and current damage remain identity-specific.
+    notes:
+      - No material or condition is inferred from product appearance.
+    evidence_level: C
+    source_ids:
+      - laptop_apple_macbook_air_launch_2022
+      - laptop_asus_zenbook_14_ux3402_launch_2022
+      - laptop_framework_amd_7040_launch_2023
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+      - laptop_toshiba_110cs_specification_1996
+  - association_id: laptop_standard_enclosure_material_unknown
+    template_id: laptop_standard
+    component_id: enclosure_material
+    position: 7
+    status: unknown
+    applicability: >-
+      Materials named for isolated models or visible surfaces do not establish
+      enclosure composition across the reviewed laptop population or a current item.
+    notes:
+      - Obtain identity-specific material declarations or qualified teardown evidence; do not infer material from appearance.
+    evidence_level: null
+    source_ids: []
+  - association_id: laptop_standard_input_assembly
+    template_id: laptop_standard
+    component_id: input_assembly
+    position: 8
+    status: commonly_associated
+    applicability: >-
+      Integrated keyboard and pointing-device assemblies are documented across
+      reviewed notebook identities; exact keyboard, touch, and sensor configuration
+      remain identity-specific.
+    notes:
+      - This association does not diagnose a key, touchpad, touchscreen, or cable fault.
+    evidence_level: C
+    source_ids:
+      - laptop_asus_zenbook_14_ux3402_launch_2022
+      - laptop_dell_xps_13_9315_specs_2025
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+      - laptop_lenovo_t14_gen4_intel_psref_2025
+      - laptop_microsoft_surface_laptop_5_launch_2022
+      - laptop_toshiba_110cs_specification_1996
+  - association_id: laptop_standard_logic_board
+    template_id: laptop_standard
+    component_id: logic_board
+    position: 9
+    status: commonly_associated
+    applicability: >-
+      A logic board or system board is documented in representative reviewed laptop
+      service and modular-architecture records; configuration and current condition
+      remain identity-specific.
+    notes:
+      - Board presence does not establish material composition, repairability, or a diagnosed board fault.
+    evidence_level: C
+    source_ids:
+      - laptop_apple_macbook_air_parts_2023
+      - laptop_apple_powerbook_g4_12_133_service_2005
+      - laptop_framework_amd_7040_launch_2023
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+  - association_id: laptop_standard_logic_board_material_unknown
+    template_id: laptop_standard
+    component_id: logic_board_material
+    position: 10
+    status: unknown
+    applicability: >-
+      Reviewed identity and service records do not establish representative logic-
+      board material composition or substance content for a current laptop item.
+    notes:
+      - Obtain a scope-qualified bill of materials, environmental declaration, or qualified teardown before assigning board materials.
+    evidence_level: null
+    source_ids: []
+  - association_id: laptop_standard_memory
+    template_id: laptop_standard
+    component_id: memory
+    position: 11
+    status: commonly_associated
+    applicability: >-
+      System memory is documented across reviewed laptop architectures; capacity,
+      packaging, installation, and current condition remain identity-specific until
+      a more specific overlay applies.
+    notes:
+      - Presence does not imply socketed, removable, upgradeable, or separately recoverable memory.
+    evidence_level: C
+    source_ids:
+      - laptop_apple_macbook_air_parts_2023
+      - laptop_apple_powerbook_g4_12_133_service_2005
+      - laptop_asus_zenbook_14_ux3402_launch_2022
+      - laptop_dell_xps_13_9315_specs_2025
+      - laptop_framework_amd_7040_launch_2023
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+      - laptop_lenovo_t14_gen4_amd_psref_2024
+      - laptop_toshiba_110cs_specification_1996
+  - association_id: laptop_standard_memory_serviceability_unknown
+    template_id: laptop_standard
+    component_id: memory_serviceability
+    position: 12
+    status: unknown
+    applicability: >-
+      System-memory presence does not establish removability or serviceability
+      across reviewed laptop identities; only a correctly scoped overlay may replace this Unknown.
+    notes:
+      - Obtain exact-model service documentation before treating memory as socketed, removable, or replaceable.
+    evidence_level: null
+    source_ids: []
+  - association_id: laptop_standard_ports
+    template_id: laptop_standard
+    component_id: ports
+    position: 13
+    status: commonly_associated
+    applicability: >-
+      External power, display, data, or audio connectors are documented across
+      reviewed notebooks; the exact port set and modularity remain identity-specific.
+    notes:
+      - Connector appearance alone does not establish protocol, electrical compatibility, or internal repairability.
+    evidence_level: C
+    source_ids:
+      - laptop_asus_zenbook_14_ux3402_launch_2022
+      - laptop_dell_xps_13_9315_specs_2025
+      - laptop_framework_amd_7040_launch_2023
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+      - laptop_lenovo_t14_gen4_intel_psref_2025
+      - laptop_microsoft_surface_laptop_5_launch_2022
+      - laptop_toshiba_110cs_specification_1996
+  - association_id: laptop_standard_speakers
+    template_id: laptop_standard
+    component_id: speakers
+    position: 14
+    status: commonly_associated
+    applicability: >-
+      Integrated speakers are documented in representative reviewed notebook
+      identities; count, placement, and current condition remain identity-specific.
+    notes:
+      - Audio capability does not diagnose speaker presence or function in a particular incomplete item.
+    evidence_level: C
+    source_ids:
+      - laptop_apple_macbook_air_parts_2023
+      - laptop_asus_zenbook_14_ux3402_launch_2022
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+      - laptop_microsoft_surface_laptop_5_launch_2022
+      - laptop_toshiba_110cs_specification_1996
+  - association_id: laptop_standard_storage
+    template_id: laptop_standard
+    component_id: storage
+    position: 15
+    status: commonly_associated
+    applicability: >-
+      Internal storage is documented across reviewed laptop architectures; medium,
+      capacity, installation, data state, and current condition remain identity-specific
+      until a more specific overlay applies.
+    notes:
+      - Storage presence does not imply removability, recoverability, or authorization to access data.
+    evidence_level: C
+    source_ids:
+      - laptop_apple_macbook_air_parts_2023
+      - laptop_apple_powerbook_g4_12_133_service_2005
+      - laptop_asus_zenbook_14_ux3402_launch_2022
+      - laptop_dell_xps_13_9315_specs_2025
+      - laptop_framework_amd_7040_launch_2023
+      - laptop_hp_elitebook_840_g10_quickspecs_2025
+      - laptop_lenovo_t14_gen4_amd_psref_2024
+      - laptop_toshiba_110cs_specification_1996
+  - association_id: laptop_standard_storage_serviceability_unknown
+    template_id: laptop_standard
+    component_id: storage_serviceability
+    position: 16
+    status: unknown
+    applicability: >-
+      Internal-storage presence does not establish removability or serviceability
+      across reviewed laptop identities; only a correctly scoped overlay may replace this Unknown.
+    notes:
+      - Obtain exact-model service documentation before treating storage as removable, replaceable, or separately recoverable.
+    evidence_level: null
+    source_ids: []
