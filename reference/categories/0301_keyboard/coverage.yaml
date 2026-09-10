@@ -1,0 +1,214 @@
+unknowns:
+  - category_id: 0301_keyboard
+    claim_kind: component_association
+    claim_id: keyboard_modern_wireless_battery_chemistry_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Rechargeability and wireless operation do not establish lithium-ion or any
+      other hidden battery chemistry across the reviewed subtype.
+    evidence_request: >-
+      Obtain exact-model manufacturer specifications or compliant, legible battery
+      markings before assigning chemistry.
+  - category_id: 0301_keyboard
+    claim_kind: component_association
+    claim_id: keyboard_standard_buckling_spring_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Generic Model M mechanism evidence does not establish material composition
+      for exact part 1391401 or for the category population.
+    evidence_request: >-
+      Obtain an exact-part service record, bill of materials, environmental
+      declaration, or qualified teardown before assigning materials.
+  - category_id: 0301_keyboard
+    claim_kind: component_association
+    claim_id: keyboard_standard_controller_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The reviewed product records do not expose controller or matrix material
+      composition.
+    evidence_request: >-
+      Obtain scope-qualified bills of materials, environmental declarations, or
+      qualified teardown evidence.
+  - category_id: 0301_keyboard
+    claim_kind: component_association
+    claim_id: keyboard_standard_enclosure_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The reviewed public product records do not establish enclosure material
+      composition across the category.
+    evidence_request: >-
+      Obtain representative material declarations or qualified teardown evidence;
+      do not infer material from appearance.
+  - category_id: 0301_keyboard
+    claim_kind: component_association
+    claim_id: keyboard_standard_keycap_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Razer documents Doubleshot ABS keycaps for one exact identity, which does not
+      establish keycap composition for other identities or the category population.
+    evidence_request: >-
+      Obtain identity-specific or representative population evidence before
+      assigning keycap materials beyond the exact supported model.
+  - category_id: 0301_keyboard
+    claim_kind: component_association
+    claim_id: keyboard_standard_matrix_controller_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed public records do not establish a category-wide matrix/controller
+      assembly despite that hidden function being relevant to keyboard triage.
+    evidence_request: >-
+      Obtain representative service documentation or qualified teardown evidence
+      for key-matrix and controller assemblies.
+  - category_id: 0301_keyboard
+    claim_kind: component_association
+    claim_id: keyboard_standard_switch_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Scissor, mechanical, and buckling-spring mechanism labels do not establish
+      the material composition of switches, membranes, springs, contacts, or plates.
+    evidence_request: >-
+      Obtain exact bills of materials or qualified teardown evidence before
+      assigning hidden switch or membrane materials.
+  - category_id: 0301_keyboard
+    claim_kind: identity
+    claim_id: apple_extended_keyboard_ii
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The verified Apple-authored 1994 archival copy supports the Apple Extended
+      Keyboard II name and M0312 packing-list identifier, but it does not establish
+      the mechanical switch architecture required for the intended subtype.
+    evidence_request: >-
+      Obtain a fully dated Apple-authored technical or service record that names the
+      intended family and establishes its switch architecture without relying on
+      enthusiast mechanism or material claims.
+  - category_id: 0301_keyboard
+    claim_kind: identity
+    claim_id: apple_magic_keyboard_usb_c
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Apple's dated 2024 iMac release distinguishes USB-C Magic Keyboard accessories
+      with and without Touch ID and establishes charging, but it does not state the
+      keyboard is wireless. The exact support page states wireless/rechargeable
+      architecture but exposes no verified full publication or revision date.
+    evidence_request: >-
+      Obtain a fully dated Apple-authored source that establishes wireless and
+      rechargeable architecture for the intended USB-C Magic Keyboard family; a
+      bundled family scope is acceptable and standalone sale is not required.
+  - category_id: 0301_keyboard
+    claim_kind: identity
+    claim_id: dell_kb216
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Dell's dated document listing and linked exact KB216 specification establish
+      wired USB architecture and use the term plunger keys, but they do not establish
+      the membrane mechanism required by keyboard_wired_membrane.
+    evidence_request: >-
+      Obtain a fully dated exact-model manufacturer or qualified primary source that
+      explicitly establishes membrane construction; do not silently treat plunger
+      as a membrane synonym.
+  - category_id: 0301_keyboard
+    claim_kind: identity
+    claim_id: ibm_model_m_1391401
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The inspected IBM part-number table does not list exact part 1391401. Generic
+      IBM Model M material supports buckling-spring mechanism history but not this
+      part's identity, locale, connector, production dates, or power architecture.
+    evidence_request: >-
+      Obtain a fully dated authoritative IBM archival record naming part 1391401 and
+      establishing the ancestry and battery-free power architecture required by the
+      intended legacy subtype.
+  - category_id: 0301_keyboard
+    claim_kind: identity
+    claim_id: keychron_k2_v2
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Keychron's exact K2 Version 2 product page establishes mechanical, wireless,
+      wired, and rechargeable architecture but is undated. The dated firmware page
+      dates firmware releases and does not date or independently establish the
+      product architecture.
+    evidence_request: >-
+      Obtain a fully dated exact-version manufacturer record that establishes K2
+      Version 2 mechanical and rechargeable architecture without transferring a
+      firmware release date to different product-page claims.
+  - category_id: 0301_keyboard
+    claim_kind: identity
+    claim_id: logitech_k120
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Logitech's exact K120 product materials establish a USB corded keyboard but do
+      not call the mechanism membrane, and the reviewed technical page lacks a
+      verified full publication or revision date.
+    evidence_request: >-
+      Obtain a fully dated exact-model manufacturer or qualified primary source that
+      explicitly establishes the membrane mechanism and wired battery-free ancestry.
+  - category_id: 0301_keyboard
+    claim_kind: identity
+    claim_id: microsoft_wired_keyboard_600
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Microsoft's exact v1.0/model 1366 data sheet establishes USB wired architecture
+      but is undated and does not state that the key mechanism is membrane. Its
+      revision token and separate availability dates cannot become the claim date.
+    evidence_request: >-
+      Obtain a fully dated exact-model or intentionally scoped family source that
+      explicitly establishes membrane construction without converting document
+      tokens, availability, or copyright statements into publication dates.
+  - category_id: 0301_keyboard
+    claim_kind: industry_average
+    claim_id: keyboard_industry_service_life
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      No reviewed comparable-population source supplies a defensible finite interval
+      for total keyboard service life. The Brazilian household study supplies only a
+      recalled replacement/disposal mean and standard deviation, with no recoverable
+      keyboard distribution, exact count, finite quantile interval, or fitted Weibull
+      parameters.
+    evidence_request: >-
+      Obtain keyboard observations or bins from a dated population study with an
+      appropriate service-life endpoint, transparent interval method, uncertainty,
+      and reuse basis; do not construct bounds from mean plus or minus standard
+      deviation, runtime ratings, actuation ceilings, or warranties.
+  - category_id: 0301_keyboard
+    claim_kind: subtype
+    claim_id: keyboard_buckling_spring_legacy
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Dated IBM material supports the generic Model M buckling-spring mechanism but
+      does not establish wired or battery-free power architecture. A switch mechanism
+      cannot supply the mandatory subtype power field, so the dependent legacy
+      overlay is not authored.
+    evidence_request: >-
+      Obtain a fully dated manufacturer or authoritative archival source establishing
+      both buckling-spring construction and battery-free power for a properly scoped
+      legacy population, then author the keyboard_legacy_buckling_spring legacy
+      overlay without inferring materials or transferring the claim to exact part 1391401.
+  - category_id: 0301_keyboard
+    claim_kind: subtype
+    claim_id: keyboard_wired_membrane
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed exact K120 and Wired Keyboard 600 records establish wired architecture
+      but not membrane construction; Dell's exact KB216 documentation says plunger
+      keys, which is not automatically synonymous with membrane.
+    evidence_request: >-
+      Obtain fully dated manufacturer or qualified primary evidence establishing
+      both membrane construction and battery-free wired ancestry for a properly
+      scoped population before assigning the subtype or its intended identities.

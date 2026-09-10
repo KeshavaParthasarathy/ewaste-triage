@@ -1,0 +1,274 @@
+components:
+  - component_id: battery_chemistry
+    display_name: Battery chemistry
+  - component_id: buckling_spring_mechanism
+    display_name: Buckling-spring key mechanism
+  - component_id: controller_material
+    display_name: Matrix/controller material composition
+  - component_id: enclosure
+    display_name: Enclosure
+  - component_id: enclosure_material
+    display_name: Enclosure material composition
+  - component_id: keycap_material
+    display_name: Keycap material composition
+  - component_id: keycaps
+    display_name: Keycaps
+  - component_id: matrix_controller
+    display_name: Key matrix and controller assembly
+  - component_id: power_source
+    display_name: Power source
+  - component_id: replaceable_cell_compartment
+    display_name: Replaceable-cell compartment
+  - component_id: switch_material
+    display_name: Switch or membrane material composition
+  - component_id: switch_membrane_assembly
+    display_name: Switch or membrane input assembly
+  - component_id: wired_cable
+    display_name: Wired cable connection
+  - component_id: wireless_module
+    display_name: Wireless connectivity module
+
+templates:
+  - template_id: keyboard_modern_wireless
+    template_kind: modern_overlay
+    scope:
+      kind: subtype
+      id: keyboard_wireless_rechargeable
+    application_order: 0
+  - template_id: keyboard_standard
+    template_kind: standard
+    scope:
+      kind: category
+      id: 0301_keyboard
+    application_order: 0
+
+associations:
+  - association_id: keyboard_modern_wireless_power_source
+    template_id: keyboard_modern_wireless
+    component_id: power_source
+    position: 0
+    status: commonly_associated
+    applicability: >-
+      Applies to the reviewed rechargeable wireless subtype and represents an
+      internal rechargeable power source, distinct from the replaceable AAA-cell
+      architecture documented for the separate replaceable-battery subtype.
+    notes:
+      - The reviewed MX Keys S source establishes rechargeability but does not establish cell chemistry.
+    evidence_level: B
+    source_ids:
+      - logitech_mx_keys_s_specification_2023
+  - association_id: keyboard_modern_wireless_wireless_module
+    template_id: keyboard_modern_wireless
+    component_id: wireless_module
+    position: 1
+    status: commonly_associated
+    applicability: >-
+      Applies to the reviewed rechargeable wireless subtype; radio protocols and
+      receiver details remain identity-specific.
+    notes:
+      - The reviewed Y-R0073 source identifies Bluetooth and Logi Bolt connectivity.
+    evidence_level: B
+    source_ids:
+      - logitech_mx_keys_s_specification_2023
+  - association_id: keyboard_modern_wireless_battery_chemistry_unknown
+    template_id: keyboard_modern_wireless
+    component_id: battery_chemistry
+    position: 2
+    status: unknown
+    applicability: >-
+      Rechargeability and wireless operation do not establish hidden battery
+      chemistry across this subtype.
+    notes:
+      - Requires exact-model manufacturer documentation or a compliant, legible battery marking.
+    evidence_level: null
+    source_ids: []
+  - association_id: keyboard_standard_buckling_spring_mechanism
+    template_id: keyboard_standard
+    component_id: buckling_spring_mechanism
+    position: 0
+    status: conditional
+    applicability: >-
+      Generic IBM material supports a buckling-spring mechanism for the Model M
+      family as a conditional category fact. It does not establish exact part
+      1391401, installed presence in the current item, power architecture, or a
+      reviewed legacy subtype.
+    notes:
+      - No legacy overlay is authored while the required subtype power architecture remains Unknown.
+    evidence_level: C
+    source_ids:
+      - ibm_model_m_buckling_spring_2026
+  - association_id: keyboard_standard_buckling_spring_material_unknown
+    template_id: keyboard_standard
+    component_id: switch_material
+    position: 1
+    status: unknown
+    applicability: >-
+      The generic mechanism evidence does not establish spring, membrane, keycap,
+      plate, or enclosure material composition for exact part 1391401 or the
+      category population.
+    notes:
+      - Requires a qualified exact-part service record, bill of materials, or teardown.
+    evidence_level: null
+    source_ids: []
+  - association_id: keyboard_standard_enclosure
+    template_id: keyboard_standard
+    component_id: enclosure
+    position: 2
+    status: commonly_associated
+    applicability: >-
+      Applies as the external housing concept across the reviewed physical keyboard
+      products; dimensions and construction remain identity-specific.
+    notes:
+      - No enclosure material is inferred from appearance or product imagery.
+    evidence_level: C
+    source_ids:
+      - logitech_k780_technical_specifications_2025
+      - logitech_mx_keys_s_specification_2023
+      - razer_blackwidow_v4_launch_2023
+  - association_id: keyboard_standard_enclosure_material_unknown
+    template_id: keyboard_standard
+    component_id: enclosure_material
+    position: 3
+    status: unknown
+    applicability: >-
+      Reviewed public product sources do not establish enclosure material
+      composition across the category.
+    notes:
+      - Requires representative material declarations or qualified teardown evidence.
+    evidence_level: null
+    source_ids: []
+  - association_id: keyboard_standard_keycaps
+    template_id: keyboard_standard
+    component_id: keycaps
+    position: 4
+    status: commonly_associated
+    applicability: >-
+      Applies as the user-facing key surfaces of reviewed keyboard products;
+      profiles, legends, and replacement methods remain identity-specific.
+    notes:
+      - The Razer launch names Doubleshot ABS keycaps only for the exact BlackWidow V4, not the category.
+    evidence_level: C
+    source_ids:
+      - logitech_k780_technical_specifications_2025
+      - logitech_mx_keys_s_specification_2023
+      - razer_blackwidow_v4_launch_2023
+  - association_id: keyboard_standard_keycap_material_unknown
+    template_id: keyboard_standard
+    component_id: keycap_material
+    position: 5
+    status: unknown
+    applicability: >-
+      One exact model's documented keycap material does not establish keycap
+      composition for other identities or the category population.
+    notes:
+      - Requires scope-qualified identity or representative population evidence.
+    evidence_level: null
+    source_ids: []
+  - association_id: keyboard_standard_matrix_controller_unknown
+    template_id: keyboard_standard
+    component_id: matrix_controller
+    position: 6
+    status: unknown
+    applicability: >-
+      The reviewed public sources do not expose a category-wide key-matrix and
+      controller assembly claim.
+    notes:
+      - Requires qualified service documentation or teardown evidence across representative architectures.
+    evidence_level: null
+    source_ids: []
+  - association_id: keyboard_standard_controller_material_unknown
+    template_id: keyboard_standard
+    component_id: controller_material
+    position: 7
+    status: unknown
+    applicability: >-
+      Controller and matrix material composition is hidden and unsupported by the
+      reviewed public product records.
+    notes:
+      - Requires bills of materials, environmental declarations, or qualified teardown evidence.
+    evidence_level: null
+    source_ids: []
+  - association_id: keyboard_standard_power_source
+    template_id: keyboard_standard
+    component_id: power_source
+    position: 8
+    status: conditional
+    applicability: >-
+      Present for battery-bearing wireless subtypes and not asserted for a wired
+      battery-free identity; exact installed cell, charging circuit, and chemistry
+      remain identity-specific.
+    notes:
+      - MX Keys S is rechargeable; the scoped K780 family uses replaceable cells.
+    evidence_level: C
+    source_ids:
+      - logitech_k780_technical_specifications_2025
+      - logitech_mx_keys_s_specification_2023
+      - razer_blackwidow_v4_support_2026
+  - association_id: keyboard_standard_replaceable_cell_compartment
+    template_id: keyboard_standard
+    component_id: replaceable_cell_compartment
+    position: 9
+    status: conditional
+    applicability: >-
+      Applies only to the reviewed replaceable-battery subtype, where the scoped
+      K780 family documents two replaceable AAA cells; it is not projected onto
+      rechargeable or wired identities.
+    notes:
+      - Cell chemistry remains Unknown.
+    evidence_level: C
+    source_ids:
+      - logitech_k780_technical_specifications_2025
+  - association_id: keyboard_standard_switch_membrane_assembly
+    template_id: keyboard_standard
+    component_id: switch_membrane_assembly
+    position: 10
+    status: conditional
+    applicability: >-
+      Applies according to resolved identity evidence: Y-R0073 documents scissor
+      keys and BlackWidow V4 documents Gen-3 mechanical switch options. No membrane
+      mechanism is projected onto wired products whose sources do not state it.
+    notes:
+      - Switch architecture does not establish power architecture or hidden materials.
+    evidence_level: C
+    source_ids:
+      - logitech_mx_keys_s_specification_2023
+      - razer_blackwidow_v4_launch_2023
+  - association_id: keyboard_standard_switch_material_unknown
+    template_id: keyboard_standard
+    component_id: switch_material
+    position: 11
+    status: unknown
+    applicability: >-
+      Reviewed mechanism labels do not establish material composition for switches,
+      membranes, springs, contact layers, or plates across the category.
+    notes:
+      - Requires exact bills of materials or qualified teardown evidence.
+    evidence_level: null
+    source_ids: []
+  - association_id: keyboard_standard_wired_cable
+    template_id: keyboard_standard
+    component_id: wired_cable
+    position: 12
+    status: conditional
+    applicability: >-
+      Applies only when the resolved identity documentation establishes wired
+      operation; it is not projected onto wireless-only identities.
+    notes:
+      - The exact RZ03-0469 support scope establishes wired architecture.
+    evidence_level: C
+    source_ids:
+      - razer_blackwidow_v4_support_2026
+  - association_id: keyboard_standard_wireless_module
+    template_id: keyboard_standard
+    component_id: wireless_module
+    position: 13
+    status: conditional
+    applicability: >-
+      Applies only to a resolved wireless subtype; protocol, receiver, antenna, and
+      controller implementation remain identity-specific.
+    notes:
+      - Reviewed Logitech sources establish wireless examples without projecting their protocols category-wide.
+    evidence_level: C
+    source_ids:
+      - logitech_k780_technical_specifications_2025
+      - logitech_mx_keys_s_specification_2023

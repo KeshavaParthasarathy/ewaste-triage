@@ -1,0 +1,94 @@
+lifecycles:
+  - record_id: logitech_k780_cell_runtime
+    scope:
+      kind: family
+      id: logitech_k780
+    subject: device
+    endpoint: cell_runtime
+    endpoint_kind: operating_endurance
+    metric: elapsed_time
+    unit: months
+    lower_bound: 24.0
+    upper_bound: 24.0
+    endpoint_qualification: >-
+      Manufacturer rating of up to 24 months for the reviewed Y-R0061/Y-R0105
+      family using two replaceable AAA cells; equal bounds encode the qualified
+      point ceiling, not a guaranteed minimum or whole-keyboard service life.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: null
+    model_year_to: null
+    required_variant_ids:
+      - keyboard_replaceable_aaa
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: B
+    assumptions:
+      - The support scope is limited to documented models Y-R0061 and Y-R0105, not every K780-branded region or revision.
+      - Actual operating duration depends on use; the reviewed source provides a manufacturer rating rather than observed survival.
+      - The older indexed and now-dead UAE 18-month source remains unresolved and is not encoded as a lower bound.
+      - Two replaceable AAA cells are documented, but their chemistry is not inferred.
+    source_ids:
+      - logitech_k780_technical_specifications_2025
+  - record_id: logitech_mx_keys_s_charge_runtime
+    scope:
+      kind: model
+      id: logitech_mx_keys_s
+    subject: device
+    endpoint: charge_runtime
+    endpoint_kind: operating_endurance
+    metric: elapsed_time
+    unit: months
+    lower_bound: 5.0
+    upper_bound: 5.0
+    endpoint_qualification: >-
+      Manufacturer rating of up to five months on a full charge with backlight OFF
+      for Y-R0073; equal bounds encode the qualified point ceiling, not a guaranteed
+      minimum or whole-keyboard service life.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: null
+    model_year_to: null
+    required_variant_ids:
+      - keyboard_rechargeable_internal
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: A
+    assumptions:
+      - Operating duration varies with user, computing, illumination, and usage conditions.
+      - The backlight remains off for the selected five-month condition.
+      - Illumination-dependent multi-phase hour figures and a separate commerce-page ten-day headline are not combined into an interval.
+    source_ids:
+      - logitech_mx_keys_s_specification_2023
+  - record_id: razer_blackwidow_v4_switch_actuation_endurance
+    scope:
+      kind: model
+      id: razer_blackwidow_v4
+    subject: mechanical_switch
+    endpoint: switch_actuation_endurance
+    endpoint_kind: operating_endurance
+    metric: actuation_count
+    unit: keystrokes
+    lower_bound: 100000000.0
+    upper_bound: 100000000.0
+    endpoint_qualification: >-
+      Qualified same-generation component-identity inference: the exact BlackWidow
+      V4 launch identifies Green/Yellow Gen-3 switches, while the dated V4 Pro launch
+      rates that 2023 latest Green/Yellow generation up to 100,000,000 keystrokes.
+      Equal bounds encode that point ceiling, not a guaranteed minimum or whole-keyboard life.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: null
+    model_year_to: null
+    required_variant_ids: []
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: A
+    assumptions:
+      - This is an explicitly disclosed same-generation component-identity inference corroborated by the manufacturer's undated switch history.
+      - It is not a color-only mapping; earlier generations reused Green and Yellow names at different ratings.
+      - The V4 Pro keyboard is not substituted for the exact V4, and no Pro, X, or 75-percent model is an alias.
+      - The rating applies only to the documented mechanical switch, not the whole keyboard, keycaps, cable, controller, media controls, or every nonstandard control.
+    source_ids:
+      - razer_blackwidow_v4_launch_2023
+      - razer_blackwidow_v4_pro_launch_2023

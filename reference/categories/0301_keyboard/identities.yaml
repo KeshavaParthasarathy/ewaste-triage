@@ -1,0 +1,145 @@
+category:
+  category_id: 0301_keyboard
+  display_name: Computer keyboard
+
+subtypes:
+  - subtype_id: keyboard_mechanical
+    category_id: 0301_keyboard
+    display_name: Wired mechanical keyboard
+    market_state: current
+    battery_architecture: battery_free
+    evidence_level: B
+    source_ids:
+      - razer_blackwidow_v4_launch_2023
+      - razer_blackwidow_v4_support_2026
+  - subtype_id: keyboard_wireless_rechargeable
+    category_id: 0301_keyboard
+    display_name: Rechargeable wireless keyboard
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - logitech_mx_keys_s_specification_2023
+  - subtype_id: keyboard_wireless_replaceable_battery
+    category_id: 0301_keyboard
+    display_name: Replaceable-battery wireless keyboard
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - logitech_k780_technical_specifications_2025
+
+variants:
+  - variant_id: keyboard_rechargeable_internal
+    category_id: 0301_keyboard
+    subtype_id: keyboard_wireless_rechargeable
+    display_name: Internal rechargeable power architecture
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - logitech_mx_keys_s_specification_2023
+  - variant_id: keyboard_replaceable_aaa
+    category_id: 0301_keyboard
+    subtype_id: keyboard_wireless_replaceable_battery
+    display_name: Two replaceable AAA-cell architecture
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - logitech_k780_technical_specifications_2025
+  - variant_id: keyboard_wired_tethered
+    category_id: 0301_keyboard
+    subtype_id: keyboard_mechanical
+    display_name: Wired keyboard architecture
+    battery_architecture: battery_free
+    evidence_level: B
+    source_ids:
+      - razer_blackwidow_v4_support_2026
+
+identities:
+  - identity_id: logitech_k780
+    identity_kind: family
+    category_id: 0301_keyboard
+    subtype_id: keyboard_wireless_replaceable_battery
+    manufacturer_id: logitech
+    manufacturer_name: Logitech
+    family_id: logitech_k780
+    family_name: Logitech K780 Y-R0061/Y-R0105
+    model_id: null
+    model_name: null
+    display_name: Logitech K780 Y-R0061/Y-R0105 family
+    aliases:
+      - Logitech Bluetooth K780 Multi-Device Keyboard Y-R0061/Y-R0105
+    distinguishing_tokens:
+      - k780 multi device keyboard
+      - y-r0061
+      - y-r0105
+      - two replaceable aaa cells
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - keyboard_replaceable_aaa
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - logitech_k780_technical_specifications_2025
+  - identity_id: logitech_mx_keys_s
+    identity_kind: model
+    category_id: 0301_keyboard
+    subtype_id: keyboard_wireless_rechargeable
+    manufacturer_id: logitech
+    manufacturer_name: Logitech
+    family_id: logitech_mx_keys
+    family_name: Logitech MX Keys
+    model_id: logitech_mx_keys_s
+    model_name: MX Keys S Y-R0073
+    display_name: Logitech MX Keys S Y-R0073
+    aliases:
+      - Logitech MX Keys S wireless keyboard Y-R0073
+    distinguishing_tokens:
+      - mx keys s
+      - y-r0073
+      - scissor keys
+      - rechargeable wireless keyboard
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - keyboard_rechargeable_internal
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - logitech_mx_keys_s_specification_2023
+  - identity_id: razer_blackwidow_v4
+    identity_kind: model
+    category_id: 0301_keyboard
+    subtype_id: keyboard_mechanical
+    manufacturer_id: razer
+    manufacturer_name: Razer
+    family_id: razer_blackwidow
+    family_name: Razer BlackWidow
+    model_id: razer_blackwidow_v4
+    model_name: BlackWidow V4 RZ03-0469
+    display_name: Razer BlackWidow V4 RZ03-0469
+    aliases:
+      - Razer BlackWidow V4 wired mechanical keyboard
+    distinguishing_tokens:
+      - blackwidow v4
+      - rz03-0469
+      - green or yellow gen-3 mechanical switches
+    model_year_from: null
+    model_year_to: null
+    applicable_from: null
+    applicable_to: null
+    variant_ids:
+      - keyboard_wired_tethered
+    market_state: current
+    battery_architecture: battery_free
+    evidence_level: A
+    source_ids:
+      - razer_blackwidow_v4_launch_2023
+      - razer_blackwidow_v4_support_2026

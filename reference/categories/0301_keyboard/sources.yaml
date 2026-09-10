@@ -1,0 +1,95 @@
+sources:
+  - source_id: ibm_model_m_buckling_spring_2026
+    title: This interactive “keyboard museum” lets you hear 40 years of click-clack history
+    publisher: IBM Think
+    canonical_url: https://www.ibm.com/think/news/keyboard-sound-museum-ibm-model-m/jcr%3Acontent
+    publication_or_revision_date: "2026-08-07"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document, recording, image, or other media redistribution. The
+      displayed publication date is used; later page metadata is not transferred
+      to the mechanism claim.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: keyboard_health_canada_battery_safety_2024
+    title: Battery safety
+    publisher: Health Canada
+    canonical_url: https://www.canada.ca/en/health-canada/services/household-products/battery-safety.html
+    publication_or_revision_date: "2024-11-26"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible Government of
+      Canada page; no source-document redistribution. This category-qualified
+      source record is independent of records authored by sibling categories.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: logitech_k780_technical_specifications_2025
+    title: Bluetooth K780 Multi-Device Keyboard Technical Specifications
+    publisher: Logitech Support
+    canonical_url: https://support.logi.com/hc/en-gb/articles/360023302454-Bluetooth-K780-Multi-Device-Keyboard-Technical-Specifications
+    publication_or_revision_date: "2025-01-13"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to the publicly accessible official
+      support article; no source-document redistribution. The date is the exact
+      article content edited_at value from Logitech's public Help Center record.
+      The source is used only for the listed Y-R0061/Y-R0105 scope, wireless
+      connectivity, two replaceable AAA cells, and its qualified 24-month rating.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: logitech_mx_keys_s_specification_2023
+    title: Specification - MX Keys S
+    publisher: Logitech Support
+    canonical_url: https://support.logi.com/hc/en-nz/articles/13750828873623-Specification-MX-Keys-S
+    publication_or_revision_date: "2023-05-25"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to the publicly accessible official
+      support article; no source-document redistribution. The date is the exact
+      article content edited_at value from Logitech's public Help Center record.
+      The source is used for Y-R0073, scissor keys, rechargeable/wireless
+      architecture, and the five-month backlight-off rating it states.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: razer_blackwidow_v4_launch_2023
+    title: >-
+      Meet the New Keys to Victory: The Razer BlackWidow V4 and BlackWidow V4 X
+    publisher: Razer Newsroom
+    canonical_url: https://www.razer.com/newsroom/product-news/blackwidow-v4-and-blackwidow-v4-x
+    publication_or_revision_date: "2023-07-18"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document or media redistribution. This dated source supports the
+      exact BlackWidow V4 name and its Green Clicky or Yellow Gen-3 switch options;
+      it does not supply the 100-million rating.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: razer_blackwidow_v4_pro_launch_2023
+    title: Experience ultimate control and immersion with the new Razer BlackWidow V4 Pro
+    publisher: Razer Newsroom
+    canonical_url: https://www.razer.com/newsroom/product-news/experience-ultimate-control-and-immersion-with-the-new-razer-blackwidow-v4-pro
+    publication_or_revision_date: "2023-02-16"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible official page;
+      no source-document or media redistribution. This dated source supports only
+      the 2023 latest-generation Green Clicky/Yellow Linear switch rating leg; the
+      V4 Pro keyboard is not substituted for the exact BlackWidow V4 identity.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: razer_blackwidow_v4_support_2026
+    title: >-
+      Razer BlackWidow V4 | RZ03-0469 Support & FAQs
+    publisher: Razer Support
+    canonical_url: https://mysupport.razer.com/app/answers/detail/a_id/13219
+    publication_or_revision_date: "2026-08-29"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to the publicly accessible exact official
+      support article; no source-document or media redistribution. The displayed
+      Updated date belongs to this support article. It supports RZ03-0469 and wired
+      mechanical architecture only, not the 100-million switch rating.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
