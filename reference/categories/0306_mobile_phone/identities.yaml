@@ -234,7 +234,7 @@ identities:
     distinguishing_tokens:
       - google pixel 8
       - tensor g3
-      - 6.2 inch actua display
+      - 6.2 inch display
     model_year_from: 2023
     model_year_to: 2023
     applicable_from: null
@@ -317,8 +317,6 @@ identities:
       - New Nokia 3310 (2017)
     distinguishing_tokens:
       - nokia 3310 2017 rebirth
-      - series 30 plus
-      - 2.4 inch colour screen
     model_year_from: 2017
     model_year_to: 2017
     applicable_from: null
