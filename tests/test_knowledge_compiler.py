@@ -5394,6 +5394,289 @@ def test_fix2_rollback_never_restores_substituted_backup(
     assert str(foreign[0]) in str(error.value)
 
 
+def test_fix3_native_public_backup_source_swap_never_restores_foreign_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    compile_knowledge_bundle(source, destination)
+    old = _snapshot_tree(destination)
+    new_hash = _mutate_release_content(source)
+    source_before = _snapshot_tree(source)
+    displaced = tmp_path / "genuine-old-bundle"
+    attacked = False
+
+    def attack(src: Path, dst: Path) -> None:
+        nonlocal attacked
+        if src.suffix == ".stage" and dst == destination:
+            raise OSError("original promotion failure")
+        # Actual libc seam: public backup -> destination on the old code,
+        # public backup -> private holder on the corrected restoration path.
+        if src.parent == tmp_path and src.suffix == ".backup" and not attacked:
+            attacked = True
+            src.rename(displaced)
+            src.mkdir()
+            (src / "foreign-marker").write_text("foreign")
+
+    _intercept_promotion_move(monkeypatch, attack)
+    with pytest.raises(KnowledgeCompilationError) as error:
+        compile_knowledge_bundle(source, destination)
+    assert attacked
+    assert not destination.exists(), "rollback installed a foreign public backup"
+    assert _snapshot_tree(displaced) == old
+    assert _snapshot_tree(source) == source_before
+    foreign = list(tmp_path.rglob("foreign-marker"))
+    assert len(foreign) == 1
+    assert foreign[0].read_text() == "foreign"
+    stages = list(tmp_path.glob(".bundle-*.stage"))
+    assert len(stages) == 1
+    assert _metadata(stages[0] / "knowledge.sqlite")["content_sha256"] == new_hash
+    message = str(error.value)
+    assert "original promotion failure" in message
+    assert "identity" in message
+    for path in (displaced, foreign[0].parent, stages[0]):
+        assert str(path) in message
+
+
+@pytest.mark.parametrize("appears", ["public-backup", "destination", "both"])
+def test_fix3_private_restore_does_not_overwrite_reappearing_public_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, appears: str
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    compile_knowledge_bundle(source, destination)
+    old = _snapshot_tree(destination)
+    new_hash = _mutate_release_content(source)
+    foreign: list[Path] = []
+
+    def attack(src: Path, dst: Path) -> None:
+        if src.suffix == ".stage" and dst == destination:
+            raise OSError("original promotion failure")
+        if src.parent.suffix == ".restore" and dst == destination and not foreign:
+            paths = ([tmp_path / src.name, destination] if appears == "both" else
+                     [tmp_path / src.name if appears == "public-backup" else destination])
+            for path in paths:
+                path.mkdir()
+                (path / "foreign-marker").write_text("foreign")
+                foreign.append(path)
+
+    _intercept_promotion_move(monkeypatch, attack)
+    with pytest.raises(KnowledgeCompilationError) as error:
+        compile_knowledge_bundle(source, destination)
+    assert len(foreign) == (2 if appears == "both" else 1)
+    for path in foreign:
+        assert (path / "foreign-marker").read_text() == "foreign"
+        assert str(path) in str(error.value)
+    assert "original promotion failure" in str(error.value)
+    assert str(foreign[0]) in str(error.value)
+    holders = list(tmp_path.glob(".bundle-*.restore"))
+    assert len(holders) == (1 if appears == "both" else 0)
+    if appears == "public-backup":
+        assert _snapshot_tree(destination) == old
+        assert not list(tmp_path.glob(".bundle-*.stage"))
+    else:
+        backup = next((holders[0] if holders else tmp_path).glob(".bundle-*.backup"))
+        assert _snapshot_tree(backup) == old
+        stage = next(tmp_path.glob(".bundle-*.stage"))
+        assert _metadata(stage / "knowledge.sqlite")["content_sha256"] == new_hash
+        assert str(backup) in str(error.value)
+        assert str(stage) in str(error.value)
+
+
+@pytest.mark.parametrize("phase", [
+    "mkdir", "stat", "open", "fstat", "mode-fstat", "fstat-close", "mode", "holder-fsync",
+    "parent-before-detach", "parent-after-detach", "detach-native", "restore-native",
+    "retire-rmdir", "retire-parent-fsync", "close", "report-probe",
+    "successful-rollback",
+])
+def test_fix3_restoration_holder_failures_preserve_bundles_and_close_descriptors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    old_hash = compile_knowledge_bundle(source, destination).content_sha256
+    new_hash = _mutate_release_content(source)
+    source_before = _snapshot_tree(source)
+    real_open, real_close, real_fstat = os.open, os.close, os.fstat
+    real_mkdir, real_stat, real_fsync = os.mkdir, os.stat, os.fsync
+    real_rmdir, real_lstat = os.rmdir, os.lstat
+    parent_stat = tmp_path.stat()
+    parent_identity = (parent_stat.st_dev, parent_stat.st_ino)
+    opened: set[int] = set()
+    holder_fds: set[int] = set()
+    holders: list[Path] = []
+    injected = False
+    parent_syncs = 0
+    holder_stats = 0
+
+    def fail(at: str | None) -> None:
+        nonlocal injected
+        if phase == at and not injected:
+            injected = True
+            raise OSError("injected restoration " + phase)
+
+    def mkdir(path: object, *args: object, **kwargs: object):
+        nonlocal injected
+        if Path(path).suffix == ".restore":
+            fail("mkdir")
+            result = real_mkdir(path, *args, **kwargs)
+            holders.append(tmp_path / Path(path).name)
+            if phase == "mode":
+                # Change only this test's newly created private fixture.
+                holders[-1].chmod(0o755)
+                injected = True
+            return result
+        return real_mkdir(path, *args, **kwargs)
+
+    def inspect(path: object, *args: object, **kwargs: object):
+        if not isinstance(path, int) and Path(path).suffix == ".restore":
+            fail("stat")
+        return real_stat(path, *args, **kwargs)
+
+    def open_fd(path: object, *args: object, **kwargs: object):
+        is_holder = Path(path).suffix == ".restore"
+        if is_holder:
+            fail("open")
+        descriptor = real_open(path, *args, **kwargs)
+        opened.add(descriptor)
+        if is_holder:
+            holder_fds.add(descriptor)
+        return descriptor
+
+    def fstat(descriptor: int):
+        nonlocal holder_stats
+        if descriptor in holder_fds:
+            holder_stats += 1
+            fail("fstat")
+            fail("fstat-close")
+            if holder_stats == 2:
+                fail("mode-fstat")
+        return real_fstat(descriptor)
+
+    def close(descriptor: int):
+        was_holder = descriptor in holder_fds
+        result = real_close(descriptor)
+        opened.discard(descriptor)
+        holder_fds.discard(descriptor)
+        if was_holder:
+            fail("close")
+            if phase == "fstat-close":
+                raise OSError("injected restoration inner close")
+        return result
+
+    def fsync(descriptor: int):
+        nonlocal parent_syncs
+        if descriptor in holder_fds:
+            fail("holder-fsync")
+        info = real_fstat(descriptor)
+        if holders and (info.st_dev, info.st_ino) == parent_identity:
+            at = {0: "parent-before-detach", 1: "parent-after-detach",
+                  3: "retire-parent-fsync"}.get(parent_syncs)
+            parent_syncs += 1
+            fail(at)
+        return real_fsync(descriptor)
+
+    def rmdir(path: object, *args: object, **kwargs: object):
+        if Path(path).suffix == ".restore":
+            fail("retire-rmdir")
+            fail("report-probe")
+        return real_rmdir(path, *args, **kwargs)
+
+    def lstat(path: object, *args: object, **kwargs: object):
+        if phase == "report-probe" and injected and Path(path) in holders:
+            raise PermissionError("restoration holder inspection denied")
+        return real_lstat(path, *args, **kwargs)
+
+    def attack(src: Path, dst: Path) -> None:
+        if src.suffix == ".stage" and dst == destination:
+            raise OSError("original promotion failure")
+        if src.parent.suffix == ".restore" and dst == destination:
+            fail("restore-native")
+        if src.parent == tmp_path and dst.parent.suffix == ".restore":
+            fail("detach-native")
+
+    _intercept_promotion_move(monkeypatch, attack)
+    for name, wrapper in (("mkdir", mkdir), ("stat", inspect), ("open", open_fd),
+                          ("fstat", fstat), ("close", close), ("fsync", fsync),
+                          ("rmdir", rmdir), ("lstat", lstat)):
+        monkeypatch.setattr(os, name, wrapper)
+    with pytest.raises(KnowledgeCompilationError) as error:
+        compile_knowledge_bundle(source, destination)
+    monkeypatch.undo()
+    assert injected or phase == "successful-rollback"
+    assert not opened, "restoration failure leaked compiler-owned descriptors"
+    assert _snapshot_tree(source) == source_before
+    hashes = [_metadata(path)["content_sha256"] for path in tmp_path.rglob("knowledge.sqlite")]
+    assert sorted(hashes) == sorted([old_hash] if phase == "successful-rollback" else
+                                   [old_hash, new_hash])
+    message = str(error.value)
+    assert "original promotion failure" in message
+    if phase != "successful-rollback":
+        assert ("mode 0700" if phase == "mode" else "injected restoration " + phase) in message
+    else:
+        assert not list(tmp_path.glob(".bundle-*.restore"))
+        assert not list(tmp_path.glob(".bundle-*.backup"))
+        assert not list(tmp_path.glob(".bundle-*.stage"))
+    if phase == "fstat-close":
+        assert "injected restoration inner close" in message
+    for path in tmp_path.rglob("knowledge.sqlite"):
+        assert str(path.parent) in message
+    for holder in holders:
+        if holder.exists():
+            assert str(holder) in message
+    if phase == "report-probe":
+        assert "restoration holder inspection denied" in message
+
+
+@pytest.mark.parametrize("deny_displaced_probe", [False, True])
+def test_fix3_backup_cleanup_reports_displaced_old_and_foreign_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, deny_displaced_probe: bool
+) -> None:
+    source = make_valid_knowledge_source(tmp_path / "source")
+    destination = tmp_path / "bundle"
+    compile_knowledge_bundle(source, destination)
+    old = _snapshot_tree(destination)
+    new_hash = _mutate_release_content(source)
+    displaced = tmp_path / "genuine-old-bundle"
+    foreign: list[Path] = []
+    real_fsync, real_lstat = compiler_module._fsync_directory, os.lstat
+    calls = 0
+
+    def fsync_then_substitute(path: Path) -> None:
+        nonlocal calls
+        real_fsync(path)
+        if path == destination.parent:
+            calls += 1
+            if calls == 2:
+                backup = next(tmp_path.glob(".bundle-*.backup"))
+                backup.rename(displaced)
+                backup.mkdir()
+                (backup / "foreign-marker").write_text("foreign")
+                foreign.append(backup)
+
+    def inspect(path: object, *args: object, **kwargs: object):
+        if deny_displaced_probe and foreign and Path(path) == displaced:
+            raise PermissionError("displaced old inspection denied")
+        return real_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(compiler_module, "_fsync_directory", fsync_then_substitute)
+    monkeypatch.setattr(os, "lstat", inspect)
+    with pytest.raises(KnowledgeCompilationError) as error:
+        compile_knowledge_bundle(source, destination)
+    monkeypatch.setattr(os, "lstat", real_lstat)
+    assert calls == 2
+    assert _snapshot_tree(displaced) == old
+    assert _metadata(destination / "knowledge.sqlite")["content_sha256"] == new_hash
+    assert (foreign[0] / "foreign-marker").read_text() == "foreign"
+    message = str(error.value)
+    assert "backup cleanup failed" in message
+    assert "replaced recovery path" in message
+    assert str(displaced) in message
+    assert str(foreign[0]) in message
+    if deny_displaced_probe:
+        assert "displaced old inspection denied" in message
+
+
 @pytest.mark.parametrize("seam", ["recursive", "bad-mode"])
 def test_fix2_cleanup_seam_preserves_foreign_replacement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, seam: str

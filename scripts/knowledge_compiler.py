@@ -1809,6 +1809,11 @@ def _rollback_promotion(
 ) -> list[str]:
     failures: list[str] = []
     restored_backup = False
+    holder: Path | None = None
+    held: Path | None = None
+    holder_identity: tuple[int, int] | None = None
+    holder_fd = -1
+    verified_held = False
     try:
         if _stage_is_present(destination):
             _require_named_identity(destination, parent_fd, stage_identity)
@@ -1818,14 +1823,48 @@ def _rollback_promotion(
         failures.append(f"move new destination aside failed: {_safe_exception(exc)}")
     try:
         if backup is not None and backup_identity is not None:
+            # Public names are never restoration authority. Detach first;
+            # only the verified private source may be moved to destination.
+            for _ in range(_UUID_ATTEMPTS):
+                candidate = destination.parent / f".{destination.name}-{secrets.token_hex(16)}.restore"
+                try:
+                    os.mkdir(candidate.name, mode=0o700, dir_fd=parent_fd)
+                except FileExistsError:
+                    continue
+                holder = candidate
+                break
+            else:
+                raise KnowledgeCompilationError("could not allocate private restoration holder")
+            result = os.stat(holder.name, dir_fd=parent_fd, follow_symlinks=False)
+            holder_identity = (result.st_dev, result.st_ino)
+            holder_fd = _open_named_directory(holder, parent_fd, holder_identity)
+            if stat.S_IMODE(os.fstat(holder_fd).st_mode) != 0o700:
+                raise KnowledgeCompilationError("restoration holder does not have mode 0700")
+            os.fsync(parent_fd)
+            held = holder / backup.name
             _require_named_identity(backup, parent_fd, backup_identity)
-            _rename_noreplace(backup, destination, parent_fd)
+            _rename_noreplace(backup, held, parent_fd, holder_fd)
+            _require_named_identity(held, holder_fd, backup_identity)
+            verified_held = True
+            os.fsync(holder_fd)
+            os.fsync(parent_fd)
+            _rename_noreplace(held, destination, holder_fd, parent_fd)
             _require_named_identity(destination, parent_fd, backup_identity)
             restored_backup = True
+            os.fsync(holder_fd)
         elif had_destination:
             failures.append("previous destination backup identity is missing")
     except BaseException as exc:
         failures.append(f"restore previous destination failed: {_safe_exception(exc)}")
+        if verified_held and not restored_backup:
+            try:
+                _require_named_identity(held, holder_fd, backup_identity)
+                _rename_noreplace(held, backup, holder_fd, parent_fd)
+                _require_named_identity(backup, parent_fd, backup_identity)
+                os.fsync(holder_fd)
+                os.fsync(parent_fd)
+            except BaseException as preserve_error:
+                failures.append("preserve verified previous backup failed: " + _safe_exception(preserve_error))
     try:
         _fsync_directory(destination.parent)
     except BaseException as exc:
@@ -1833,13 +1872,44 @@ def _rollback_promotion(
         if restored_backup and backup is not None:
             try:
                 _require_named_identity(destination, parent_fd, backup_identity)
-                _rename_noreplace(destination, backup, parent_fd)
+                _rename_noreplace(destination, held, parent_fd, holder_fd)
+                _require_named_identity(held, holder_fd, backup_identity)
+                _rename_noreplace(held, backup, holder_fd, parent_fd)
                 _require_named_identity(backup, parent_fd, backup_identity)
+                os.fsync(holder_fd)
+                os.fsync(parent_fd)
             except BaseException as preserve_error:
                 failures.append(
                     f"preserve previous destination backup failed: {_safe_exception(preserve_error)}"
                 )
-    return failures
+    # Only an empty verified holder is retired. A foreign or uncertain detached
+    # object stays untouched, and every known holder path participates in guarded
+    # reporting. The private namespace/final empty-name limitation also applies
+    # here; no assumption of exclusivity is made about public backup names.
+    recovery_paths = [path for path in (holder, held) if path is not None]
+    if holder_fd >= 0:
+        actual_holder = _descriptor_path(holder_fd)
+        if actual_holder is not None:
+            recovery_paths.append(actual_holder)
+            if held is not None:
+                recovery_paths.append(actual_holder / held.name)
+        try:
+            _require_named_identity(holder, parent_fd, holder_identity)
+            os.rmdir(holder.name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except BaseException as exc:
+            failures.append("restoration holder retirement failed: " + _safe_exception(exc))
+        finally:
+            try:
+                _close_descriptor(holder_fd)
+            except BaseException as exc:
+                failures.append("restoration holder close failed: " + _safe_exception(exc))
+    if failures:
+        return [str(_promotion_error(
+            KnowledgeCompilationError("rollback recovery incomplete"), failures,
+            destination, stage, backup, recovery_paths=tuple(recovery_paths),
+        ))]
+    return []
 
 
 def _promotion_error(
@@ -1849,10 +1919,12 @@ def _promotion_error(
     stage: Path,
     backup: Path | None,
     descriptors: tuple[int, ...] = (),
+    recovery_paths: tuple[Path, ...] = (),
 ) -> KnowledgeCompilationError:
     details = [f"bundle promotion failure: {_safe_exception(original)}", *failures]
     preserved: list[str] = []
     candidates = [backup, stage, destination if failures else None]
+    candidates.extend(recovery_paths)
     candidates.extend(_descriptor_path(descriptor) for descriptor in descriptors)
     for path in candidates:
         if path is None or str(path) in preserved:
@@ -1977,8 +2049,9 @@ def _promote_bound(
                 backup, destination, _BACKUP_SUFFIX, backup_identity
             )
         except BaseException as exc:
-            raise KnowledgeCompilationError(
-                f"new bundle is durable but backup cleanup failed: {_safe_exception(exc)}"
+            raise _promotion_error(
+                exc, ["new bundle is durable but backup cleanup failed"],
+                destination, stage, backup, descriptors,
             ) from exc
         try:
             _fsync_directory(destination.parent)
