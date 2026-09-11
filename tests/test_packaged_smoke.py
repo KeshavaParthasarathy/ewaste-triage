@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 import pytest
+import psutil
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request as WerkzeugRequest
 
@@ -206,6 +207,12 @@ def _cleanup_child(
     failures = []
     force_stopped = False
     shutdown_requested = False
+    windows_children = []
+    if os.name == "nt" and process.poll() is None:
+        try:
+            windows_children = psutil.Process(process.pid).children(recursive=True)
+        except psutil.Error:
+            pass
     if process.poll() is None and shutdown_url is not None:
         try:
             _json_request(shutdown_url, "/__test__/shutdown", method="POST")
@@ -237,6 +244,15 @@ def _cleanup_child(
         failures.append(f"packaged app did not exit after SIGTERM\n{diagnostics}")
     elif process.returncode != 0 and not force_stopped:
         failures.append(f"packaged app exited with status {process.returncode}\n{diagnostics}")
+
+    for child in windows_children:
+        try:
+            if child.is_running():
+                child.kill()
+        except psutil.Error:
+            pass
+    if windows_children:
+        psutil.wait_procs(windows_children, timeout=2)
 
     if ready_file.exists():
         if force_stopped:
