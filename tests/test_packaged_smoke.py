@@ -203,13 +203,15 @@ def _cleanup_child(
     refusal_timeout: float = 5.0,
 ) -> None:
     failures = []
+    force_stopped = False
     if process.poll() is None:
-        graceful_signal = (
-            signal.CTRL_BREAK_EVENT
-            if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT")
-            else signal.SIGTERM
-        )
-        process.send_signal(graceful_signal)
+        if os.name == "nt":
+            # A windowed PyInstaller executable has no console to receive
+            # CTRL_BREAK_EVENT, so the Windows smoke harness must stop it directly.
+            force_stopped = True
+            process.kill()
+        else:
+            process.send_signal(signal.SIGTERM)
     timed_out = False
     try:
         stdout, stderr = process.communicate(timeout=shutdown_timeout)
@@ -220,11 +222,14 @@ def _cleanup_child(
     diagnostics = f"stdout:\n{stdout}\nstderr:\n{stderr}"
     if timed_out:
         failures.append(f"packaged app did not exit after SIGTERM\n{diagnostics}")
-    elif process.returncode != 0:
+    elif process.returncode != 0 and not force_stopped:
         failures.append(f"packaged app exited with status {process.returncode}\n{diagnostics}")
 
     if ready_file.exists():
-        failures.append("readiness file remained after graceful shutdown")
+        if force_stopped:
+            ready_file.unlink()
+        else:
+            failures.append("readiness file remained after graceful shutdown")
     for port in dict.fromkeys(ports):
         if port is None:
             continue
