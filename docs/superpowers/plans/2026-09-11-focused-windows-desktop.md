@@ -40,15 +40,16 @@
 
 - [ ] **Step 1: Write focused failing tests**
 
-Add tests that assert:
+Parse the real document and assert the user-observable structure:
 
 ```python
-assert ".sidebar" not in html
-assert "Recent scans" in html
-assert "Why this result?" in html
-assert "Private by design" not in html
-assert "undo" not in javascript.lower()
+assert parser.landmark_count("main") == 1
+assert parser.has_button("Recent scans")
+assert parser.has_disclosure("Why this result?")
+assert not parser.has_landmark("aside", aria_label="Application sidebar")
 ```
+
+Exercise the real controller with a pending fake clock and assert that `deleteHistory("old")` sends `DELETE /api/v1/history/old` before any clock callback runs. This catches reintroduction of delayed undo without asserting private source text.
 
 Create 25 stored records and assert:
 
@@ -217,13 +218,13 @@ git commit -m "feat: support Windows desktop runtime metadata"
 
 - [ ] **Step 1: Write Windows packaging tests**
 
-Assert the Windows spec:
+Execute the Windows spec through a small fake PyInstaller build namespace and assert the resulting build graph:
 
 ```python
-assert "desktop/main.py" in spec_text
-assert "webview.platforms.edgechromium" in spec_text
-assert "console=False" in spec_text
-assert "BUNDLE(" not in spec_text
+assert graph.analysis_entrypoint.name == "main.py"
+assert "webview.platforms.edgechromium" in graph.hidden_imports
+assert graph.exe.console is False
+assert graph.collect.name == "E-Waste Triage"
 ```
 
 Test that the verifier rejects missing EXE/resources, mismatched hashes, and wrong manifest target. Update `_app_executable()` in packaged smoke so `EWASTE_PACKAGED_APP` accepts either a macOS `.app` or a Windows directory containing `E-Waste Triage.exe`.
@@ -291,48 +292,37 @@ git commit -m "feat: add Windows x64 desktop package"
 - Create: `.github/workflows/windows-release.yml`
 - Create: `docs/RELEASING_WINDOWS.md`
 - Modify: `README.md`
-- Test: `tests/test_windows_release_workflow.py`
 
 **Interfaces:**
 - Consumes: `scripts/build_windows_app.ps1 -Version <X.Y.Z>` and the resulting ZIP.
 - Produces: workflow artifact on manual runs and GitHub Release attachment for tags matching `v*`.
 
-- [ ] **Step 1: Write workflow contract tests**
-
-Parse the YAML and assert `windows-2022`, Python `3.11`, dependency installation from `requirements-app.txt` plus pinned PyInstaller/pytest, focused tests, build script invocation, packaged smoke invocation, artifact upload, and release upload only for tag refs.
-
-- [ ] **Step 2: Run the test and confirm RED**
-
-Run:
-
-```bash
-.venv/bin/python -m pytest tests/test_windows_release_workflow.py -q
-```
-
-Expected: workflow file missing.
-
-- [ ] **Step 3: Add the workflow and release guide**
+- [ ] **Step 1: Add the workflow and release guide**
 
 The workflow triggers on `workflow_dispatch` and tags matching `v*`. It derives `X.Y.Z` from the tag or a required manual input, runs focused tests, builds the package, sets `EWASTE_PACKAGED_APP` to the unpacked one-directory output for smoke testing, uploads the ZIP artifact, and uses `softprops/action-gh-release` only on tag builds.
 
 Document the unsigned warning, supported Windows version, ZIP extraction/start steps, SHA-256 verification command, and exact tag command. Update README to make Windows 11 x64 the first downloadable target while keeping macOS development support documented.
 
-- [ ] **Step 4: Run focused and full verification**
+- [ ] **Step 2: Validate configuration on its real consumer**
+
+Push the branch to GitHub and run `workflow_dispatch`. A successful Windows runner must install dependencies, pass the focused tests, build the real EXE, run packaged smoke, and upload the ZIP. This configuration-only task uses the real CI run rather than a source-text test.
+
+- [ ] **Step 3: Run focused and full local verification**
 
 Run:
 
 ```bash
-.venv/bin/python -m pytest tests/test_windows_release_workflow.py tests/test_packaging.py tests/test_desktop_runtime.py tests/test_desktop_ui.py tests/test_desktop_api.py -q
+.venv/bin/python -m pytest tests/test_packaging.py tests/test_desktop_runtime.py tests/test_desktop_ui.py tests/test_desktop_api.py -q
 .venv/bin/python -m pytest -q
 git diff --check
 ```
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add .github/workflows/windows-release.yml docs/RELEASING_WINDOWS.md README.md tests/test_windows_release_workflow.py
+git add .github/workflows/windows-release.yml docs/RELEASING_WINDOWS.md README.md
 git commit -m "ci: publish Windows desktop download"
 ```
 
