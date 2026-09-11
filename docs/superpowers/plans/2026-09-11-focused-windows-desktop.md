@@ -301,7 +301,7 @@ git commit -m "feat: add Windows x64 desktop package"
 - Consumes: `scripts/build_windows_app.ps1 -Version <X.Y.Z>` and the resulting ZIP.
 - Produces: workflow artifact on manual runs and GitHub Release attachment for tags matching `v*`.
 
-- [ ] **Step 1: Add the workflow and release guide**
+- [x] **Step 1: Add the workflow and release guide**
 
 The workflow triggers on `workflow_dispatch` and tags matching `v*`. It derives `X.Y.Z` from the tag or a required manual input, runs focused tests, builds the package, sets `EWASTE_PACKAGED_APP` to the unpacked one-directory output for smoke testing, uploads the ZIP artifact, and uses `softprops/action-gh-release` only on tag builds.
 
@@ -311,7 +311,7 @@ Document the unsigned warning, supported Windows version, ZIP extraction/start s
 
 Push the branch to GitHub and run `workflow_dispatch`. A successful Windows runner must install dependencies, pass the focused tests, build the real EXE, run packaged smoke, and upload the ZIP. This configuration-only task uses the real CI run rather than a source-text test.
 
-- [ ] **Step 3: Run focused and full local verification**
+- [x] **Step 3: Run focused and full local verification**
 
 Run:
 
@@ -323,7 +323,7 @@ git diff --check
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .github/workflows/windows-release.yml docs/RELEASING_WINDOWS.md README.md
