@@ -31,13 +31,37 @@
       }
     },
     "target": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["architecture", "minimum_macos"],
-      "properties": {
-        "architecture": {"const": "arm64"},
-        "minimum_macos": {"const": "14.0"}
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "architecture", "minimum_version"],
+          "properties": {
+            "platform": {"const": "macos"},
+            "architecture": {"const": "arm64"},
+            "minimum_version": {"const": "14.0"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "architecture", "minimum_version"],
+          "properties": {
+            "platform": {"const": "windows"},
+            "architecture": {"const": "x86_64"},
+            "minimum_version": {"const": "11"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["architecture", "minimum_macos"],
+          "properties": {
+            "architecture": {"const": "arm64"},
+            "minimum_macos": {"const": "14.0"}
+          }
+        }
+      ]
     },
     "created_at": {"type": "string", "format": "date-time"},
     "parity": {

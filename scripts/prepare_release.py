@@ -35,7 +35,8 @@ from server.reference_db import ReferenceStore, SCHEMA_VERSION as REFERENCE_SCHE
 
 RELEASE_SCHEMA_VERSION = 1
 TARGET_ARCHITECTURE = "arm64"
-MINIMUM_MACOS_VERSION = "14.0"
+TARGET_PLATFORM = "macos"
+MINIMUM_PLATFORM_VERSION = "14.0"
 MAX_PARITY_DELTA = 1e-4
 CANONICAL_LABELS = tuple(PHOTO_CLASS_SPECS)
 _PARITY_FIELDS = frozenset({"schema_version", "status", "model_id", "model_sha256", "labels", "metrics", "holdout"})
@@ -408,7 +409,11 @@ def prepare_release(
                 "schema_version": component_manifest.schema_version,
                 "version": component_manifest.version,
             },
-            "target": {"architecture": TARGET_ARCHITECTURE, "minimum_macos": MINIMUM_MACOS_VERSION},
+            "target": {
+                "platform": TARGET_PLATFORM,
+                "architecture": TARGET_ARCHITECTURE,
+                "minimum_version": MINIMUM_PLATFORM_VERSION,
+            },
             "created_at": datetime.now(timezone.utc).isoformat(),
             "parity": report,
         }

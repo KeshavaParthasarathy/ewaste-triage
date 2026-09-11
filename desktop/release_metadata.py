@@ -21,7 +21,12 @@ _MODEL_FIELDS = frozenset({
     "model_id", "artifact_sha256", "manifest_sha256", "labels_sha256", "schema_version"
 })
 _COMPONENT_FIELDS = frozenset({"sha256", "content_sha256", "schema_version", "version"})
-_TARGET_FIELDS = frozenset({"architecture", "minimum_macos"})
+_LEGACY_TARGET_FIELDS = frozenset({"architecture", "minimum_macos"})
+_TARGET_FIELDS = frozenset({"platform", "architecture", "minimum_version"})
+_SUPPORTED_TARGETS = frozenset({
+    ("macos", "arm64", "14.0"),
+    ("windows", "x86_64", "11"),
+})
 _PARITY_FIELDS = frozenset({"schema_version", "status", "model_id", "model_sha256", "labels", "metrics", "holdout"})
 _PARITY_METRICS_FIELDS = frozenset({"reference_images", "top1_matches", "max_probability_delta"})
 _PARITY_HOLDOUT_FIELDS = frozenset({"status", "split", "valid", "overlaps_training", "samples"})
@@ -103,6 +108,23 @@ def _integer(value: object, *, minimum: int = 0) -> int:
     return value
 
 
+def _validate_target(value: object) -> None:
+    if not isinstance(value, dict):
+        raise ReleaseMetadataError("unavailable or incompatible")
+    if set(value) == _LEGACY_TARGET_FIELDS:
+        if value == {"architecture": "arm64", "minimum_macos": "14.0"}:
+            return
+        raise ReleaseMetadataError("unavailable or incompatible")
+    target = _object(value, _TARGET_FIELDS)
+    fields = (
+        _string(target["platform"]),
+        _string(target["architecture"]),
+        _string(target["minimum_version"]),
+    )
+    if fields not in _SUPPORTED_TARGETS:
+        raise ReleaseMetadataError("unavailable or incompatible")
+
+
 def _validate_release_manifest(manifest: object) -> tuple[dict[str, object], dict[str, object]]:
     release = _object(manifest, _RELEASE_FIELDS)
     if type(release["schema_version"]) is not int or release["schema_version"] != 1:
@@ -126,9 +148,7 @@ def _validate_release_manifest(manifest: object) -> tuple[dict[str, object], dic
     ):
         raise ReleaseMetadataError("unavailable or incompatible")
 
-    target = _object(release["target"], _TARGET_FIELDS)
-    if target["architecture"] != "arm64" or target["minimum_macos"] != "14.0":
-        raise ReleaseMetadataError("unavailable or incompatible")
+    _validate_target(release["target"])
     created_at = _string(release["created_at"])
     try:
         if datetime.fromisoformat(created_at.replace("Z", "+00:00")).tzinfo is None:

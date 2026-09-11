@@ -142,7 +142,7 @@ git commit -m "feat: focus desktop scan experience"
 - Consumes: `AppPaths.for_runtime(frozen: bool, executable: Path | None = None)` and release manifest schema version 1.
 - Produces: `platform_data_dir(system: str | None = None, environ: Mapping[str, str] | None = None) -> Path`; target metadata supports macOS arm64 and Windows x86_64 explicitly.
 
-- [ ] **Step 1: Write platform tests**
+- [x] **Step 1: Write platform tests**
 
 Test exact Windows and macOS data roots without changing the host OS:
 
@@ -162,7 +162,7 @@ Add release-metadata fixtures for both targets:
 
 Reject mixed and unknown target values.
 
-- [ ] **Step 2: Run tests and confirm RED**
+- [x] **Step 2: Run tests and confirm RED**
 
 Run:
 
@@ -172,15 +172,15 @@ Run:
 
 Expected: missing `platform_data_dir` and target-schema failures.
 
-- [ ] **Step 3: Implement platform data paths**
+- [x] **Step 3: Implement platform data paths**
 
 Use `platform.system()` by default. On Windows require a nonempty absolute `LOCALAPPDATA`, falling back to `Path.home() / "AppData/Local"`; on Darwin keep Application Support; on other systems use `XDG_DATA_HOME` or `Path.home() / ".local/share"`. Append `APP_NAME` once. Keep explicit test-mode support unchanged.
 
-- [ ] **Step 4: Make target validation explicit**
+- [x] **Step 4: Make target validation explicit**
 
 Replace the mac-only target shape with the three closed fields above. Accept only the two supported tuples. Update `scripts/prepare_release.py`, the JSON Schema, and release pipeline expectations to emit the macOS tuple by default while keeping model/component hash checks unchanged.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run:
 

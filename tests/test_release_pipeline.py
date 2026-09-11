@@ -483,7 +483,11 @@ def test_prepare_release_stages_model_labels_components_and_manifest_atomically(
         "schema_version": 2,
         "version": "2.0.0",
     }
-    assert manifest["target"] == {"architecture": "arm64", "minimum_macos": "14.0"}
+    assert manifest["target"] == {
+        "platform": "macos",
+        "architecture": "arm64",
+        "minimum_version": "14.0",
+    }
     assert manifest["parity"]["holdout"]["overlaps_training"] is False
     assert not list(output.parent.glob(f".{output.name}-*.tmp"))
 

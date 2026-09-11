@@ -6,6 +6,7 @@ import pytest
 
 from desktop.main import run
 from desktop.paths import AppPaths
+import desktop.paths as paths_module
 from desktop.server_thread import ServerThread
 
 
@@ -63,6 +64,20 @@ def test_runtime_paths_keep_bundled_resources_separate_from_writable_data(
     assert paths.data_dir != paths.resources_dir
     assert paths.history_database_path.parent == paths.data_dir
     assert paths.history_media_dir.parent == paths.data_dir
+
+
+def test_platform_data_dir_uses_windows_local_app_data(tmp_path):
+    local_app_data = tmp_path / "LocalAppData"
+
+    assert paths_module.platform_data_dir(
+        "Windows", {"LOCALAPPDATA": str(local_app_data)}
+    ) == local_app_data / "E-Waste Triage"
+
+
+def test_platform_data_dir_keeps_macos_application_support():
+    assert paths_module.platform_data_dir("Darwin", {}) == (
+        Path.home() / "Library/Application Support/E-Waste Triage"
+    )
 
 
 def test_desktop_run_opens_one_native_window(monkeypatch, tmp_path):

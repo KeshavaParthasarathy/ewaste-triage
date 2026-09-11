@@ -61,7 +61,11 @@ def _write_release(tmp_path, *, build_change=None, manifest_change=None):
             "schema_version": 2,
             "version": "2.0.0",
         },
-        "target": {"architecture": "arm64", "minimum_macos": "14.0"},
+        "target": {
+            "platform": "macos",
+            "architecture": "arm64",
+            "minimum_version": "14.0",
+        },
         "created_at": "2026-09-06T12:00:00+00:00",
         "parity": {
             "schema_version": 1,
@@ -112,6 +116,54 @@ def test_load_release_metadata_returns_display_and_reference_values_from_one_rec
         "expected_version": "2.0.0",
     }
     assert integrity.model_manifest_sha256 != integrity.model_labels_sha256
+
+
+def test_load_release_metadata_accepts_windows_x64_target(tmp_path):
+    paths = _write_release(
+        tmp_path,
+        manifest_change=lambda manifest: manifest.update(
+            target={
+                "platform": "windows",
+                "architecture": "x86_64",
+                "minimum_version": "11",
+            }
+        ),
+    )
+
+    metadata, _expectations, _integrity = load_release_metadata(paths)
+
+    assert metadata.app_version == "1.2.3"
+
+
+def test_load_release_metadata_keeps_legacy_macos_target_compatible(tmp_path):
+    paths = _write_release(
+        tmp_path,
+        manifest_change=lambda manifest: manifest.update(
+            target={"architecture": "arm64", "minimum_macos": "14.0"}
+        ),
+    )
+
+    metadata, _expectations, _integrity = load_release_metadata(paths)
+
+    assert metadata.app_version == "1.2.3"
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"platform": "windows", "architecture": "arm64", "minimum_version": "11"},
+        {"platform": "linux", "architecture": "x86_64", "minimum_version": "11"},
+        {"platform": "macos", "architecture": "arm64", "minimum_version": "11"},
+    ],
+)
+def test_load_release_metadata_rejects_unsupported_target_combinations(tmp_path, target):
+    paths = _write_release(
+        tmp_path,
+        manifest_change=lambda manifest: manifest.update(target=target),
+    )
+
+    with pytest.raises(ReleaseMetadataError, match="unavailable or incompatible"):
+        load_release_metadata(paths)
 
 
 @pytest.mark.parametrize(

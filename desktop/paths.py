@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import platform
 import sys
+from typing import Mapping
 
 
 APP_NAME = "E-Waste Triage"
@@ -26,6 +28,24 @@ def _test_support_dir() -> Path:
     if not path.is_absolute():
         raise ValueError(f"{_TEST_SUPPORT_ENV} must be an absolute path in test mode")
     return path
+
+
+def platform_data_dir(
+    system: str | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> Path:
+    """Return the writable application-data directory for the host platform."""
+    system = system or platform.system()
+    environ = os.environ if environ is None else environ
+    if system == "Windows":
+        local = environ.get("LOCALAPPDATA", "")
+        root = Path(local) if local and Path(local).is_absolute() else Path.home() / "AppData/Local"
+    elif system == "Darwin":
+        root = Path.home() / "Library/Application Support"
+    else:
+        xdg = environ.get("XDG_DATA_HOME", "")
+        root = Path(xdg) if xdg and Path(xdg).is_absolute() else Path.home() / ".local/share"
+    return root / APP_NAME
 
 
 @dataclass(frozen=True)
@@ -75,7 +95,7 @@ class AppPaths:
         data_dir = (
             _test_support_dir()
             if test_mode_enabled()
-            else Path.home() / "Library" / "Application Support" / APP_NAME
+            else platform_data_dir()
         )
         return cls(
             resources_dir=resources_dir,
