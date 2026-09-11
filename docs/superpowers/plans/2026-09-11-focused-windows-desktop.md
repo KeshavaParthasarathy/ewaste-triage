@@ -307,7 +307,7 @@ The workflow triggers on `workflow_dispatch` and tags matching `v*`. It derives 
 
 Document the unsigned warning, supported Windows version, ZIP extraction/start steps, SHA-256 verification command, and exact tag command. Update README to make Windows 11 x64 the first downloadable target while keeping macOS development support documented.
 
-- [ ] **Step 2: Validate configuration on its real consumer**
+- [x] **Step 2: Validate configuration on its real consumer**
 
 Push the branch to GitHub and run `workflow_dispatch`. A successful Windows runner must install dependencies, pass the focused tests, build the real EXE, run packaged smoke, and upload the ZIP. This configuration-only task uses the real CI run rather than a source-text test.
 
@@ -341,11 +341,11 @@ git commit -m "ci: publish Windows desktop download"
 - Consumes: a configured GitHub remote and successful Windows workflow.
 - Produces: a GitHub Release URL and SHA-256 for `E-Waste-Triage-0.1.0-windows-x64.zip`.
 
-- [ ] **Step 1: Configure the repository destination**
+- [x] **Step 1: Configure the repository destination**
 
 Confirm the exact GitHub repository and visibility before creating or connecting a remote. Do not overwrite an existing remote.
 
-- [ ] **Step 2: Push the implementation branch and run Windows CI**
+- [x] **Step 2: Push the implementation branch and run Windows CI**
 
 Push the committed branch, run the manual workflow first, and inspect the packaged smoke result. Fix only reproducible Windows defects through a failing test.
 
