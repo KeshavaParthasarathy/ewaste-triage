@@ -62,7 +62,7 @@ def test_runtime_paths_keep_bundled_resources_separate_from_writable_data(
     assert paths.static_dir == bundled / "server" / "static"
     assert paths.model_bundle_dir == bundled / "models" / "production"
     assert paths.reference_dir == bundled / "reference"
-    assert paths.data_dir == Path.home() / "Library/Application Support/E-Waste Triage"
+    assert paths.data_dir == paths_module.platform_data_dir()
     assert paths.data_dir != paths.resources_dir
     assert paths.history_database_path.parent == paths.data_dir
     assert paths.history_media_dir.parent == paths.data_dir

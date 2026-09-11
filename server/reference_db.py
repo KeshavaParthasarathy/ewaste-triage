@@ -489,7 +489,7 @@ def _write_database(
 
 
 def _fsync_path(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY)
+    descriptor = os.open(path, os.O_RDWR)
     try:
         os.fsync(descriptor)
     finally:

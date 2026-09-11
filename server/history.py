@@ -383,16 +383,10 @@ class HistoryStore:
             media_name
         ):
             return
-        directory_fd = os.open(
-            self.media_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        )
         try:
-            try:
-                os.unlink(media_name, dir_fd=directory_fd)
-            except FileNotFoundError:
-                pass
-        finally:
-            os.close(directory_fd)
+            os.unlink(self.media_dir / media_name)
+        except FileNotFoundError:
+            pass
 
     def _drain_pending_deletions(self, scan_id: str | None = None) -> None:
         query = "SELECT scan_id, media_name FROM pending_media_deletions"
