@@ -15,20 +15,20 @@ hazards:
       - observations.issue_flags.swelling_or_battery_damage
     severity: urgent
     immediate_actions:
-      - As a precaution after the reported issue, stop using and charging the keyboard.
-      - Keep the battery or device away from flammable materials without crushing or puncturing it.
+      - If the installed battery is lithium-ion and signs of battery damage are present, remove the keyboard or battery from service.
+      - If the installed battery is lithium-ion and signs of battery damage are present, place the keyboard or battery away from flammable materials and avoid further physical damage.
     follow_up_actions:
-      - Contact the manufacturer or a qualified specialist for handling instructions.
-      - If the installed battery is lithium-ion, arrange prompt transfer to an appropriate battery or household-hazardous-waste collection point.
+      - If the installed battery is lithium-ion and damaged, contact the manufacturer for damaged-battery handling instructions before taking further action.
+      - If the installed battery is lithium-ion and damaged, contact a local battery recycling center or receiving program for damaged-battery handling instructions and confirm it accepts that damaged battery before any transfer.
     handling_guidance:
-      - If the installed battery is lithium-ion, do not place it in household trash or a municipal recycling bin.
-      - If the installed battery is lithium-ion and can be safely removed without forcing the enclosure, prevent terminal contact; otherwise keep the device intact and follow manufacturer or receiving-program instructions.
+      - If the installed battery is lithium-ion and damaged, follow manufacturer-specific handling instructions and do not remove it unless the keyboard is designed to be user-serviceable and the battery can be safely removed.
+      - If the installed battery is lithium-ion, damaged, and safely removed from a user-serviceable keyboard, prevent terminal contact as directed by the manufacturer.
     disposal_guidance:
-      - If the installed battery is lithium-ion, use a certified electronics recycler, battery recycler, or household-hazardous-waste program that accepts lithium-ion batteries.
-      - If the installed battery is lithium-ion and is damaged, follow the receiving program's instructions for damaged batteries before transport.
+      - If the installed battery is lithium-ion and damaged, before any transfer or disposal obtain manufacturer or receiving-destination damaged-battery handling instructions and confirm the chosen destination accepts that damaged battery.
     evidence_level: B
     source_ids:
       - epa_used_li_ion_2026
+      - keyboard_osha_small_lithium_devices_2019
   - hazard_id: keyboard_leaking_primary_cell
     component_id: power_source
     scope:

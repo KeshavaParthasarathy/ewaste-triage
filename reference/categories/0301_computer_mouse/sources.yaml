@@ -117,6 +117,22 @@ sources:
       no source-document, translation, or media redistribution.
     reviewed_by: OpenAI Codex automated source review
     reviewed_on: "2026-09-10"
+  - source_id: mouse_osha_small_lithium_devices_2019
+    title: Preventing Fire and/or Explosion Injury from Small and Wearable Lithium Battery Powered Devices
+    publisher: Occupational Safety and Health Administration
+    canonical_url: https://obis.osha.gov/dts/shib/shib011819.html
+    publication_or_revision_date: "2019-06-20"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to OSHA's readable first-party HTML copy
+      of a workplace safety advisory; no source text or media redistribution. The
+      displayed SHIB 06-20-2019 label supports narrowly conditional removal-from-
+      service, physical-damage, and flammable-surroundings precautions for damaged
+      lithium-powered devices. The bulletin is advisory, not a regulation, and does
+      not prove the chemistry of a selected mouse or create a blanket consumer
+      obligation.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
   - source_id: razer_deathadder_v3_launch_2023
     title: Razer welcomes the DeathAdder V3 Pro Faker Edition and DeathAdder V3 to the cult-favorite mouse line
     publisher: Razer Newsroom
