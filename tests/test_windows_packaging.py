@@ -58,19 +58,20 @@ def _windows_fixture(tmp_path: Path) -> tuple[Path, Path]:
     app = tmp_path / "E-Waste Triage"
     (app / "E-Waste Triage.exe").parent.mkdir(parents=True)
     (app / "E-Waste Triage.exe").write_bytes(b"MZ synthetic executable")
+    resources = app / "_internal"
     mappings = {
-        model: app / "models/production/model.onnx",
-        model_manifest: app / "models/production/manifest.json",
-        labels: app / "release/labels.json",
-        components: app / "reference/components.sqlite",
-        parity: app / "release/parity-report.json",
-        release_manifest: app / "release/release-manifest.json",
+        model: resources / "models/production/model.onnx",
+        model_manifest: resources / "models/production/manifest.json",
+        labels: resources / "release/labels.json",
+        components: resources / "reference/components.sqlite",
+        parity: resources / "release/parity-report.json",
+        release_manifest: resources / "release/release-manifest.json",
     }
     for source, destination in mappings.items():
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
     _write_json(
-        app / "build-metadata.json",
+        resources / "build-metadata.json",
         {
             "schema_version": 1,
             "app_version": "0.1.0",
@@ -79,7 +80,7 @@ def _windows_fixture(tmp_path: Path) -> tuple[Path, Path]:
         },
     )
     for filename in ("index.html", "app.css", "app.js", "phone.html", "phone.css", "phone.js"):
-        asset = app / "server/static" / filename
+        asset = resources / "server/static" / filename
         asset.parent.mkdir(parents=True, exist_ok=True)
         asset.write_text(filename, encoding="utf-8")
     return release, app
@@ -114,7 +115,7 @@ def test_windows_verifier_accepts_complete_matching_onedir(tmp_path):
 
 def test_windows_verifier_rejects_tampered_packaged_model(tmp_path):
     release, app = _windows_fixture(tmp_path)
-    (app / "models/production/model.onnx").write_bytes(b"changed")
+    (app / "_internal/models/production/model.onnx").write_bytes(b"changed")
 
     result = _verify(release, app)
 
@@ -126,14 +127,15 @@ def test_windows_verifier_rejects_wrong_release_target(tmp_path):
     release, app = _windows_fixture(tmp_path)
     for manifest_path in (
         release / "release-manifest.json",
-        app / "release/release-manifest.json",
+        app / "_internal/release/release-manifest.json",
     ):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["target"]["architecture"] = "arm64"
         _write_json(manifest_path, manifest)
-    build = json.loads((app / "build-metadata.json").read_text(encoding="utf-8"))
+    build_path = app / "_internal/build-metadata.json"
+    build = json.loads(build_path.read_text(encoding="utf-8"))
     build["release_manifest_sha256"] = _sha256(release / "release-manifest.json")
-    _write_json(app / "build-metadata.json", build)
+    _write_json(build_path, build)
 
     result = _verify(release, app)
 

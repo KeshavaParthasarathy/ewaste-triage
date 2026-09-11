@@ -56,9 +56,12 @@ def verify_windows_bundle(
         raise WindowsBundleError("expected version must use X.Y.Z")
     if not (app_dir / "E-Waste Triage.exe").is_file():
         raise WindowsBundleError("Windows executable is missing")
+    resources_dir = app_dir / "_internal"
+    if not resources_dir.is_dir():
+        raise WindowsBundleError("PyInstaller resource directory is missing")
 
     source_manifest_path = release_dir / "release-manifest.json"
-    packaged_manifest_path = app_dir / "release/release-manifest.json"
+    packaged_manifest_path = resources_dir / "release/release-manifest.json"
     if _sha256(source_manifest_path) != _sha256(packaged_manifest_path):
         raise WindowsBundleError("packaged release manifest does not match")
     manifest = _read_json(packaged_manifest_path)
@@ -72,31 +75,31 @@ def verify_windows_bundle(
     if not isinstance(model, dict) or not isinstance(components, dict):
         raise WindowsBundleError("release manifest is incomplete")
     _expect_hash(
-        app_dir / "models/production/model.onnx",
+        resources_dir / "models/production/model.onnx",
         model.get("artifact_sha256"),
         "model artifact",
     )
     _expect_hash(
-        app_dir / "models/production/manifest.json",
+        resources_dir / "models/production/manifest.json",
         model.get("manifest_sha256"),
         "model manifest",
     )
     _expect_hash(
-        app_dir / "release/labels.json", model.get("labels_sha256"), "labels"
+        resources_dir / "release/labels.json", model.get("labels_sha256"), "labels"
     )
     _expect_hash(
-        app_dir / "reference/components.sqlite",
+        resources_dir / "reference/components.sqlite",
         components.get("sha256"),
         "component database",
     )
 
-    build = _read_json(app_dir / "build-metadata.json")
+    build = _read_json(resources_dir / "build-metadata.json")
     if build.get("app_version") != expected_version:
         raise WindowsBundleError("build version does not match")
     if build.get("release_manifest_sha256") != _sha256(packaged_manifest_path):
         raise WindowsBundleError("build metadata does not anchor the release manifest")
     for filename in STATIC_FILES:
-        if not (app_dir / "server/static" / filename).is_file():
+        if not (resources_dir / "server/static" / filename).is_file():
             raise WindowsBundleError(f"product UI asset is missing: {filename}")
 
 
