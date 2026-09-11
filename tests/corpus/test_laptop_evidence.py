@@ -243,6 +243,28 @@ def test_laptop_sources_have_honest_dated_automated_reviews(laptop_records):
     )
 
     sources = {item.source_id: item for item in laptop_records.sources}
+    assert set(sources) == {
+        "laptop_acer_nitro_5_spin_2017",
+        "laptop_acer_nitro_gaming_notebooks_2019",
+        "laptop_apple_macbook_air_cycle_count_2026",
+        "laptop_apple_macbook_air_launch_2022",
+        "laptop_apple_macbook_air_parts_2023",
+        "laptop_apple_powerbook_g4_12_133_service_2005",
+        "laptop_apple_powerbook_g4_12_15_service_2007",
+        "laptop_apple_powerbook_g4_12_launch_2003",
+        "laptop_apple_powerbook_g4_12_original_service_2005",
+        "laptop_asus_zenbook_14_ux3402_launch_2022",
+        "laptop_dell_xps_13_9315_specs_2025",
+        "laptop_epa_used_li_ion_2026",
+        "laptop_framework_amd_7040_launch_2023",
+        "laptop_hp_elitebook_840_g10_quickspecs_2025",
+        "laptop_lenovo_t14_gen4_amd_psref_2024",
+        "laptop_lenovo_t14_gen4_intel_psref_2025",
+        "laptop_microsoft_surface_laptop_5_launch_2022",
+        "laptop_osha_small_lithium_devices_2019",
+        "laptop_swiss_service_lifetime_2017",
+        "laptop_toshiba_110cs_specification_1996",
+    }
     assert {
         source_id: sources[source_id].publication_or_revision_date
         for source_id in {
@@ -269,6 +291,20 @@ def test_laptop_sources_have_honest_dated_automated_reviews(laptop_records):
         "laptop_swiss_service_lifetime_2017": date(2017, 2, 24),
         "laptop_toshiba_110cs_specification_1996": date(1996, 8, 5),
     }
+    osha = sources["laptop_osha_small_lithium_devices_2019"]
+    assert osha.title == (
+        "Preventing Fire and/or Explosion Injury from Small and Wearable "
+        "Lithium Battery Powered Devices"
+    )
+    assert osha.publisher == "Occupational Safety and Health Administration"
+    assert osha.canonical_url == "https://obis.osha.gov/dts/shib/shib011819.html"
+    assert osha.publication_or_revision_date == date(2019, 6, 20)
+    osha_basis = osha.license_or_use_basis.casefold()
+    assert "first-party html" in osha_basis
+    assert "workplace" in osha_basis
+    assert "advisory" in osha_basis
+    assert "not" in osha_basis and "regulation" in osha_basis
+    assert "chemistry" in osha_basis
 
 
 def test_laptop_identity_scopes_preserve_models_families_and_true_variants(
@@ -650,7 +686,10 @@ def test_laptop_hazards_keep_precautionary_and_unknown_legacy_boundaries(
         "observations.issue_flags.overheating",
         "observations.issue_flags.swelling_or_battery_damage",
     )
-    assert hazard.source_ids == ("laptop_epa_used_li_ion_2026",)
+    assert hazard.source_ids == (
+        "laptop_epa_used_li_ion_2026",
+        "laptop_osha_small_lithium_devices_2019",
+    )
     applicability = hazard.applicability.casefold()
     assert "activates precautionary guidance" in applicability
     assert "if the installed battery is lithium-ion" in applicability
@@ -678,6 +717,73 @@ def test_laptop_hazards_keep_precautionary_and_unknown_legacy_boundaries(
     assert "undated" in legacy.reason.casefold()
     assert legacy.evidence_level is None
     assert legacy.source_ids == ()
+
+
+def test_laptop_damaged_battery_actions_match_imported_source_scope(laptop_records):
+    hazard = next(
+        item
+        for item in laptop_records.hazards
+        if item.hazard_id == "laptop_damaged_lithium_ion_battery"
+    )
+    immediate_text = " ".join(hazard.immediate_actions).casefold()
+    all_actions = " ".join(
+        (
+            *hazard.immediate_actions,
+            *hazard.follow_up_actions,
+            *hazard.handling_guidance,
+            *hazard.disposal_guidance,
+        )
+    ).casefold()
+
+    assert "remove" in immediate_text and "from service" in immediate_text
+    assert "away from flammable materials" in immediate_text
+    assert "physical damage" in immediate_text
+    assert all(
+        unsupported not in all_actions
+        for unsupported in (
+            "bending",
+            "fire resistant",
+            "fire-resistant",
+            "prompt transfer",
+            "sand",
+            "stop using and charging",
+        )
+    )
+
+
+def test_laptop_damaged_battery_destinations_are_locally_qualified(laptop_records):
+    hazard = next(
+        item
+        for item in laptop_records.hazards
+        if item.hazard_id == "laptop_damaged_lithium_ion_battery"
+    )
+    destination_actions = tuple(
+        action
+        for action in (
+            *hazard.immediate_actions,
+            *hazard.follow_up_actions,
+            *hazard.handling_guidance,
+            *hazard.disposal_guidance,
+        )
+        if any(
+            marker in action.casefold()
+            for marker in ("destination", "collection point", "recycler", "program")
+        )
+    )
+
+    assert destination_actions
+    for action in destination_actions:
+        action_text = action.casefold()
+        assert "damaged" in action_text
+        assert "confirm" in action_text
+        assert "accept" in action_text
+        assert "instructions" in action_text
+    assert any(
+        "manufacturer" in action.casefold()
+        and "handling" in action.casefold()
+        and "damaged" in action.casefold()
+        for action in hazard.follow_up_actions
+    )
 
 
 def test_laptop_packet_does_not_claim_release_completion(laptop_records):

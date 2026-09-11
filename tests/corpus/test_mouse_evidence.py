@@ -146,6 +146,20 @@ def test_mouse_sources_have_honest_dated_automated_reviews(mouse_records):
     )
     known_source_ids = {item.source_id for item in mouse_records.sources}
     sources = {item.source_id: item for item in mouse_records.sources}
+    assert set(sources) == {
+        "apple_magic_mouse_usb_c_2024",
+        "dell_ms116_technical_specifications_2025",
+        "health_canada_battery_safety_2024",
+        "logitech_g502_hero_launch_2018",
+        "logitech_m185_runtime_2019",
+        "logitech_m185_specs_2026",
+        "logitech_mx_master_3s_launch_2022",
+        "logitech_mx_master_3s_setup_2024",
+        "microsoft_ball_to_optical_1999",
+        "microsoft_basic_optical_business_2011",
+        "mouse_osha_small_lithium_devices_2019",
+        "razer_deathadder_v3_launch_2023",
+    }
     assert "dell_ms116_regulatory_2018" not in sources
     assert "dell_ms116_support_2025" not in sources
     dell = sources["dell_ms116_technical_specifications_2025"]
@@ -168,6 +182,20 @@ def test_mouse_sources_have_honest_dated_automated_reviews(mouse_records):
         "logitech_mx_master_3s_setup_2024": date(2024, 7, 29),
         "razer_deathadder_v3_launch_2023": date(2023, 2, 21),
     }
+    osha = sources["mouse_osha_small_lithium_devices_2019"]
+    assert osha.title == (
+        "Preventing Fire and/or Explosion Injury from Small and Wearable "
+        "Lithium Battery Powered Devices"
+    )
+    assert osha.publisher == "Occupational Safety and Health Administration"
+    assert osha.canonical_url == "https://obis.osha.gov/dts/shib/shib011819.html"
+    assert osha.publication_or_revision_date == date(2019, 6, 20)
+    osha_basis = osha.license_or_use_basis.casefold()
+    assert "first-party html" in osha_basis
+    assert "workplace" in osha_basis
+    assert "advisory" in osha_basis
+    assert "not" in osha_basis and "regulation" in osha_basis
+    assert "chemistry" in osha_basis
     for identity in mouse_records.identities:
         assert set(identity.source_ids) <= known_source_ids
 
@@ -367,7 +395,10 @@ def test_mouse_hazard_triggers_preserve_the_observation_contract(mouse_records):
     assert primary.trigger_observation_keys == (
         "observations.issue_flags.swelling_or_battery_damage",
     )
-    assert rechargeable.source_ids == ("epa_used_li_ion_2026",)
+    assert rechargeable.source_ids == (
+        "epa_used_li_ion_2026",
+        "mouse_osha_small_lithium_devices_2019",
+    )
     assert primary.source_ids == ("health_canada_battery_safety_2024",)
 
 
@@ -434,6 +465,73 @@ def test_mouse_hazard_guidance_keeps_unobserved_facts_conditional(mouse_records)
     )
     assert "if leakage is present" in primary.handling_guidance[1].casefold()
     assert "if leakage is present" in primary.disposal_guidance[0].casefold()
+
+
+def test_mouse_damaged_battery_actions_match_imported_source_scope(mouse_records):
+    hazard = next(
+        item
+        for item in mouse_records.hazards
+        if item.hazard_id == "mouse_damaged_lithium_ion_battery"
+    )
+    immediate_text = " ".join(hazard.immediate_actions).casefold()
+    all_actions = " ".join(
+        (
+            *hazard.immediate_actions,
+            *hazard.follow_up_actions,
+            *hazard.handling_guidance,
+            *hazard.disposal_guidance,
+        )
+    ).casefold()
+
+    assert "remove" in immediate_text and "from service" in immediate_text
+    assert "away from flammable materials" in immediate_text
+    assert "physical damage" in immediate_text
+    assert all(
+        unsupported not in all_actions
+        for unsupported in (
+            "bending",
+            "fire resistant",
+            "fire-resistant",
+            "prompt transfer",
+            "sand",
+            "stop using and charging",
+        )
+    )
+
+
+def test_mouse_damaged_battery_destinations_are_locally_qualified(mouse_records):
+    hazard = next(
+        item
+        for item in mouse_records.hazards
+        if item.hazard_id == "mouse_damaged_lithium_ion_battery"
+    )
+    destination_actions = tuple(
+        action
+        for action in (
+            *hazard.immediate_actions,
+            *hazard.follow_up_actions,
+            *hazard.handling_guidance,
+            *hazard.disposal_guidance,
+        )
+        if any(
+            marker in action.casefold()
+            for marker in ("destination", "collection point", "recycler", "program")
+        )
+    )
+
+    assert destination_actions
+    for action in destination_actions:
+        action_text = action.casefold()
+        assert "damaged" in action_text
+        assert "confirm" in action_text
+        assert "accept" in action_text
+        assert "instructions" in action_text
+    assert any(
+        "manufacturer" in action.casefold()
+        and "handling" in action.casefold()
+        and "damaged" in action.casefold()
+        for action in hazard.follow_up_actions
+    )
 
 
 def test_mouse_packet_does_not_claim_release_completion(mouse_records):

@@ -251,6 +251,16 @@ def test_keyboard_sources_have_honest_dated_automated_reviews(keyboard_records):
     )
 
     sources = {item.source_id: item for item in keyboard_records.sources}
+    assert set(sources) == {
+        "ibm_model_m_buckling_spring_2026",
+        "keyboard_health_canada_battery_safety_2024",
+        "keyboard_osha_small_lithium_devices_2019",
+        "logitech_k780_technical_specifications_2025",
+        "logitech_mx_keys_s_specification_2023",
+        "razer_blackwidow_v4_launch_2023",
+        "razer_blackwidow_v4_pro_launch_2023",
+        "razer_blackwidow_v4_support_2026",
+    }
     assert {
         source_id: sources[source_id].publication_or_revision_date
         for source_id in {
@@ -267,6 +277,20 @@ def test_keyboard_sources_have_honest_dated_automated_reviews(keyboard_records):
         "razer_blackwidow_v4_launch_2023": date(2023, 7, 18),
         "razer_blackwidow_v4_pro_launch_2023": date(2023, 2, 16),
     }
+    osha = sources["keyboard_osha_small_lithium_devices_2019"]
+    assert osha.title == (
+        "Preventing Fire and/or Explosion Injury from Small and Wearable "
+        "Lithium Battery Powered Devices"
+    )
+    assert osha.publisher == "Occupational Safety and Health Administration"
+    assert osha.canonical_url == "https://obis.osha.gov/dts/shib/shib011819.html"
+    assert osha.publication_or_revision_date == date(2019, 6, 20)
+    osha_basis = osha.license_or_use_basis.casefold()
+    assert "first-party html" in osha_basis
+    assert "workplace" in osha_basis
+    assert "advisory" in osha_basis
+    assert "not" in osha_basis and "regulation" in osha_basis
+    assert "chemistry" in osha_basis
     known_source_ids = set(sources)
     for identity in keyboard_records.identities:
         assert set(identity.source_ids) <= known_source_ids
@@ -598,7 +622,10 @@ def test_keyboard_hazards_preserve_variant_and_precautionary_trigger_boundaries(
     assert primary.trigger_observation_keys == (
         "observations.issue_flags.swelling_or_battery_damage",
     )
-    assert rechargeable.source_ids == ("epa_used_li_ion_2026",)
+    assert rechargeable.source_ids == (
+        "epa_used_li_ion_2026",
+        "keyboard_osha_small_lithium_devices_2019",
+    )
     assert primary.source_ids == ("keyboard_health_canada_battery_safety_2024",)
 
     rechargeable_applicability = rechargeable.applicability.casefold()
@@ -640,6 +667,77 @@ def test_keyboard_hazards_preserve_variant_and_precautionary_trigger_boundaries(
     assert "if leakage is present" in primary.follow_up_actions[1].casefold()
     assert "if the installed cell is non-rechargeable" in (
         primary.handling_guidance[0].casefold()
+    )
+
+
+def test_keyboard_damaged_battery_actions_match_imported_source_scope(
+    keyboard_records,
+):
+    hazard = next(
+        item
+        for item in keyboard_records.hazards
+        if item.hazard_id == "keyboard_damaged_lithium_ion_battery"
+    )
+    immediate_text = " ".join(hazard.immediate_actions).casefold()
+    all_actions = " ".join(
+        (
+            *hazard.immediate_actions,
+            *hazard.follow_up_actions,
+            *hazard.handling_guidance,
+            *hazard.disposal_guidance,
+        )
+    ).casefold()
+
+    assert "remove" in immediate_text and "from service" in immediate_text
+    assert "away from flammable materials" in immediate_text
+    assert "physical damage" in immediate_text
+    assert all(
+        unsupported not in all_actions
+        for unsupported in (
+            "bending",
+            "fire resistant",
+            "fire-resistant",
+            "prompt transfer",
+            "sand",
+            "stop using and charging",
+        )
+    )
+
+
+def test_keyboard_damaged_battery_destinations_are_locally_qualified(
+    keyboard_records,
+):
+    hazard = next(
+        item
+        for item in keyboard_records.hazards
+        if item.hazard_id == "keyboard_damaged_lithium_ion_battery"
+    )
+    destination_actions = tuple(
+        action
+        for action in (
+            *hazard.immediate_actions,
+            *hazard.follow_up_actions,
+            *hazard.handling_guidance,
+            *hazard.disposal_guidance,
+        )
+        if any(
+            marker in action.casefold()
+            for marker in ("destination", "collection point", "recycler", "program")
+        )
+    )
+
+    assert destination_actions
+    for action in destination_actions:
+        action_text = action.casefold()
+        assert "damaged" in action_text
+        assert "confirm" in action_text
+        assert "accept" in action_text
+        assert "instructions" in action_text
+    assert any(
+        "manufacturer" in action.casefold()
+        and "handling" in action.casefold()
+        and "damaged" in action.casefold()
+        for action in hazard.follow_up_actions
     )
 
 
