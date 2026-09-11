@@ -1,0 +1,197 @@
+unknowns:
+  - category_id: 0401_headphones
+    claim_kind: component_association
+    claim_id: headphones_modern_wireless_circuit_board_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed functional descriptions do not establish circuit-board substrate,
+      metal, coating, solder, or component material composition for this subtype.
+    evidence_request: >-
+      Obtain scope-qualified bills of materials, environmental declarations, or qualified teardown evidence before assigning board materials.
+  - category_id: 0401_headphones
+    claim_kind: component_association
+    claim_id: headphones_modern_wireless_device_battery_chemistry_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Rechargeable wireless operation does not establish the hidden installed
+      battery chemistry across this over-ear subtype.
+    evidence_request: >-
+      Obtain exact-model manufacturer battery documentation or a compliant, legible installed-battery marking before assigning chemistry.
+  - category_id: 0401_headphones
+    claim_kind: component_association
+    claim_id: headphones_standard_audio_driver_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed product descriptions do not establish representative magnet,
+      diaphragm, coil, adhesive, or housing material composition across the category.
+    evidence_request: >-
+      Obtain identity-specific bills of materials, environmental declarations, or qualified teardown evidence before assigning driver materials.
+  - category_id: 0401_headphones
+    claim_kind: component_association
+    claim_id: headphones_standard_enclosure_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed public product records do not establish representative enclosure,
+      shell, yoke, or headband material composition across the category.
+    evidence_request: >-
+      Obtain representative material declarations or qualified teardown evidence; do not infer materials from appearance or marketing imagery.
+  - category_id: 0401_headphones
+    claim_kind: component_association
+    claim_id: headphones_true_wireless_charging_case_battery_chemistry_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Charging-case operation does not establish the chemistry of the battery
+      installed inside the separate case.
+    evidence_request: >-
+      Obtain exact-case manufacturer battery documentation or a compliant, legible case-battery marking before assigning chemistry.
+  - category_id: 0401_headphones
+    claim_kind: component_association
+    claim_id: headphones_true_wireless_charging_case_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed product releases do not establish representative charging-case
+      enclosure, hinge, contact, coil, or internal material composition.
+    evidence_request: >-
+      Obtain exact-case material declarations, bills of materials, or qualified teardown evidence before assigning case materials.
+  - category_id: 0401_headphones
+    claim_kind: component_association
+    claim_id: headphones_true_wireless_circuit_board_material_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Reviewed functional descriptions do not establish earbud circuit-board
+      substrate, metal, coating, solder, or component material composition.
+    evidence_request: >-
+      Obtain exact-model bills of materials, environmental declarations, or qualified teardown evidence before assigning earbud board materials.
+  - category_id: 0401_headphones
+    claim_kind: component_association
+    claim_id: headphones_true_wireless_device_battery_chemistry_unknown
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Earbud rechargeability and case-supported operation do not establish the
+      chemistry of the batteries installed in the earbuds.
+    evidence_request: >-
+      Obtain exact-model manufacturer battery documentation or compliant, legible earbud-battery markings before assigning device chemistry.
+  - category_id: 0401_headphones
+    claim_kind: identity
+    claim_id: audio_technica_ath_m50x
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      The dated manufacturer-issued ATH-M50x launch release establishes the exact
+      wired circumaural model, but a wired label, detachable cables, and absence of
+      charging instructions do not affirmatively establish that the headphone has
+      no battery or powered internal subsystem.
+    evidence_request: >-
+      Obtain a fully dated exact-ATH-M50x manufacturer schematic, bill of materials,
+      or explicit statement establishing battery-free architecture; do not borrow
+      facts from ATH-M50xBT, ATH-M50xBT2, ATH-M50xSTS, or other M-series models.
+  - category_id: 0401_headphones
+    claim_kind: identity
+    claim_id: koss_porta_pro
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Dated Koss material supports the original Porta Pro's 1984 on-ear legacy
+      lineage, but the exact Classic sources do not affirmatively establish absence
+      of a battery or powered subsystem. Porta Pro Utility says no batteries, but it
+      is a different product and that fact cannot be transferred to Classic.
+    evidence_request: >-
+      Obtain a fully dated exact-Classic manufacturer statement, schematic, or parts
+      record that establishes both the intended legacy market population and its
+      battery-free architecture without substituting Utility, Wireless, KTC, or a
+      Limited Edition.
+  - category_id: 0401_headphones
+    claim_kind: identity
+    claim_id: logitech_g_pro_x_wired
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Logitech's dated launch and exact wired product trail establish PRO X headset
+      identity and wired operation, but the external USB sound card, analog path,
+      and omitted charging steps do not affirmatively establish that the headset
+      itself has no battery or powered internal subsystem.
+    evidence_request: >-
+      Obtain a fully dated exact-SKU 981-000817 manufacturer schematic, bill of
+      materials, or explicit battery-free declaration; exclude PRO X Wireless,
+      PRO X 2 LIGHTSPEED, PRO X 2, and the non-X PRO Gaming Headset.
+  - category_id: 0401_headphones
+    claim_kind: identity
+    claim_id: sennheiser_hd_600
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Sennheiser's exact resource establishes the HD 600 wired circumaural identity,
+      but its manual uses conditional batteries-if-applicable disposal boilerplate
+      and does not affirmatively establish that this model has no battery or powered
+      internal subsystem.
+    evidence_request: >-
+      Obtain a fully dated exact-HD-600 manufacturer service or electrical document,
+      bill of materials, or explicit battery-free statement; do not transfer facts
+      from HD 650, HD 660 S, HD 660S2, optional amplifiers, or cables.
+  - category_id: 0401_headphones
+    claim_kind: identity
+    claim_id: sony_mdr_7506
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Sony's exact operating-manual listing has a 2020-08-24 Release Date and
+      establishes MDR-7506 identity and fixed wired operation. The separate service
+      schematic supplies strong battery-free architecture evidence but only an
+      unlabeled printed timestamp, while the over-ear FAQ date is generated-on;
+      neither establishes publication or content revision for those claims.
+    evidence_request: >-
+      Obtain a fully dated Sony-authored resource that binds MDR-7506 over-ear form
+      and battery-free architecture to an eligible publication or revision date;
+      do not transfer the operating-manual date to the service manual or FAQ.
+  - category_id: 0401_headphones
+    claim_kind: specific_lifecycle
+    claim_id: airpods_pro_2_listening_runtime
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Apple's exact USB-C technical page supplies an earbuds-only maximum of up to
+      6 hours on one charge with Active Noise Cancellation enabled and a detailed
+      August 2023 test protocol, but exposes only a year introduced and no verified
+      full publication or revision date. The dated launch establishes identity but
+      does not print that runtime protocol.
+    evidence_request: >-
+      Obtain a fully dated Apple-authored source for the AirPods Pro 2 USB-C
+      earbuds-only six-hour listening endpoint and its ANC-on conditions; keep
+      case-supported totals, Spatial Audio, Vision Pro, and quick-charge results separate.
+  - category_id: 0401_headphones
+    claim_kind: subtype
+    claim_id: headphones_wired_on_ear_legacy
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Dated Koss history establishes the original Porta Pro's 1984 on-ear legacy
+      lineage. The 2021 Porta Pro Utility announcement expressly says no batteries,
+      but Utility is a different current product and does not itself establish a
+      legacy market state; joining its power fact to Classic history would transfer
+      facts across products.
+    evidence_request: >-
+      Obtain a fully dated primary archetype source that establishes both legacy
+      market classification and battery-free on-ear architecture in the same
+      properly scoped population before authoring a legacy overlay or whole-identity
+      battery-free variant.
+  - category_id: 0401_headphones
+    claim_kind: subtype
+    claim_id: headphones_wired_over_ear
+    evidence_level: null
+    source_ids: []
+    reason: >-
+      Dated exact-product records establish multiple wired over-ear identities, but
+      wired or analog operation alone does not affirmatively establish absence of a
+      battery or separate powered subsystem across the intended subtype.
+    evidence_request: >-
+      Obtain a fully dated manufacturer or qualified primary archetype source that
+      establishes over-ear form and battery-free wired architecture for a properly
+      scoped current population before reviewing the subtype or assigning identities.

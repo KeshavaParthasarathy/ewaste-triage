@@ -1,0 +1,423 @@
+components:
+  - component_id: audio_driver
+    display_name: Audio driver assembly
+  - component_id: audio_driver_material
+    display_name: Audio driver material composition
+  - component_id: charging_case
+    display_name: Charging case enclosure and charging assembly
+  - component_id: charging_case_battery
+    display_name: Charging-case battery
+  - component_id: charging_case_battery_chemistry
+    display_name: Charging-case battery chemistry
+  - component_id: charging_case_material
+    display_name: Charging-case material composition
+  - component_id: circuit_board_material
+    display_name: Circuit-board material composition
+  - component_id: controls
+    display_name: User controls and control electronics
+  - component_id: device_battery
+    display_name: Headphone or earbud device battery
+  - component_id: device_battery_chemistry
+    display_name: Headphone or earbud battery chemistry
+  - component_id: ear_cushions_or_tips
+    display_name: Ear cushions or ear tips
+  - component_id: enclosure_material
+    display_name: Enclosure or headband material composition
+  - component_id: enclosure_or_headband
+    display_name: Enclosure or headband assembly
+  - component_id: microphones
+    display_name: Microphone assembly
+  - component_id: printed_circuit_board
+    display_name: Printed circuit board or electronic control assembly
+  - component_id: radio_module
+    display_name: Wireless radio module
+  - component_id: signal_cable
+    display_name: Audio signal cable
+
+templates:
+  - template_id: headphones_modern_wireless
+    template_kind: modern_overlay
+    scope:
+      kind: subtype
+      id: headphones_wireless_over_ear
+    application_order: 0
+  - template_id: headphones_standard
+    template_kind: standard
+    scope:
+      kind: category
+      id: 0401_headphones
+    application_order: 0
+  - template_id: headphones_true_wireless
+    template_kind: modern_overlay
+    scope:
+      kind: subtype
+      id: headphones_true_wireless
+    application_order: 0
+
+associations:
+  - association_id: headphones_modern_wireless_device_battery
+    template_id: headphones_modern_wireless
+    component_id: device_battery
+    position: 0
+    status: commonly_associated
+    applicability: >-
+      Applies to the reviewed rechargeable wireless over-ear subtype as the battery
+      installed in the headphone itself; it is not a charging-case battery and does
+      not project chemistry, capacity, condition, or serviceability.
+    notes:
+      - The reviewed Sony, Bose, and Beats releases each establish battery-dependent operation for the supported subtype exemplars.
+    evidence_level: B
+    source_ids:
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+  - association_id: headphones_modern_wireless_device_battery_chemistry_unknown
+    template_id: headphones_modern_wireless
+    component_id: device_battery_chemistry
+    position: 1
+    status: unknown
+    applicability: >-
+      Rechargeable wireless operation does not establish the hidden installed
+      battery chemistry across this over-ear subtype.
+    notes:
+      - Obtain exact-model manufacturer battery documentation or a compliant, legible installed-battery marking before assigning chemistry.
+    evidence_level: null
+    source_ids: []
+  - association_id: headphones_modern_wireless_radio_module
+    template_id: headphones_modern_wireless
+    component_id: radio_module
+    position: 2
+    status: commonly_associated
+    applicability: >-
+      Applies to the reviewed wireless over-ear subtype for documented Bluetooth
+      operation; chipset, antenna construction, and current installed state remain
+      identity-specific.
+    notes:
+      - Wireless protocol support does not establish board material or battery chemistry.
+    evidence_level: B
+    source_ids:
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+  - association_id: headphones_modern_wireless_microphones
+    template_id: headphones_modern_wireless
+    component_id: microphones
+    position: 3
+    status: commonly_associated
+    applicability: >-
+      Applies to the reviewed noise-control and voice-capable wireless over-ear
+      exemplars; microphone count, placement, materials, and condition remain
+      identity-specific.
+    notes:
+      - Noise cancellation and voice functions support a microphone assembly, not its exact count or material composition.
+    evidence_level: B
+    source_ids:
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+  - association_id: headphones_modern_wireless_controls
+    template_id: headphones_modern_wireless
+    component_id: controls
+    position: 4
+    status: commonly_associated
+    applicability: >-
+      Applies to the reviewed wireless over-ear subtype for documented playback,
+      noise-control, calling, or connection functions; control layout and current
+      operability remain identity-specific.
+    notes:
+      - Functional controls do not establish the exact internal circuit-board construction.
+    evidence_level: B
+    source_ids:
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+  - association_id: headphones_modern_wireless_printed_circuit_board
+    template_id: headphones_modern_wireless
+    component_id: printed_circuit_board
+    position: 5
+    status: conditional
+    applicability: >-
+      Represents an internal electronic control assembly only where exact-model
+      documentation or inspection confirms board form. Reviewed wireless, digital,
+      microphone, and control functions support control electronics but do not
+      disclose board layout, count, material, or installed condition.
+    notes:
+      - Do not treat this conditional slot as visual detection or a complete internal parts disclosure.
+    evidence_level: B
+    source_ids:
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+  - association_id: headphones_modern_wireless_circuit_board_material_unknown
+    template_id: headphones_modern_wireless
+    component_id: circuit_board_material
+    position: 6
+    status: unknown
+    applicability: >-
+      Reviewed functional descriptions do not establish circuit-board substrate,
+      metal, coating, solder, or component material composition for this subtype.
+    notes:
+      - Obtain scope-qualified bills of materials, environmental declarations, or qualified teardown evidence before assigning board materials.
+    evidence_level: null
+    source_ids: []
+  - association_id: headphones_standard_audio_driver
+    template_id: headphones_standard
+    component_id: audio_driver
+    position: 0
+    status: commonly_associated
+    applicability: >-
+      Applies as the sound-producing transducer concept across the reviewed
+      headphone and earbud exemplars; driver count, mechanism, dimensions,
+      materials, and current condition remain identity-specific.
+    notes:
+      - Product acoustics and named drivers support the component concept but not a universal driver construction.
+    evidence_level: C
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+  - association_id: headphones_standard_audio_driver_material_unknown
+    template_id: headphones_standard
+    component_id: audio_driver_material
+    position: 1
+    status: unknown
+    applicability: >-
+      Reviewed product descriptions do not establish representative magnet,
+      diaphragm, coil, adhesive, or housing material composition across the category.
+    notes:
+      - Obtain identity-specific bills of materials, environmental declarations, or qualified teardown evidence before assigning driver materials.
+    evidence_level: null
+    source_ids: []
+  - association_id: headphones_standard_enclosure_or_headband
+    template_id: headphones_standard
+    component_id: enclosure_or_headband
+    position: 2
+    status: commonly_associated
+    applicability: >-
+      Applies as the structural enclosure concept across reviewed earbuds and
+      over-ear headphones; a headband is present only where that form factor uses
+      one, and exact construction remains identity-specific.
+    notes:
+      - The category slot does not equate an earbud shell with an over-ear headband or infer material from appearance.
+    evidence_level: C
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+  - association_id: headphones_standard_enclosure_material_unknown
+    template_id: headphones_standard
+    component_id: enclosure_material
+    position: 3
+    status: unknown
+    applicability: >-
+      Reviewed public product records do not establish representative enclosure,
+      shell, yoke, or headband material composition across the category.
+    notes:
+      - Obtain representative material declarations or qualified teardown evidence; do not infer materials from appearance or marketing imagery.
+    evidence_level: null
+    source_ids: []
+  - association_id: headphones_standard_ear_cushions_or_tips
+    template_id: headphones_standard
+    component_id: ear_cushions_or_tips
+    position: 4
+    status: commonly_associated
+    applicability: >-
+      Applies according to form factor as over-ear cushions or in-ear tips across
+      the reviewed exemplars; fit, replaceability, material, completeness, and
+      condition remain identity-specific.
+    notes:
+      - The common slot preserves the cushion-versus-tip distinction and does not assert a selected item's installed state.
+    evidence_level: C
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+  - association_id: headphones_standard_controls
+    template_id: headphones_standard
+    component_id: controls
+    position: 5
+    status: conditional
+    applicability: >-
+      Applies only where a resolved identity documents user controls; control
+      presence, type, electronics, and current operation are not projected onto
+      unsupported wired identities or every category member.
+    notes:
+      - Supported wireless subtype overlays refine this conditional category slot.
+    evidence_level: C
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+  - association_id: headphones_standard_signal_cable
+    template_id: headphones_standard
+    component_id: signal_cable
+    position: 6
+    status: conditional
+    applicability: >-
+      Applies only where resolved identity evidence establishes an analog or wired
+      audio signal cable; a charging cable is not automatically an audio cable, and
+      cable presence is not projected onto true-wireless operation.
+    notes:
+      - Beats Studio Pro documents a 3.5 mm input, but this conditional category slot does not establish a cable in every package or selected item.
+    evidence_level: C
+    source_ids:
+      - headphones_beats_studio_pro_launch_2023
+  - association_id: headphones_true_wireless_device_battery
+    template_id: headphones_true_wireless
+    component_id: device_battery
+    position: 0
+    status: commonly_associated
+    applicability: >-
+      Applies to the reviewed true-wireless subtype as batteries installed in the
+      earbuds themselves; this is distinct from the charging-case battery and does
+      not establish chemistry, capacity, current condition, or serviceability.
+    notes:
+      - The reviewed Apple and Jabra releases establish battery-dependent earbud operation separately from case-supported charging or duration.
+    evidence_level: B
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+  - association_id: headphones_true_wireless_device_battery_chemistry_unknown
+    template_id: headphones_true_wireless
+    component_id: device_battery_chemistry
+    position: 1
+    status: unknown
+    applicability: >-
+      Earbud rechargeability and case-supported operation do not establish the
+      chemistry of the batteries installed in the earbuds.
+    notes:
+      - Obtain exact-model manufacturer battery documentation or compliant, legible earbud-battery markings before assigning device chemistry.
+    evidence_level: null
+    source_ids: []
+  - association_id: headphones_true_wireless_charging_case
+    template_id: headphones_true_wireless
+    component_id: charging_case
+    position: 2
+    status: commonly_associated
+    applicability: >-
+      Applies as the separate charging case documented for the reviewed true-
+      wireless exemplars; connector, charging modes, material, capacity, and
+      current condition remain identity-specific.
+    notes:
+      - The case is a distinct scope and is not merged with either earbud enclosure or earbud runtime.
+    evidence_level: B
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+  - association_id: headphones_true_wireless_charging_case_battery
+    template_id: headphones_true_wireless
+    component_id: charging_case_battery
+    position: 3
+    status: commonly_associated
+    applicability: >-
+      Applies as the charging case's separate stored-energy source for the reviewed
+      case-supported true-wireless architecture; it is not an earbud battery and
+      does not establish chemistry, capacity, condition, or serviceability.
+    notes:
+      - Distinct case-supported capacity is not encoded as an earbud one-charge runtime endpoint.
+    evidence_level: B
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+  - association_id: headphones_true_wireless_charging_case_battery_chemistry_unknown
+    template_id: headphones_true_wireless
+    component_id: charging_case_battery_chemistry
+    position: 4
+    status: unknown
+    applicability: >-
+      Charging-case operation does not establish the chemistry of the battery
+      installed inside the separate case.
+    notes:
+      - Obtain exact-case manufacturer battery documentation or a compliant, legible case-battery marking before assigning chemistry.
+    evidence_level: null
+    source_ids: []
+  - association_id: headphones_true_wireless_charging_case_material_unknown
+    template_id: headphones_true_wireless
+    component_id: charging_case_material
+    position: 5
+    status: unknown
+    applicability: >-
+      Reviewed product releases do not establish representative charging-case
+      enclosure, hinge, contact, coil, or internal material composition.
+    notes:
+      - Obtain exact-case material declarations, bills of materials, or qualified teardown evidence before assigning case materials.
+    evidence_level: null
+    source_ids: []
+  - association_id: headphones_true_wireless_radio_module
+    template_id: headphones_true_wireless
+    component_id: radio_module
+    position: 6
+    status: commonly_associated
+    applicability: >-
+      Applies to documented true-wireless earbud communication; chipset, antenna
+      layout, material, and current installed condition remain identity-specific.
+    notes:
+      - True-wireless operation supports a radio function but not hidden construction or chemistry.
+    evidence_level: B
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+  - association_id: headphones_true_wireless_microphones
+    template_id: headphones_true_wireless
+    component_id: microphones
+    position: 7
+    status: commonly_associated
+    applicability: >-
+      Applies to the reviewed calling and noise-control true-wireless exemplars;
+      count, placement, materials, and current condition remain identity-specific.
+    notes:
+      - Voice and noise-control functions do not establish exact microphone construction.
+    evidence_level: B
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+  - association_id: headphones_true_wireless_controls
+    template_id: headphones_true_wireless
+    component_id: controls
+    position: 8
+    status: commonly_associated
+    applicability: >-
+      Applies to documented earbud playback, calling, and noise-control functions;
+      control mechanism and current operability remain identity-specific.
+    notes:
+      - This subtype overlay intentionally refines the conditional category controls slot.
+    evidence_level: B
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+  - association_id: headphones_true_wireless_printed_circuit_board
+    template_id: headphones_true_wireless
+    component_id: printed_circuit_board
+    position: 9
+    status: conditional
+    applicability: >-
+      Represents an earbud electronic control assembly only where exact-model
+      documentation or inspection confirms board form. Reviewed radio, microphone,
+      charging, and control functions support control electronics but do not
+      disclose board layout, count, material, or installed condition.
+    notes:
+      - This conditional slot does not merge earbud electronics with the charging-case assembly or assert visual detection.
+    evidence_level: B
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+  - association_id: headphones_true_wireless_circuit_board_material_unknown
+    template_id: headphones_true_wireless
+    component_id: circuit_board_material
+    position: 10
+    status: unknown
+    applicability: >-
+      Reviewed functional descriptions do not establish earbud circuit-board
+      substrate, metal, coating, solder, or component material composition.
+    notes:
+      - Obtain exact-model bills of materials, environmental declarations, or qualified teardown evidence before assigning earbud board materials.
+    evidence_level: null
+    source_ids: []

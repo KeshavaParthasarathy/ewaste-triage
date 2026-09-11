@@ -1,0 +1,57 @@
+industry_averages:
+  - record_id: headphones_industry_service_life
+    scope:
+      kind: category
+      id: 0401_headphones
+    subject: device
+    endpoint: service_life
+    endpoint_kind: total_life
+    metric: elapsed_time
+    unit: years
+    lower_bound: 2.0
+    upper_bound: 5.0
+    endpoint_qualification: >-
+      Historical approximately 2-5 years weighted interquartile graph-read
+      reference for respondent-reported average completed use durations for
+      headphones/headsets. It describes a completed active-use episode under the
+      study's definitions, not an individual-device quartile, exact raw-data
+      interval, confidence interval, physical failure range, total physical
+      existence, or forecast for a selected item.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: null
+    model_year_to: null
+    required_variant_ids: []
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: C
+    assumptions:
+      - Service is interpreted as active use and is distinct from subsequent storage before transfer or disposal.
+      - The headset result summarizes 373 aggregate answers about respondents' average completed use durations, not 373 independent devices or necessarily unique people.
+      - The study did not prove that each reported episode was first-owner use or capture a complete ownership chain.
+      - The plotted central-half context is approximate because of weighting, one-year bins, ties, and whole-year graph reading; it must not be described as exactly 50% of raw observations.
+      - Null dates and empty variant filters are resolver representation, not a claim of scientific universality across periods or architectures.
+    population_definition: >-
+      Respondents from Switzerland and Liechtenstein recruited through convenience
+      channels and adjusted with demographic weighting; the headphone/headset
+      series records aggregate respondent answers rather than a device registry.
+    publication_period: >-
+      Predominantly a 2014 household survey with supplementary interviews conducted
+      in 2015-2016; the article was first published online in 2017 and appeared in
+      the 2018 journal issue.
+    methodology: >-
+      Figure 1 is a box plot derived from demographically weighted histograms with
+      one-year bins. Its completed-use headset box was visually graph-read at whole-
+      year precision and cross-checked against the article definitions and the
+      publisher-linked Supporting Information S1 questionnaire and method/table
+      locators. The plotted quartile roles are visible but their values are not
+      separately tabulated.
+    uncertainty: Broad estimate · Low confidence
+    limitations:
+      - Convenience recruitment, demographic weighting, recall, selection, and interview timing limit representativeness and precision.
+      - Approximate plot reading, one-year bins, ties, rounding, and the lack of tabulated headset quartiles prevent exact raw-observation claims.
+      - The headset questions do not provide sale year, second service, complete ownership, or proven first-owner information for each reported episode.
+      - The category grouping supplies no modern wireless, true-wireless earbud, charging-case, or battery-architecture-specific distribution.
+      - This is a historical reference-only range; downstream use must remain industry_average_reference_only and not_calculable under the separate future policy gate.
+    source_ids:
+      - headphones_swiss_service_lifetime_2017

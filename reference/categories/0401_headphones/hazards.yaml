@@ -1,0 +1,94 @@
+hazards:
+  - hazard_id: headphones_true_wireless_case_damaged_lithium_ion_battery
+    component_id: charging_case_battery
+    scope:
+      kind: subtype
+      id: headphones_true_wireless
+    applicability: >-
+      For a true-wireless charging case, a user report of overheating, swelling,
+      or battery damage activates precautionary guidance. Lithium-ion-specific
+      guidance applies if the installed charging-case battery is lithium-ion; the
+      subtype, rechargeability, and reported issue do not establish chemistry or
+      diagnose damage. Item-specific manufacturer information or a compliant
+      battery marking may help identify chemistry.
+    trigger_observation_keys:
+      - observations.issue_flags.overheating
+      - observations.issue_flags.swelling_or_battery_damage
+    severity: urgent
+    immediate_actions:
+      - If the installed charging-case battery is lithium-ion and signs of battery damage are present, remove the charging case from service.
+      - If the installed charging-case battery is lithium-ion and signs of battery damage are present, place the charging case away from flammable materials and avoid further physical damage.
+    follow_up_actions:
+      - If the installed charging-case battery is lithium-ion and damaged, contact the manufacturer for damaged-battery handling instructions before taking further action.
+      - If the installed charging-case battery is lithium-ion and damaged, contact a local battery recycling center or receiving program for damaged-battery handling and transport instructions and confirm it accepts that damaged battery before any transfer.
+    handling_guidance:
+      - If the installed charging-case battery is lithium-ion and damaged, follow manufacturer-specific handling instructions and do not remove it unless the case is designed to be user-serviceable and the battery can be safely removed.
+      - If the installed charging-case battery is lithium-ion, damaged, and safely removed from a user-serviceable case, prevent terminal contact as directed by the manufacturer.
+    disposal_guidance:
+      - If the installed charging-case battery is lithium-ion and damaged, before any transfer or disposal obtain manufacturer or receiving-destination damaged-battery handling and transport instructions and confirm the chosen destination accepts that damaged battery.
+    evidence_level: B
+    source_ids:
+      - headphones_epa_used_li_ion_2026
+      - headphones_osha_small_lithium_devices_2019
+  - hazard_id: headphones_true_wireless_device_damaged_lithium_ion_battery
+    component_id: device_battery
+    scope:
+      kind: subtype
+      id: headphones_true_wireless
+    applicability: >-
+      For true-wireless earbuds, a user report of overheating, swelling, or battery
+      damage activates precautionary guidance. Lithium-ion-specific guidance
+      applies if the installed earbud battery is lithium-ion; the subtype,
+      rechargeability, and reported issue do not establish chemistry or diagnose
+      damage. Item-specific manufacturer information or a compliant battery marking
+      may help identify chemistry.
+    trigger_observation_keys:
+      - observations.issue_flags.overheating
+      - observations.issue_flags.swelling_or_battery_damage
+    severity: urgent
+    immediate_actions:
+      - If the installed earbud battery is lithium-ion and signs of battery damage are present, remove the earbuds from service.
+      - If the installed earbud battery is lithium-ion and signs of battery damage are present, place the earbuds away from flammable materials and avoid further physical damage.
+    follow_up_actions:
+      - If the installed earbud battery is lithium-ion and damaged, contact the manufacturer for damaged-battery handling instructions before taking further action.
+      - If the installed earbud battery is lithium-ion and damaged, contact a local battery recycling center or receiving program for damaged-battery handling and transport instructions and confirm it accepts that damaged battery before any transfer.
+    handling_guidance:
+      - If the installed earbud battery is lithium-ion and damaged, follow manufacturer-specific handling instructions and do not remove it unless the earbud is designed to be user-serviceable and the battery can be safely removed.
+      - If the installed earbud battery is lithium-ion, damaged, and safely removed from a user-serviceable earbud, prevent terminal contact as directed by the manufacturer.
+    disposal_guidance:
+      - If the installed earbud battery is lithium-ion and damaged, before any transfer or disposal obtain manufacturer or receiving-destination damaged-battery handling and transport instructions and confirm the chosen destination accepts that damaged battery.
+    evidence_level: B
+    source_ids:
+      - headphones_epa_used_li_ion_2026
+      - headphones_osha_small_lithium_devices_2019
+  - hazard_id: headphones_wireless_over_ear_damaged_lithium_ion_battery
+    component_id: device_battery
+    scope:
+      kind: subtype
+      id: headphones_wireless_over_ear
+    applicability: >-
+      For rechargeable wireless over-ear headphones, a user report of overheating,
+      swelling, or battery damage activates precautionary guidance. Lithium-ion-
+      specific guidance applies if the installed headphone battery is lithium-ion;
+      the subtype, rechargeability, and reported issue do not establish chemistry
+      or diagnose damage. Item-specific manufacturer information or a compliant
+      battery marking may help identify chemistry.
+    trigger_observation_keys:
+      - observations.issue_flags.overheating
+      - observations.issue_flags.swelling_or_battery_damage
+    severity: urgent
+    immediate_actions:
+      - If the installed headphone battery is lithium-ion and signs of battery damage are present, remove the headphones from service.
+      - If the installed headphone battery is lithium-ion and signs of battery damage are present, place the headphones away from flammable materials and avoid further physical damage.
+    follow_up_actions:
+      - If the installed headphone battery is lithium-ion and damaged, contact the manufacturer for damaged-battery handling instructions before taking further action.
+      - If the installed headphone battery is lithium-ion and damaged, contact a local battery recycling center or receiving program for damaged-battery handling and transport instructions and confirm it accepts that damaged battery before any transfer.
+    handling_guidance:
+      - If the installed headphone battery is lithium-ion and damaged, follow manufacturer-specific handling instructions and do not remove it unless the headphones are designed to be user-serviceable and the battery can be safely removed.
+      - If the installed headphone battery is lithium-ion, damaged, and safely removed from user-serviceable headphones, prevent terminal contact as directed by the manufacturer.
+    disposal_guidance:
+      - If the installed headphone battery is lithium-ion and damaged, before any transfer or disposal obtain manufacturer or receiving-destination damaged-battery handling and transport instructions and confirm the chosen destination accepts that damaged battery.
+    evidence_level: B
+    source_ids:
+      - headphones_epa_used_li_ion_2026
+      - headphones_osha_small_lithium_devices_2019

@@ -1,0 +1,135 @@
+sources:
+  - source_id: headphones_apple_airpods_pro_2_usb_c_launch_2023
+    title: Apple introduces new AirPods Pro (2nd generation) with USB-C charging capabilities
+    publisher: Apple Newsroom
+    canonical_url: https://www.apple.com/newsroom/2023/09/apple-upgrades-airpods-pro-2nd-generation-with-usb-c-charging/
+    publication_or_revision_date: "2023-09-12"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible dated Apple
+      release; no source-document or media redistribution. Use is limited to the
+      exact AirPods Pro (2nd generation) with MagSafe Charging Case (USB-C)
+      identity, true-wireless battery-bearing architecture, and case relationship.
+      The release does not supply the detailed six-hour earbuds-only test protocol.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: headphones_beats_studio_pro_launch_2023
+    title: Beats Studio Pro、7月19日（水）より予約注文を開始
+    publisher: Apple Japan, Inc. (manufacturer release distributed by Kyodo News PR Wire)
+    canonical_url: https://kyodonewsprwire.jp/release/202307197230
+    publication_or_revision_date: "2023-07-19"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to the publicly accessible
+      manufacturer-issued Apple Japan release on its distribution host; no source
+      text or media redistribution. The issuer/dateline and exact product content
+      support the 2023 Beats Studio Pro over-ear identity, Bluetooth, USB-C and
+      3.5 mm connections, and a rechargeable battery. Studio3, Solo, Buds, and
+      later refresh facts are excluded.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: headphones_bose_quietcomfort_ultra_launch_2023
+    title: Bose Announces New QuietComfort Ultra Headphones and Earbuds
+    publisher: Bose Press Room
+    canonical_url: https://www.bose.com/pressroom/bose-announces-new-quietcomfort-ultra-headphones-and-earbuds
+    publication_or_revision_date: "2023-09-14"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible dated Bose
+      release; no source-document or media redistribution. Use is limited to the
+      original 2023 QuietComfort Ultra Headphones over-ear identity, its internal
+      rechargeable battery, and the published up-to-24-hour single-charge maximum
+      with Immersive Audio off. The separately announced earbuds and 2nd Gen
+      headphone figures are excluded; undated companion test details are not used.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: headphones_epa_used_li_ion_2026
+    title: Used Lithium-Ion Batteries
+    publisher: United States Environmental Protection Agency
+    canonical_url: https://www.epa.gov/recycle/used-lithium-ion-batteries
+    publication_or_revision_date: "2026-03-20"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible U.S. government
+      page; no source-document or media redistribution. The displayed last-updated
+      day supports only conditional damaged lithium-ion handling and recycler or
+      collection-program guidance. It does not establish headphone battery
+      chemistry, damage from a generic flag, acceptance by a destination, or the
+      separate OSHA advisory's provenance.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: headphones_jabra_elite_8_active_launch_2023
+    title: Jabra expands its Elite range with two premium earbuds built for work and life
+    publisher: Jabra Newsroom
+    canonical_url: https://www.jabra.com/about/news-and-press-releases/2023-jabra-elite-8-10
+    publication_or_revision_date: "2023-08-31"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible dated Jabra
+      release; no source-document or media redistribution. Use is limited to the
+      original Elite 8 Active true-wireless earbuds, their battery-dependent
+      operation, and distinct case-supported capacity. Elite 8 Active Gen 2 and
+      Elite 10 facts are excluded, and battery chemistry is not inferred.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: headphones_osha_small_lithium_devices_2019
+    title: Preventing Fire and/or Explosion Injury from Small and Wearable Lithium Battery Powered Devices
+    publisher: Occupational Safety and Health Administration
+    canonical_url: https://obis.osha.gov/dts/shib/shib011819.html
+    publication_or_revision_date: "2019-06-20"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to OSHA's readable first-party HTML copy
+      of a workplace safety advisory; no source text or media redistribution. The
+      displayed SHIB 06-20-2019 label supports narrowly conditional removal-from-
+      service, physical-damage, and flammable-surroundings precautions for damaged
+      lithium-powered small or wearable devices. The bulletin is advisory, not a
+      regulation, and does not prove the chemistry of a selected headphone, earbud,
+      or charging case or create a blanket consumer obligation.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: headphones_sony_wh_1000xm5_help_guide_2025
+    title: WH-1000XM5 / WH-1000XM5SA Help Guide — Available operating time
+    publisher: Sony Corporation
+    canonical_url: https://helpguide.sony.net/mdr/wh1000xm5/v1/en/contents/TP1000534508.html
+    publication_or_revision_date: "2025-05-25"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to the publicly accessible exact-product
+      Help Guide; no source-document or media redistribution. Sony's support listing
+      assigns Release Date 2025-05-25 to the current linked Help Guide resource.
+      That resource binding supports the fully charged Bluetooth music/AAC/noise-
+      cancelling-on 30-hour maximum; the date is not treated as the product launch
+      or proof that every sentence originated that day. Communication, powered
+      wired-use, alternate-codec/state, and quick-charge rows are excluded.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: headphones_sony_wh_1000xm5_launch_2022
+    title: Sony re-writes the rules with their newest industry-leading noise cancelling headphones – Introducing the WH-1000XM5
+    publisher: Sony UK Press Centre
+    canonical_url: https://www.sony.co.uk/presscentre/sony-re-writes-the-rules-with-their-newest-industry-leading-noise-cancelling-headphones-introducing-the-wh-1000xm5
+    publication_or_revision_date: "2022-05-12"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Factual paraphrase and citation/link to a publicly accessible dated Sony
+      release; no source-document or media redistribution. Use supports the exact
+      WH-1000XM5 wireless noise-cancelling over-ear identity, rechargeable battery,
+      microphones, controls, radio operation, and the generic 30-hour headline.
+      The detailed codec/state matrix comes only from the separately dated Help Guide.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"
+  - source_id: headphones_swiss_service_lifetime_2017
+    title: Service lifetime, storage time, and disposal pathways of electronic equipment (article, accepted manuscript, and publisher-linked S1)
+    publisher: Journal of Industrial Ecology / Wiley; accepted manuscript hosted by Lib4RI DORA
+    canonical_url: https://doi.org/10.1111/jiec.12551
+    publication_or_revision_date: "2017-02-24"
+    accessed_on: "2026-09-10"
+    license_or_use_basis: >-
+      Independently worded factual findings and bibliographic citation from the
+      publicly accessible primary accepted manuscript and publisher-linked
+      Supporting Information S1; neither PDFs, Figure 1, expressive text, nor
+      underlying data are redistributed. The day is the publisher-verified article
+      first-publication day for the bibliographic work and its accompanying S1, not
+      a separately established full publication day for S1; the issue is from 2018.
+    reviewed_by: OpenAI Codex automated source review
+    reviewed_on: "2026-09-10"

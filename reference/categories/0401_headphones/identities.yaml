@@ -1,0 +1,190 @@
+category:
+  category_id: 0401_headphones
+  display_name: Headphones and headsets
+
+subtypes:
+  - subtype_id: headphones_true_wireless
+    category_id: 0401_headphones
+    display_name: True-wireless earbuds with charging case
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+  - subtype_id: headphones_wireless_over_ear
+    category_id: 0401_headphones
+    display_name: Rechargeable wireless over-ear headphones
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+
+variants:
+  - variant_id: headphones_true_wireless_with_charging_case
+    category_id: 0401_headphones
+    subtype_id: headphones_true_wireless
+    display_name: Battery-bearing true-wireless earbuds with charging case
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+      - headphones_jabra_elite_8_active_launch_2023
+  - variant_id: headphones_wireless_rechargeable
+    category_id: 0401_headphones
+    subtype_id: headphones_wireless_over_ear
+    display_name: Rechargeable wireless over-ear architecture
+    battery_architecture: battery_bearing
+    evidence_level: B
+    source_ids:
+      - headphones_beats_studio_pro_launch_2023
+      - headphones_bose_quietcomfort_ultra_launch_2023
+      - headphones_sony_wh_1000xm5_launch_2022
+
+identities:
+  - identity_id: apple_airpods_pro_2_usb_c
+    identity_kind: model
+    category_id: 0401_headphones
+    subtype_id: headphones_true_wireless
+    manufacturer_id: apple
+    manufacturer_name: Apple
+    family_id: apple_airpods_pro
+    family_name: Apple AirPods Pro
+    model_id: apple_airpods_pro_2_usb_c
+    model_name: AirPods Pro (2nd generation) with MagSafe Charging Case (USB-C)
+    display_name: Apple AirPods Pro (2nd generation) with MagSafe Charging Case (USB-C)
+    aliases:
+      - AirPods Pro 2 USB-C
+    distinguishing_tokens:
+      - airpods pro second generation
+      - magsafe charging case usb-c
+      - usb-c connector
+    model_year_from: 2023
+    model_year_to: 2023
+    applicable_from: "2023-09-12"
+    applicable_to: null
+    variant_ids:
+      - headphones_true_wireless_with_charging_case
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - headphones_apple_airpods_pro_2_usb_c_launch_2023
+  - identity_id: beats_studio_pro
+    identity_kind: model
+    category_id: 0401_headphones
+    subtype_id: headphones_wireless_over_ear
+    manufacturer_id: beats
+    manufacturer_name: Beats by Dr. Dre
+    family_id: beats_studio
+    family_name: Beats Studio
+    model_id: beats_studio_pro
+    model_name: Beats Studio Pro
+    display_name: Beats Studio Pro wireless over-ear headphones
+    aliases:
+      - Beats Studio Pro 2023
+    distinguishing_tokens:
+      - studio pro
+      - over-ear headphones
+      - class 1 bluetooth
+      - usb-c audio and 3.5 mm input
+    model_year_from: 2023
+    model_year_to: 2023
+    applicable_from: "2023-07-19"
+    applicable_to: null
+    variant_ids:
+      - headphones_wireless_rechargeable
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - headphones_beats_studio_pro_launch_2023
+  - identity_id: bose_quietcomfort_ultra_headphones
+    identity_kind: model
+    category_id: 0401_headphones
+    subtype_id: headphones_wireless_over_ear
+    manufacturer_id: bose
+    manufacturer_name: Bose
+    family_id: bose_quietcomfort_ultra
+    family_name: Bose QuietComfort Ultra
+    model_id: bose_quietcomfort_ultra_headphones
+    model_name: QuietComfort Ultra Headphones
+    display_name: Bose QuietComfort Ultra Headphones (original 2023 generation)
+    aliases:
+      - Bose QuietComfort Ultra Headphones 2023
+    distinguishing_tokens:
+      - quietcomfort ultra headphones
+      - original 2023 generation
+      - over-ear immersive audio headphones
+    model_year_from: 2023
+    model_year_to: 2023
+    applicable_from: "2023-09-14"
+    applicable_to: null
+    variant_ids:
+      - headphones_wireless_rechargeable
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - headphones_bose_quietcomfort_ultra_launch_2023
+  - identity_id: jabra_elite_8_active
+    identity_kind: model
+    category_id: 0401_headphones
+    subtype_id: headphones_true_wireless
+    manufacturer_id: jabra
+    manufacturer_name: Jabra
+    family_id: jabra_elite_active
+    family_name: Jabra Elite Active
+    model_id: jabra_elite_8_active
+    model_name: Jabra Elite 8 Active
+    display_name: Jabra Elite 8 Active true-wireless earbuds (original 2023 model)
+    aliases:
+      - Jabra Elite 8 Active 2023
+    distinguishing_tokens:
+      - elite 8 active
+      - true wireless earbuds
+      - original 2023 model
+      - charging case
+    model_year_from: 2023
+    model_year_to: 2023
+    applicable_from: "2023-08-31"
+    applicable_to: null
+    variant_ids:
+      - headphones_true_wireless_with_charging_case
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - headphones_jabra_elite_8_active_launch_2023
+  - identity_id: sony_wh_1000xm5
+    identity_kind: model
+    category_id: 0401_headphones
+    subtype_id: headphones_wireless_over_ear
+    manufacturer_id: sony
+    manufacturer_name: Sony
+    family_id: sony_1000x
+    family_name: Sony 1000X
+    model_id: sony_wh_1000xm5
+    model_name: WH-1000XM5
+    display_name: Sony WH-1000XM5 wireless noise-cancelling headphones
+    aliases:
+      - Sony 1000X series WH-1000XM5
+    distinguishing_tokens:
+      - wh-1000xm5
+      - over-ear wireless headphones
+      - noise cancelling
+      - 2022 1000x series edition
+    model_year_from: 2022
+    model_year_to: 2022
+    applicable_from: "2022-05-12"
+    applicable_to: null
+    variant_ids:
+      - headphones_wireless_rechargeable
+    market_state: current
+    battery_architecture: battery_bearing
+    evidence_level: A
+    source_ids:
+      - headphones_sony_wh_1000xm5_launch_2022

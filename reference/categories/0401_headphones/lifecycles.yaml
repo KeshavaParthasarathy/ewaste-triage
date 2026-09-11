@@ -1,0 +1,66 @@
+lifecycles:
+  - record_id: bose_quietcomfort_ultra_charge_runtime
+    scope:
+      kind: model
+      id: bose_quietcomfort_ultra_headphones
+    subject: device_battery
+    endpoint: charge_runtime
+    endpoint_kind: operating_endurance
+    metric: elapsed_time
+    unit: hours
+    lower_bound: 24.0
+    upper_bound: 24.0
+    endpoint_qualification: >-
+      Manufacturer-published maximum of up to 24 hours on a single charge for the
+      original 2023 Bose QuietComfort Ultra Headphones with Immersive Audio off.
+      Equal bounds encode that qualified ceiling, not a guaranteed minimum,
+      recharge-cycle durability, physical lifetime, or whole-device service life.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: 2023
+    model_year_to: 2023
+    required_variant_ids:
+      - headphones_wireless_rechargeable
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: A
+    assumptions:
+      - The dated release supports only the original 2023 over-ear Headphones identity and the stated up-to value with Immersive Audio off.
+      - The separately announced Ultra Earbuds, the later second-generation headphones, and their different runtime values are excluded.
+      - The alternative 18-hour Immersive Audio-on maximum is a separate feature state and is not blended into an interval.
+      - The detailed undated companion protocol is not imported; protocol detail for this dated release remains sparse and actual runtime varies with settings and use.
+    source_ids:
+      - headphones_bose_quietcomfort_ultra_launch_2023
+  - record_id: sony_wh_1000xm5_charge_runtime
+    scope:
+      kind: model
+      id: sony_wh_1000xm5
+    subject: device_battery
+    endpoint: charge_runtime
+    endpoint_kind: operating_endurance
+    metric: elapsed_time
+    unit: hours
+    lower_bound: 30.0
+    upper_bound: 30.0
+    endpoint_qualification: >-
+      Maximum continuous Bluetooth music playback of 30 hours on a fully charged
+      Sony WH-1000XM5 headset using AAC with noise cancelling on. Equal bounds
+      encode that qualified ceiling, not a guaranteed minimum, recharge-cycle
+      durability, physical lifetime, or whole-device service life.
+    applicable_from: null
+    applicable_to: null
+    model_year_from: 2022
+    model_year_to: 2022
+    required_variant_ids:
+      - headphones_wireless_rechargeable
+    excluded_variant_ids: []
+    precedence: 0
+    evidence_level: A
+    assumptions:
+      - The headset battery starts fully charged and the activity is Bluetooth music playback with AAC and noise cancelling on.
+      - Alternate AAC feature states and the LDAC or SBC maxima are separate conditions and are not blended into a range.
+      - Communication time and powered wired-headphone use are separate activities and connection scopes and are excluded.
+      - Quick-charge results and their temperature qualification are not the full-charge endpoint and are excluded.
+      - Actual hours vary with headset-function settings and use conditions.
+    source_ids:
+      - headphones_sony_wh_1000xm5_help_guide_2025
