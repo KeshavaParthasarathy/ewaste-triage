@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.json text eol=lf
+*.ico binary
+*.jpg binary
+*.onnx binary
+*.sqlite binary

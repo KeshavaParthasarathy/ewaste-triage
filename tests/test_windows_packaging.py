@@ -13,6 +13,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY = ROOT / "scripts" / "verify_windows_bundle.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "windows-release.yml"
+GIT_ATTRIBUTES = ROOT / ".gitattributes"
 
 
 def _sha256(path: Path) -> str:
@@ -148,3 +149,11 @@ def test_windows_workflow_runs_product_tests_without_training_dependencies():
 
     assert "tests/test_assessment_api.py" in workflow
     assert "tests/test_desktop_api.py" not in workflow
+
+
+def test_release_artifact_bytes_are_stable_on_windows_checkout():
+    attributes = GIT_ATTRIBUTES.read_text(encoding="utf-8")
+
+    assert "*.json text eol=lf" in attributes
+    assert "*.onnx binary" in attributes
+    assert "*.sqlite binary" in attributes
