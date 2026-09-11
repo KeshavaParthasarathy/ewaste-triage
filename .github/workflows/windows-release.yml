@@ -48,7 +48,7 @@ jobs:
       - name: Run focused tests
         shell: pwsh
         run: |
-          python -m pytest tests/test_desktop_ui.py tests/test_desktop_api.py tests/test_history.py tests/test_desktop_runtime.py tests/test_release_metadata.py tests/test_windows_packaging.py -q
+          python -m pytest tests/test_desktop_ui.py tests/test_assessment_api.py tests/test_history.py tests/test_desktop_runtime.py tests/test_release_metadata.py tests/test_windows_packaging.py -q
 
       - name: Build Windows ZIP
         shell: pwsh
