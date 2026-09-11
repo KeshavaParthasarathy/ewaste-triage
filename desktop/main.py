@@ -256,6 +256,7 @@ def run(
     frozen = bool(getattr(sys, "frozen", False))
     paths = paths or AppPaths.for_runtime(frozen)
     readiness_path = _test_readiness_path() if test_mode else None
+    test_shutdown_event = (shutdown_event or threading.Event()) if test_mode else None
     try:
         app = (
             build_desktop_app(paths, require_release_integrity=True)
@@ -272,6 +273,12 @@ def run(
             app_version=_read_build_version(paths.resources_dir),
             reference_diagnostic=str(exc),
         )
+    if test_mode:
+        @app.post("/__test__/shutdown")
+        def _test_shutdown():
+            test_shutdown_event.set()
+            return {"ok": True}
+
     server = None
     completed = False
     previous_signal_handlers = {}
@@ -279,17 +286,16 @@ def run(
         server = ServerThread(app)
         url = server.start_and_wait()
         if test_mode:
-            event = shutdown_event or threading.Event()
             if threading.current_thread() is threading.main_thread():
                 def request_shutdown(_signum, _frame):
-                    event.set()
+                    test_shutdown_event.set()
 
                 for handled_signal in shutdown_signals():
                     previous_signal_handlers[handled_signal] = signal.signal(
                         handled_signal, request_shutdown
                     )
             _publish_test_readiness(readiness_path, url)
-            event.wait()
+            test_shutdown_event.wait()
         else:
             webview_module.create_window("E-Waste Triage", url, min_size=(760, 620))
             webview_module.start(debug=False)

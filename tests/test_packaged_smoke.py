@@ -199,12 +199,20 @@ def _cleanup_child(
     *,
     ready_file: Path,
     ports: tuple[int | None, ...],
+    shutdown_url: str | None = None,
     shutdown_timeout: float = 10.0,
     refusal_timeout: float = 5.0,
 ) -> None:
     failures = []
     force_stopped = False
-    if process.poll() is None:
+    shutdown_requested = False
+    if process.poll() is None and shutdown_url is not None:
+        try:
+            _json_request(shutdown_url, "/__test__/shutdown", method="POST")
+            shutdown_requested = True
+        except (AssertionError, OSError, URLError):
+            pass
+    if process.poll() is None and not shutdown_requested:
         if os.name == "nt":
             # A windowed PyInstaller executable has no console to receive
             # CTRL_BREAK_EVENT. Stop the bootloader and its child as one tree.
@@ -298,6 +306,7 @@ def test_frozen_app_exercises_desktop_and_phone_paths(tmp_path: Path) -> None:
     )
     desktop_port: int | None = None
     phone_port: int | None = None
+    url: str | None = None
     try:
         url, desktop_port = _wait_for_readiness(process, ready_file)
 
@@ -397,6 +406,7 @@ def test_frozen_app_exercises_desktop_and_phone_paths(tmp_path: Path) -> None:
             process,
             ready_file=ready_file,
             ports=(desktop_port, phone_port),
+            shutdown_url=url,
         )
 
 

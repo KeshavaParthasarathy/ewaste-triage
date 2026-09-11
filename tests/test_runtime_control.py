@@ -11,7 +11,7 @@ import sys
 from threading import Event, Thread
 import time
 from urllib.parse import urlparse
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from flask import Flask
 import pytest
@@ -134,7 +134,9 @@ def test_test_mode_publishes_ready_loopback_url_without_opening_webview(
     with urlopen(payload["url"] + "/health", timeout=2) as response:
         assert response.status == 200
 
-    shutdown_event.set()
+    request = Request(payload["url"] + "/__test__/shutdown", data=b"", method="POST")
+    with urlopen(request, timeout=2) as response:
+        assert response.status == 200
     thread.join(timeout=2)
     assert not thread.is_alive()
     assert result == [0]
