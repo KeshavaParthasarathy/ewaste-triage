@@ -349,10 +349,10 @@ Confirm the exact GitHub repository and visibility before creating or connecting
 
 Push the committed branch, run the manual workflow first, and inspect the packaged smoke result. Fix only reproducible Windows defects through a failing test.
 
-- [ ] **Step 3: Publish version 0.1.0**
+- [x] **Step 3: Publish version 0.1.0**
 
 Create and push tag `v0.1.0` only after the Windows build and packaged smoke pass. Confirm the release contains the exact named ZIP and record its SHA-256.
 
-- [ ] **Step 4: Report the download**
+- [x] **Step 4: Report the download**
 
 Provide the GitHub Release download link, checksum, unsigned-build warning, and Windows 11 x64 requirement. If repository configuration is unavailable, report Tasks 1–4 complete and name that single external blocker without claiming the download exists.
