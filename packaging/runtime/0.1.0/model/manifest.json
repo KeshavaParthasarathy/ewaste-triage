@@ -1,0 +1,23 @@
+{
+  "architecture": "efficientnet_b0",
+  "artifact_sha256": "36c14aab662c7b0acd42c92cdc1c66136ca4d44e9064f82728b3bc7b461d7a20",
+  "classes": [
+    "0301_computer_mouse",
+    "0301_keyboard",
+    "0303_laptop",
+    "0306_mobile_phone",
+    "0401_headphones"
+  ],
+  "confidence_floor": 0.6,
+  "metrics": {
+    "checkpoint_sha256": "c8d14448f1c0fddfafabd5524ae4476540b3e7085493d2a1bc6ad335620b7886",
+    "parity": {
+      "max_probability_delta": 1.9669532775878906e-06,
+      "reference_images": 15,
+      "top1_matches": 15
+    }
+  },
+  "model_id": "t07-new-phone-mouse-efficientnet-b0",
+  "preprocessing_version": "rgb-224-v1",
+  "schema_version": 1
+}

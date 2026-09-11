@@ -211,13 +211,16 @@ git commit -m "feat: support Windows desktop runtime metadata"
 - Create: `packaging/runtime/0.1.0/parity-report.json`
 - Create: `packaging/runtime/0.1.0/release-manifest.json`
 - Modify: `tests/test_packaging.py`
+- Create: `tests/test_windows_packaging.py`
 - Modify: `tests/test_packaged_smoke.py`
+- Modify: `desktop/main.py`
+- Modify: `tests/test_desktop_runtime.py`
 
 **Interfaces:**
 - Consumes: approved prototype runtime payload currently staged at `.release-staging/release-0.1.0`; shared `desktop/main.py` entry point.
 - Produces: `dist/E-Waste-Triage-<version>-windows-x64.zip`; `verify_windows_bundle(release_dir: Path, app_dir: Path, expected_version: str) -> None`; cross-platform packaged-smoke executable resolution.
 
-- [ ] **Step 1: Write Windows packaging tests**
+- [x] **Step 1: Write Windows packaging tests**
 
 Execute the Windows spec through a small fake PyInstaller build namespace and assert the resulting build graph:
 
@@ -230,7 +233,7 @@ assert graph.collect.name == "E-Waste Triage"
 
 Test that the verifier rejects missing EXE/resources, mismatched hashes, and wrong manifest target. Update `_app_executable()` in packaged smoke so `EWASTE_PACKAGED_APP` accepts either a macOS `.app` or a Windows directory containing `E-Waste Triage.exe`.
 
-- [ ] **Step 2: Run packaging tests and confirm RED**
+- [x] **Step 2: Run packaging tests and confirm RED**
 
 Run:
 
@@ -240,7 +243,7 @@ Run:
 
 Expected: Windows package files and executable resolution are missing.
 
-- [ ] **Step 3: Add the versioned prototype runtime payload**
+- [x] **Step 3: Add the versioned prototype runtime payload**
 
 Copy the six existing 0.1.0 runtime artifacts into `packaging/runtime/0.1.0`, preserving bytes for the model, model manifest, component database, labels, and parity report. Generate the Windows release manifest by preserving model/components/parity and setting:
 
@@ -250,7 +253,7 @@ Copy the six existing 0.1.0 runtime artifacts into `packaging/runtime/0.1.0`, pr
 
 Recompute the release-manifest hash used by generated build metadata. Verify every recorded model/component/labels/parity hash before packaging.
 
-- [ ] **Step 4: Add the Windows PyInstaller spec and build script**
+- [x] **Step 4: Add the Windows PyInstaller spec and build script**
 
 The spec mirrors the shared data/exclusion list from `EWasteTriage.spec`, uses `webview.platforms.edgechromium`, creates a windowed one-directory EXE, and omits macOS `BUNDLE`, entitlements, architecture flags, and plist fields.
 
@@ -265,23 +268,23 @@ The spec mirrors the shared data/exclusion list from `EWasteTriage.spec`, uses `
 7. create the named ZIP with `Compress-Archive`;
 8. print the final absolute ZIP path.
 
-- [ ] **Step 5: Make packaged smoke cross-platform**
+- [x] **Step 5: Make packaged smoke cross-platform**
 
 Use `subprocess.CREATE_NEW_PROCESS_GROUP` only when available and terminate on Windows with `CTRL_BREAK_EVENT`, falling back to `process.terminate()`. Keep the same readiness file, loopback API, image classification, assessment, recent-history, phone session, and shutdown assertions.
 
-- [ ] **Step 6: Run portable tests and commit**
+- [x] **Step 6: Run portable tests and commit**
 
 Run on the current host:
 
 ```bash
-.venv/bin/python -m pytest tests/test_packaging.py tests/test_packaged_smoke.py tests/test_desktop_runtime.py tests/test_release_metadata.py -q
+.venv/bin/python -m pytest tests/test_packaging.py tests/test_windows_packaging.py tests/test_packaged_smoke.py tests/test_desktop_runtime.py tests/test_release_metadata.py -q
 .venv/bin/python -m py_compile scripts/verify_windows_bundle.py
 ```
 
 Expected: PASS, with packaged smoke skipped until a real package path is supplied.
 
 ```bash
-git add packaging/EWasteTriage-Windows.spec packaging/runtime scripts/build_windows_app.ps1 scripts/verify_windows_bundle.py desktop/assets/app-icon.ico tests/test_packaging.py tests/test_packaged_smoke.py
+git add packaging/EWasteTriage-Windows.spec packaging/runtime scripts/build_windows_app.ps1 scripts/verify_windows_bundle.py desktop/assets/app-icon.ico desktop/main.py tests/test_windows_packaging.py tests/test_packaged_smoke.py tests/test_desktop_runtime.py
 git commit -m "feat: add Windows x64 desktop package"
 ```
 

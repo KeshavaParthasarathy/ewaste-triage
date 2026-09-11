@@ -25,7 +25,7 @@ from werkzeug.wrappers import Request as WerkzeugRequest
 
 requires_packaged_app = pytest.mark.skipif(
     "EWASTE_PACKAGED_APP" not in os.environ,
-    reason="set EWASTE_PACKAGED_APP to a frozen E-Waste Triage.app to run packaged smoke coverage",
+    reason="set EWASTE_PACKAGED_APP to a frozen E-Waste Triage app directory",
 )
 
 
@@ -43,13 +43,26 @@ HEX_64 = re.compile(r"[0-9a-f]{64}\Z")
 
 def _app_executable() -> Path:
     app = Path(os.environ["EWASTE_PACKAGED_APP"]).expanduser()
-    executable = app / "Contents" / "MacOS" / "E-Waste Triage"
-    if app.suffix != ".app" or not app.is_dir() or not executable.is_file():
-        pytest.fail(
-            "EWASTE_PACKAGED_APP must point to an existing .app with "
-            "Contents/MacOS/E-Waste Triage"
-        )
-    return executable
+    candidates = (
+        app / "Contents" / "MacOS" / "E-Waste Triage",
+        app / "E-Waste Triage.exe",
+    )
+    for executable in candidates:
+        if app.is_dir() and executable.is_file():
+            return executable
+    pytest.fail(
+        "EWASTE_PACKAGED_APP must point to a macOS .app or Windows one-directory package"
+    )
+
+
+def test_packaged_executable_accepts_windows_onedir(monkeypatch, tmp_path: Path) -> None:
+    app = tmp_path / "E-Waste Triage"
+    app.mkdir()
+    executable = app / "E-Waste Triage.exe"
+    executable.write_bytes(b"MZ")
+    monkeypatch.setenv("EWASTE_PACKAGED_APP", str(app))
+
+    assert _app_executable() == executable
 
 
 def _output(process: subprocess.Popen[str]) -> str:
@@ -191,7 +204,12 @@ def _cleanup_child(
 ) -> None:
     failures = []
     if process.poll() is None:
-        process.send_signal(signal.SIGTERM)
+        graceful_signal = (
+            signal.CTRL_BREAK_EVENT
+            if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT")
+            else signal.SIGTERM
+        )
+        process.send_signal(graceful_signal)
     timed_out = False
     try:
         stdout, stderr = process.communicate(timeout=shutdown_timeout)
@@ -262,6 +280,11 @@ def test_frozen_app_exercises_desktop_and_phone_paths(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
         env=environment,
+        creationflags=(
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            if os.name == "nt"
+            else 0
+        ),
     )
     desktop_port: int | None = None
     phone_port: int | None = None
@@ -381,6 +404,7 @@ def _start_stubborn_child(tmp_path: Path) -> subprocess.Popen[str]:
         "import signal, sys, time\n"
         "from pathlib import Path\n"
         "signal.signal(signal.SIGTERM, lambda *_args: None)\n"
+        "if hasattr(signal, 'SIGBREAK'): signal.signal(signal.SIGBREAK, lambda *_args: None)\n"
         "Path(sys.argv[1]).write_text('ready', encoding='utf-8')\n"
         "print('captured child stdout', flush=True)\n"
         "print('captured child stderr', file=sys.stderr, flush=True)\n"
@@ -391,6 +415,11 @@ def _start_stubborn_child(tmp_path: Path) -> subprocess.Popen[str]:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        creationflags=(
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            if os.name == "nt"
+            else 0
+        ),
     )
     deadline = time.monotonic() + 2
     while not child_ready.exists() and time.monotonic() < deadline:

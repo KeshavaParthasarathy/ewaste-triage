@@ -50,6 +50,17 @@ _ONNX_STARTUP_ERRORS = (
     ort_state.InvalidProtobuf,
 )
 _EXPECTED_MODEL_STARTUP_ERRORS = (ModelBundleError, *_ONNX_STARTUP_ERRORS)
+
+
+def shutdown_signals(signal_module=signal) -> tuple[int, ...]:
+    """Return graceful console signals available on this platform."""
+    values = [signal_module.SIGTERM, signal_module.SIGINT]
+    sigbreak = getattr(signal_module, "SIGBREAK", None)
+    if sigbreak is not None and sigbreak not in values:
+        values.append(sigbreak)
+    return tuple(values)
+
+
 def _safe_diagnostic(value: object, fallback: str) -> str:
     if not isinstance(value, str):
         return fallback
@@ -273,7 +284,7 @@ def run(
                 def request_shutdown(_signum, _frame):
                     event.set()
 
-                for handled_signal in (signal.SIGTERM, signal.SIGINT):
+                for handled_signal in shutdown_signals():
                     previous_signal_handlers[handled_signal] = signal.signal(
                         handled_signal, request_shutdown
                     )

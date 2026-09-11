@@ -1,0 +1,25 @@
+{
+  "holdout": {
+    "overlaps_training": false,
+    "samples": 32,
+    "split": "holdout",
+    "status": "passed",
+    "valid": true
+  },
+  "labels": [
+    "0301_computer_mouse",
+    "0301_keyboard",
+    "0303_laptop",
+    "0306_mobile_phone",
+    "0401_headphones"
+  ],
+  "metrics": {
+    "max_probability_delta": 1.9669532775878906e-06,
+    "reference_images": 15,
+    "top1_matches": 15
+  },
+  "model_id": "t07-new-phone-mouse-efficientnet-b0",
+  "model_sha256": "36c14aab662c7b0acd42c92cdc1c66136ca4d44e9064f82728b3bc7b461d7a20",
+  "schema_version": 1,
+  "status": "passed"
+}

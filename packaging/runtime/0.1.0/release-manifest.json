@@ -1,0 +1,48 @@
+{
+  "app_version": "0.1.0",
+  "components": {
+    "content_sha256": "5729aefdd8573bdd10ae472b3231ddb6ff1db4c24b197bad4a37785a83efaa31",
+    "schema_version": 2,
+    "sha256": "defeb4e9c1b049da06636f4423572f25f97285ae38980e07b178cf93fd7c5e6f",
+    "version": "2.0.0"
+  },
+  "created_at": "2026-09-06T23:58:22.275791+00:00",
+  "model": {
+    "artifact_sha256": "36c14aab662c7b0acd42c92cdc1c66136ca4d44e9064f82728b3bc7b461d7a20",
+    "labels_sha256": "c60b509c712bc7830c1e531f44e61e75405f94fa8e21d367666a56de1a11450a",
+    "manifest_sha256": "b386a44bc178cb3fc1d565af3d8467eb8da79cbed8f887e4b0d1c80614fc3542",
+    "model_id": "t07-new-phone-mouse-efficientnet-b0",
+    "schema_version": 1
+  },
+  "parity": {
+    "holdout": {
+      "overlaps_training": false,
+      "samples": 32,
+      "split": "holdout",
+      "status": "passed",
+      "valid": true
+    },
+    "labels": [
+      "0301_computer_mouse",
+      "0301_keyboard",
+      "0303_laptop",
+      "0306_mobile_phone",
+      "0401_headphones"
+    ],
+    "metrics": {
+      "max_probability_delta": 1.9669532775878906e-06,
+      "reference_images": 15,
+      "top1_matches": 15
+    },
+    "model_id": "t07-new-phone-mouse-efficientnet-b0",
+    "model_sha256": "36c14aab662c7b0acd42c92cdc1c66136ca4d44e9064f82728b3bc7b461d7a20",
+    "schema_version": 1,
+    "status": "passed"
+  },
+  "schema_version": 1,
+  "target": {
+    "architecture": "x86_64",
+    "minimum_version": "11",
+    "platform": "windows"
+  }
+}

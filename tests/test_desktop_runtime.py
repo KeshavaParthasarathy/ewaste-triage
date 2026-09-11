@@ -1,9 +1,11 @@
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.request import urlopen
 
 from flask import Flask
 import pytest
 
+import desktop.main as desktop_main
 from desktop.main import run
 from desktop.paths import AppPaths
 import desktop.paths as paths_module
@@ -78,6 +80,12 @@ def test_platform_data_dir_keeps_macos_application_support():
     assert paths_module.platform_data_dir("Darwin", {}) == (
         Path.home() / "Library/Application Support/E-Waste Triage"
     )
+
+
+def test_shutdown_signals_include_windows_ctrl_break_when_available():
+    fake_signals = SimpleNamespace(SIGTERM=15, SIGINT=2, SIGBREAK=21)
+
+    assert desktop_main.shutdown_signals(fake_signals) == (15, 2, 21)
 
 
 def test_desktop_run_opens_one_native_window(monkeypatch, tmp_path):
