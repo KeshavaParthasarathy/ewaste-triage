@@ -45,13 +45,15 @@ def _run_ui_contract(script):
 def test_desktop_page_is_accessible_and_self_contained():
     page = _page()
     assert all(text in page.text for text in (
-        "Scan", "Phone capture", "History", "Analyze another photo"
+        "New scan", "Use phone", "Recent scans", "Analyze another photo"
     ))
-    assert any(tag == "main" for tag, _ in page.elements)
-    assert any(
-        tag == "nav" and attrs.get("aria-label") == "Primary"
+    assert sum(tag == "main" for tag, _ in page.elements) == 1
+    assert not any(
+        tag == "aside" and attrs.get("aria-label") == "Application sidebar"
         for tag, attrs in page.elements
     )
+    assert any(tag == "details" for tag, _ in page.elements)
+    assert "Why this result?" in page.text
     assert any(
         attrs.get("aria-live") == "polite" and attrs.get("role") == "status"
         for _, attrs in page.elements
@@ -59,13 +61,12 @@ def test_desktop_page_is_accessible_and_self_contained():
     assert "https://" not in page.text and "http://" not in page.text
 
 
-def test_primary_navigation_includes_the_assessment_workspace():
+def test_focused_workspace_keeps_assessment_in_the_scan_journey():
     page = _page()
-    assessment_links = [
-        attrs for tag, attrs in page.elements
-        if tag == "button" and attrs.get("data-view-link") == "assessment"
-    ]
-    assert len(assessment_links) == 1
+    assert not any(
+        tag == "nav" and attrs.get("aria-label") == "Primary"
+        for tag, attrs in page.elements
+    )
     assert any(
         tag == "section" and attrs.get("id") == "assessment-view"
         for tag, attrs in page.elements
@@ -135,7 +136,7 @@ def test_phone_pairing_copy_discloses_the_local_http_security_boundary():
     assert "Pair securely" not in page.text
 
 
-def test_clear_history_confirmation_describes_the_brief_undo_window():
+def test_clear_history_confirmation_is_short_and_direct():
     result = _run_ui_contract(r"""
 const UI = require(process.argv[1]);
 let message = null;
@@ -148,10 +149,7 @@ process.stdout.write(JSON.stringify({accepted, message}));
 
     assert result == {
         "accepted": True,
-        "message": (
-            "Delete every locally saved scan? "
-            "You will have a brief chance to undo before deletion completes."
-        ),
+        "message": "Delete all recent scans?",
     }
 
 
@@ -194,13 +192,11 @@ def test_release_about_is_a_secondary_accessible_dialog_without_a_fourth_area():
         "release-component-sha256", "release-component-version",
     ):
         assert controls[target][0] == "output"
-    primary_links = [
+    navigation_links = [
         attrs for tag, attrs in page.elements
         if tag == "button" and attrs.get("data-view-link")
     ]
-    assert {attrs["data-view-link"] for attrs in primary_links} == {
-        "scan", "assessment", "history"
-    }
+    assert not any(attrs.get("class") == "nav-item" for attrs in navigation_links)
 
 
 def test_release_about_stagger_finishes_within_the_motion_budget():
@@ -964,7 +960,7 @@ const fetchImpl = async (url, options = {}) => {
   if (url === '/api/v1/history') return {ok: true, json: async () => records};
   throw new Error('unexpected request ' + url);
 };
-const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => '', undoDelay: 0});
+const controller = UI.createController({view, fetchImpl, formDataFactory: () => ({append() {}}), nextFrame: async () => {}, objectUrl: () => ''});
 (async () => {
   await controller.loadHistory();
   await controller.deleteHistory('old');

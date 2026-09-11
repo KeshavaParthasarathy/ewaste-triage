@@ -788,7 +788,7 @@ def create_desktop_app(
     @app.get("/api/v1/history")
     def list_history():
         store = app.config["HISTORY_STORE"]
-        return jsonify(store.list_scans() if store is not None else [])
+        return jsonify(store.list_scans(limit=20) if store is not None else [])
 
     @app.get("/api/v1/reference/categories")
     def list_reference_categories():

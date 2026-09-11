@@ -29,6 +29,7 @@
 - Modify: `server/static/app.css`
 - Modify: `server/static/app.js`
 - Modify: `server/history.py`
+- Modify: `server/app.py`
 - Modify: `server/desktop_app.py`
 - Modify: `tests/test_desktop_ui.py`
 - Modify: `tests/test_desktop_api.py`
@@ -38,7 +39,7 @@
 - Consumes: existing `/api/v1/classify`, assessment, phone-capture, history item, delete, and clear endpoints.
 - Produces: `HistoryStore.list_scans(limit: int | None = None) -> list[dict]`; `GET /api/v1/history` returns at most 20 rows; direct `deleteHistory(scan_id)` and `clearHistory()` controller operations.
 
-- [ ] **Step 1: Write focused failing tests**
+- [x] **Step 1: Write focused failing tests**
 
 Parse the real document and assert the user-observable structure:
 
@@ -62,7 +63,7 @@ assert listed.json[0]["scan_id"] == newest_scan_id
 
 Test `HistoryStore.list_scans(limit=2)` returns exactly the two newest rows and rejects boolean, zero, or negative limits with `ValueError`.
 
-- [ ] **Step 2: Run the focused tests and confirm RED**
+- [x] **Step 2: Run the focused tests and confirm RED**
 
 Run:
 
@@ -72,7 +73,7 @@ Run:
 
 Expected: failures for the old sidebar/undo UI and unlimited history listing.
 
-- [ ] **Step 3: Implement bounded history reads and direct deletion**
+- [x] **Step 3: Implement bounded history reads and direct deletion**
 
 Change `HistoryStore.list_scans` to append a parameterized SQL limit only when supplied:
 
@@ -91,7 +92,7 @@ def list_scans(self, limit: int | None = None) -> list[dict]:
 
 Have `GET /api/v1/history` call `store.list_scans(limit=20)`. Keep single-delete and clear-all endpoints; remove the controller's delayed `stageHistoryAction`/undo state so delete and clear issue their requests immediately. Keep a short clear confirmation: `Delete all recent scans?`.
 
-- [ ] **Step 4: Reshape the existing UI into one focused journey**
+- [x] **Step 4: Reshape the existing UI into one focused journey**
 
 Remove the fixed sidebar. Put the compact brand, `Use phone`, `Recent scans`, and `About` actions in the top bar. Preserve existing element IDs required by the controller, but present Scan → Review identity → Assessment/result as successive states in the same centered workspace. Present history as a secondary sheet/panel.
 
@@ -106,7 +107,7 @@ Change result language and hierarchy to show identity first, then condition/acti
 
 Use responsive CSS for a minimum 760×620 window and narrow layouts. Preserve keyboard-accessible buttons, visible focus, labels, state announcements, and reduced-motion rules.
 
-- [ ] **Step 5: Run focused and nearby tests**
+- [x] **Step 5: Run focused and nearby tests**
 
 Run:
 
@@ -116,10 +117,10 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
-git add server/static/index.html server/static/app.css server/static/app.js server/history.py server/desktop_app.py tests/test_desktop_ui.py tests/test_desktop_api.py tests/test_history.py
+git add server/static/index.html server/static/app.css server/static/app.js server/history.py server/app.py server/desktop_app.py tests/test_desktop_ui.py tests/test_desktop_api.py tests/test_history.py
 git commit -m "feat: focus desktop scan experience"
 ```
 

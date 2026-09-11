@@ -9,43 +9,24 @@
   <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="Application sidebar">
-      <a class="brand" href="#scan" data-view-link="scan" aria-label="E-Waste Triage home">
-        <span class="brand-mark" aria-hidden="true">↻</span>
-        <span><strong>E-Waste</strong><small>Triage</small></span>
-      </a>
-
-      <nav class="primary-nav" aria-label="Primary">
-        <button class="nav-item is-selected" type="button" data-view-link="scan" aria-current="page">
-          <span class="nav-icon" aria-hidden="true">⌁</span><span>Scan</span>
-        </button>
-        <button class="nav-item" type="button" data-view-link="assessment">
-          <span class="nav-icon" aria-hidden="true">✓</span><span>Assessment</span>
-        </button>
-        <button class="nav-item" type="button" data-view-link="history">
-          <span class="nav-icon" aria-hidden="true">◷</span><span>History</span>
-        </button>
-      </nav>
-
-      <div class="privacy-note">
-        <span class="privacy-dot" aria-hidden="true"></span>
-        <span><strong>Private by design</strong><small>Processing and history stay on this Mac.</small></span>
-      </div>
-    </aside>
-
+  <div class="app-shell focused-shell">
     <main class="workspace">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">Local device classifier</p>
-          <p class="topbar-note">No account or cloud upload</p>
+        <a class="brand" href="#scan" data-view-link="scan" aria-label="E-Waste Triage home">
+          <span class="brand-mark" aria-hidden="true">↻</span>
+          <span><strong>E-Waste Triage</strong><small>Make the next move clear</small></span>
+        </a>
+        <div class="topbar-actions">
+          <button class="quiet-button phone-button" type="button" id="phone-capture" aria-label="Use phone">
+            <span aria-hidden="true">▯</span><span class="phone-button-label">Use phone</span>
+          </button>
+          <button class="quiet-button" type="button" data-view-link="history">
+            <span aria-hidden="true">◷</span><span>Recent scans</span>
+          </button>
+          <button class="quiet-button about-button" type="button" id="open-release-about">
+            <span aria-hidden="true">i</span><span>About</span>
+          </button>
         </div>
-        <button class="quiet-button phone-button" type="button" id="phone-capture" aria-label="Use phone">
-          <span aria-hidden="true">▯</span><span class="phone-button-label">Use phone</span>
-        </button>
-        <button class="quiet-button about-button" type="button" id="open-release-about">
-          <span aria-hidden="true">i</span><span>About</span>
-        </button>
       </header>
 
       <section class="view scan-view" id="scan-view" aria-labelledby="scan-title">
@@ -63,7 +44,7 @@
               <span class="drop-illustration" aria-hidden="true"><span>＋</span></span>
               <span class="drop-copy">
                 <strong id="import-title">Drop a device photo here</strong>
-                <span>or choose a photo from this Mac</span>
+                <span>or choose a photo from this device</span>
               </span>
               <span class="primary-button" aria-hidden="true">Choose photo</span>
               <span class="format-note">JPEG, PNG, HEIC, or WebP</span>
@@ -145,10 +126,13 @@
               </div>
             </div>
 
-            <div class="honesty-card result-stage stage-four">
-              <span aria-hidden="true">i</span>
-              <p><strong>What this result means</strong> This photo classifies the device from its exterior. Component lists are templates commonly associated with the selected category—not detected parts, a teardown, or a condition check.</p>
-            </div>
+            <details class="result-evidence result-stage stage-four">
+              <summary>Why this result?</summary>
+              <div class="honesty-card" id="result-evidence-details">
+                <span aria-hidden="true">i</span>
+                <p><strong>What this result means</strong> This photo classifies the device from its exterior. Component lists are templates commonly associated with the selected category—not detected parts, a teardown, or a condition check.</p>
+              </div>
+            </details>
 
             <div class="result-actions result-stage stage-four">
               <button class="quiet-button" type="button" id="analyze-another">Analyze another photo</button>
@@ -348,22 +332,18 @@
       <section class="view history-view" id="history-view" aria-labelledby="history-title" hidden>
         <div class="view-heading history-heading">
           <div>
-            <p class="eyebrow">On this Mac</p>
-            <h1 id="history-title">Scan history</h1>
-            <p>Classification records are stored locally. Original photos are not retained unless you explicitly choose to keep them.</p>
+            <p class="eyebrow">Saved on this device</p>
+            <h1 id="history-title">Recent scans</h1>
+            <p>Your latest 20 results. Delete one scan or clear the list at any time.</p>
           </div>
           <button class="danger-button" type="button" id="clear-history">Clear history</button>
         </div>
         <div class="history-surface">
-          <div class="history-undo" id="history-undo" role="status" hidden>
-            <span id="history-undo-message"></span>
-            <button type="button" id="history-undo-button">Undo</button>
-          </div>
           <ul class="history-list" id="history-list" aria-label="Saved scans"></ul>
           <div class="history-empty" id="history-empty">
             <span aria-hidden="true">◷</span>
             <h2>No scans yet</h2>
-            <p>Completed scans will appear here on this Mac.</p>
+            <p>Completed scans will appear here on this device.</p>
             <button class="primary-button" type="button" data-view-link="scan">Start a scan</button>
           </div>
         </div>

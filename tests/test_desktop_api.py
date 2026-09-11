@@ -260,6 +260,24 @@ def test_history_api_is_empty_when_history_is_disabled():
     assert client.delete("/api/v1/history").json == {"deleted_count": 0}
 
 
+def test_history_api_returns_only_the_twenty_newest_scans(desktop_client, desktop_services):
+    _, history_store = desktop_services
+    scan_ids = [
+        history_store.add_scan(
+            PREDICTION,
+            Image.new("RGB", (10, 10), (index, 0, 0)),
+            retain_original=False,
+            original=None,
+        )
+        for index in range(25)
+    ]
+
+    response = desktop_client.get("/api/v1/history")
+
+    assert response.status_code == 200
+    assert [row["scan_id"] for row in response.json] == list(reversed(scan_ids[-20:]))
+
+
 def _desktop_scan(client):
     response = client.post(
         "/api/v1/classify",

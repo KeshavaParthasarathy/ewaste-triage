@@ -123,8 +123,7 @@ a:focus-visible {
 }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: minmax(172px, 212px) minmax(0, 1fr);
+  display: block;
   width: 100%;
   min-height: 100vh;
 }
@@ -257,6 +256,8 @@ a:focus-visible {
 .workspace {
   min-width: 0;
   width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   padding: 0 clamp(24px, 5vw, 64px) 44px;
 }
 
@@ -267,6 +268,38 @@ a:focus-visible {
   min-height: 78px;
   gap: 24px;
   border-bottom: 1px solid var(--line);
+}
+
+.topbar .brand {
+  padding: 0;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-evidence {
+  margin: 18px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.result-evidence summary {
+  padding: 15px 18px;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 680;
+}
+
+.result-evidence .honesty-card {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 14px 14px;
+  box-shadow: none;
 }
 
 .eyebrow {

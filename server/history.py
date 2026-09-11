@@ -158,11 +158,18 @@ class HistoryStore:
             "confirmation": json.loads(row["confirmation_json"]) if row["confirmation_json"] else None,
         }
 
-    def list_scans(self) -> list[dict]:
+    def list_scans(self, limit: int | None = None) -> list[dict]:
+        if limit is not None and (
+            isinstance(limit, bool) or not isinstance(limit, int) or limit < 1
+        ):
+            raise ValueError("history limit must be a positive integer")
+        query = "SELECT * FROM scans ORDER BY created_at DESC, rowid DESC"
+        parameters = ()
+        if limit is not None:
+            query += " LIMIT ?"
+            parameters = (limit,)
         with closing(self._connect()) as connection:
-            rows = connection.execute(
-                "SELECT * FROM scans ORDER BY created_at DESC, rowid DESC"
-            ).fetchall()
+            rows = connection.execute(query, parameters).fetchall()
         return [self._record(row) for row in rows]
 
     def get_scan(self, scan_id: str) -> dict | None:

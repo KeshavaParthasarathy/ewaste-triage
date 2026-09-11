@@ -29,8 +29,7 @@
     recall: "Known recall"
   };
   const MAX_KNOWN_ISSUE_NOTES_CODE_POINTS = 500;
-  const CLEAR_HISTORY_CONFIRMATION =
-    "Delete every locally saved scan? You will have a brief chance to undo before deletion completes.";
+  const CLEAR_HISTORY_CONFIRMATION = "Delete all recent scans?";
 
   function confirmClearHistory(confirmImpl) {
     return Boolean(confirmImpl(CLEAR_HISTORY_CONFIRMATION));
@@ -323,7 +322,6 @@
     const formDataFactory = options.formDataFactory;
     const nextFrame = options.nextFrame;
     const objectUrl = options.objectUrl;
-    const undoDelay = options.undoDelay === undefined ? 5000 : options.undoDelay;
     const phonePollDelay = options.phonePollDelay === undefined ? 1000 : options.phonePollDelay;
     const schedule = options.schedule || global.setTimeout.bind(global);
     const cancelSchedule = options.cancelSchedule || global.clearTimeout.bind(global);
@@ -332,7 +330,6 @@
     let activeScanId = null;
     let activeResult = null;
     let historyGeneration = 0;
-    let pendingHistoryAction = null;
     let assessmentGeneration = 0;
     let assessmentSaveToken = null;
     let activeAssessment = null;
@@ -772,33 +769,8 @@
       }
     }
 
-    function stageHistoryAction(message, commit) {
-      if (pendingHistoryAction) pendingHistoryAction.undo();
-      if (undoDelay <= 0) return commit();
-      const pending = {
-        timer: null,
-        undo() {
-          if (!pending.timer) return;
-          cancelSchedule(pending.timer);
-          pending.timer = null;
-          if (pendingHistoryAction === pending) pendingHistoryAction = null;
-          if (typeof view.clearHistoryUndo === "function") view.clearHistoryUndo();
-          void loadHistory();
-        }
-      };
-      pendingHistoryAction = pending;
-      if (typeof view.showHistoryUndo === "function") view.showHistoryUndo(message, pending.undo);
-      pending.timer = schedule(() => {
-        pending.timer = null;
-        if (pendingHistoryAction === pending) pendingHistoryAction = null;
-        if (typeof view.clearHistoryUndo === "function") view.clearHistoryUndo();
-        void commit();
-      }, undoDelay);
-      return Promise.resolve(true);
-    }
-
     function deleteHistory(scanId) {
-      return stageHistoryAction("Scan will be deleted. Undo", () => commitDelete(scanId));
+      return commitDelete(scanId);
     }
 
     async function commitClear() {
@@ -817,7 +789,7 @@
     }
 
     function clearHistory() {
-      return stageHistoryAction("History will be cleared. Undo", commitClear);
+      return commitClear();
     }
 
     function reset() {
@@ -1159,9 +1131,6 @@
     const historyWarning = document.getElementById("history-warning");
     const historyList = document.getElementById("history-list");
     const historyEmpty = document.getElementById("history-empty");
-    const historyUndo = document.getElementById("history-undo");
-    const historyUndoMessage = document.getElementById("history-undo-message");
-    const historyUndoButton = document.getElementById("history-undo-button");
     const assessmentFrame = document.getElementById("assessment-frame");
     const assessmentForm = document.getElementById("assessment-form");
     const assessmentSaveFeedback = document.getElementById("assessment-save-feedback");
@@ -1483,18 +1452,6 @@
       const item = Array.from(historyList.children).find(node => node.dataset.scanId === scanId);
       if (item) item.dataset.deleting = "true";
       announce("Deleting scan from local history.");
-    }
-
-    function showHistoryUndo(message, undo) {
-      historyUndoMessage.textContent = message;
-      historyUndo.hidden = false;
-      historyUndoButton.onclick = undo;
-      announce(message);
-    }
-
-    function clearHistoryUndo() {
-      historyUndo.hidden = true;
-      historyUndoButton.onclick = null;
     }
 
     function renderHistoryError(message) {
@@ -1844,7 +1801,6 @@
       getMass: () => "",
       markHistoryDeleting,
       clearAssessmentFormError,
-      clearHistoryUndo,
       clearPreview,
       getAssessmentCategory: () => assessmentCategory.value,
       renderCorrection,
@@ -1863,7 +1819,6 @@
       setReleaseState,
       showPreview,
       showAssessmentFormError,
-      showHistoryUndo,
       showSection,
       updatePhoneSession,
       setAlternativeHandler(handler) { alternativeHandler = handler; },

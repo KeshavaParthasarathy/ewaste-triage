@@ -148,6 +148,31 @@ def test_scan_persists_with_stable_uuid_and_utc_timestamp(tmp_path):
     assert HistoryStore(database, media).list_scans() == [record]
 
 
+def test_recent_scan_limit_returns_only_newest_rows(tmp_path):
+    store = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media")
+    scan_ids = [
+        store.add_scan(
+            PREDICTION,
+            Image.new("RGB", (10, 10), (index, 0, 0)),
+            retain_original=False,
+            original=None,
+        )
+        for index in range(3)
+    ]
+
+    assert [row["scan_id"] for row in store.list_scans(limit=2)] == list(
+        reversed(scan_ids[-2:])
+    )
+
+
+@pytest.mark.parametrize("limit", [True, 0, -1])
+def test_recent_scan_limit_rejects_non_positive_integers(tmp_path, limit):
+    store = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media")
+
+    with pytest.raises(ValueError, match="positive integer"):
+        store.list_scans(limit=limit)
+
+
 def test_original_photo_is_not_retained_by_default(tmp_path):
     store = HistoryStore(tmp_path / "history.sqlite", tmp_path / "media")
 
