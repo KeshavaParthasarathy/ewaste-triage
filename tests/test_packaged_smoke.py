@@ -207,9 +207,14 @@ def _cleanup_child(
     if process.poll() is None:
         if os.name == "nt":
             # A windowed PyInstaller executable has no console to receive
-            # CTRL_BREAK_EVENT, so the Windows smoke harness must stop it directly.
+            # CTRL_BREAK_EVENT. Stop the bootloader and its child as one tree.
             force_stopped = True
-            process.kill()
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                capture_output=True,
+                check=False,
+                text=True,
+            )
         else:
             process.send_signal(signal.SIGTERM)
     timed_out = False
