@@ -163,6 +163,21 @@ def test_windows_verifier_rejects_disabled_remote_assembly_loading(tmp_path):
     assert "trusted CLR configuration" in result.stderr
 
 
+def test_windows_verifier_rejects_wrong_clr_configuration_root(tmp_path):
+    release, app = _windows_fixture(tmp_path)
+    (app / "E-Waste Triage.exe.config").write_text(
+        WINDOWS_CONFIG.replace("<configuration>", "<invalid>").replace(
+            "</configuration>", "</invalid>"
+        ),
+        encoding="utf-8",
+    )
+
+    result = _verify(release, app)
+
+    assert result.returncode == 1
+    assert "trusted CLR configuration" in result.stderr
+
+
 def test_windows_verifier_rejects_tampered_packaged_model(tmp_path):
     release, app = _windows_fixture(tmp_path)
     (app / "_internal/models/production/model.onnx").write_bytes(b"changed")

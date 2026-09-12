@@ -52,8 +52,12 @@ def _verify_clr_trust_config(path: Path) -> None:
         root = ElementTree.parse(path).getroot()
     except (OSError, ElementTree.ParseError) as error:
         raise WindowsBundleError("trusted CLR configuration is missing or unreadable") from error
-    setting = root.find("./runtime/loadFromRemoteSources")
-    if setting is None or setting.attrib != {"enabled": "true"}:
+    settings = root.findall("./runtime/loadFromRemoteSources")
+    if (
+        root.tag != "configuration"
+        or len(settings) != 1
+        or settings[0].attrib != {"enabled": "true"}
+    ):
         raise WindowsBundleError("trusted CLR configuration is missing or disabled")
 
 

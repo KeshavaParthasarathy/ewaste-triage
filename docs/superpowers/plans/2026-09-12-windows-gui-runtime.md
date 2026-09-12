@@ -51,7 +51,7 @@ Implement the CLI probe as a real `clr` import on Windows, create a .NET Framewo
 
 Run the same focused tests and require a zero exit status.
 
-- [ ] **Step 5: Reproduce and close the user failure in Windows CI**
+- [x] **Step 5: Reproduce and close the user failure in Windows CI**
 
 Apply a ZoneId 3 alternate stream to the packaged Windows files, then run the packaged smoke test. Require the real `--gui-runtime-check` subprocess and the existing server/API smoke paths to pass.
 
