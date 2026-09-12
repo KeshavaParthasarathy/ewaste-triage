@@ -1,20 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
   <title id="title">E-Waste Triage application icon</title>
-  <desc id="description">An emerald scan loop surrounding a white electronic component on deep graphite.</desc>
-  <rect x="48" y="48" width="928" height="928" rx="224" fill="#171C1B"/>
-  <path d="M 268 316 A 312 312 0 0 1 756 316" fill="none" stroke="#24C985" stroke-width="76" stroke-linecap="round"/>
-  <path d="M 756 708 A 312 312 0 0 1 268 708" fill="none" stroke="#24C985" stroke-width="76" stroke-linecap="round"/>
-  <path d="M 246 240 L 268 316 L 344 294" fill="none" stroke="#24C985" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M 778 784 L 756 708 L 680 730" fill="none" stroke="#24C985" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="360" y="350" width="304" height="324" rx="68" fill="#FFFFFF"/>
-  <rect x="424" y="416" width="176" height="192" rx="34" fill="#171C1B"/>
-  <g fill="#FFFFFF">
-    <rect x="314" y="404" width="82" height="34" rx="17"/>
-    <rect x="314" y="495" width="82" height="34" rx="17"/>
-    <rect x="314" y="586" width="82" height="34" rx="17"/>
-    <rect x="628" y="404" width="82" height="34" rx="17"/>
-    <rect x="628" y="495" width="82" height="34" rx="17"/>
-    <rect x="628" y="586" width="82" height="34" rx="17"/>
+  <desc id="description">A minimal white scan loop surrounding an electronic component on black.</desc>
+  <rect x="48" y="48" width="928" height="928" rx="224" fill="#0A0A0A"/>
+  <g transform="scale(32)">
+    <path data-mark-part="loop" d="M25 10.5A10.5 10.5 0 0 0 7.2 8.2M7 8v5h5M7 21.5A10.5 10.5 0 0 0 24.8 23.8M25 24v-5h-5" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path data-mark-part="core" d="M12 11.5h8a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-8a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5Z" fill="none" stroke="#FFFFFF" stroke-width="1.7"/>
   </g>
 </svg>

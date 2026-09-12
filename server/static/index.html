@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="light">
   <title>E-Waste Triage</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/app.js" defer></script>
@@ -13,18 +13,21 @@
     <main class="workspace">
       <header class="topbar">
         <a class="brand" href="#scan" data-view-link="scan" aria-label="E-Waste Triage home">
-          <span class="brand-mark" aria-hidden="true">↻</span>
-          <span><strong>E-Waste Triage</strong><small>Make the next move clear</small></span>
+          <svg class="product-mark brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path data-mark-part="loop" d="M25 10.5A10.5 10.5 0 0 0 7.2 8.2M7 8v5h5M7 21.5A10.5 10.5 0 0 0 24.8 23.8M25 24v-5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+            <path data-mark-part="core" d="M12 11.5h8a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-8a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5Z" fill="none" stroke="currentColor" stroke-width="1.7"></path>
+          </svg>
+          <span><strong>E-Waste Triage</strong></span>
         </a>
         <div class="topbar-actions">
           <button class="quiet-button phone-button" type="button" id="phone-capture" aria-label="Use phone">
-            <span aria-hidden="true">▯</span><span class="phone-button-label">Use phone</span>
+            <span class="phone-button-label">Use phone</span>
           </button>
           <button class="quiet-button" type="button" data-view-link="history">
-            <span aria-hidden="true">◷</span><span>Recent scans</span>
+            <span>Recent scans</span>
           </button>
           <button class="quiet-button about-button" type="button" id="open-release-about">
-            <span aria-hidden="true">i</span><span>About</span>
+            <span>About</span>
           </button>
         </div>
       </header>
@@ -33,18 +36,23 @@
         <div class="view-heading">
           <div>
             <p class="eyebrow">New scan</p>
-            <h1 id="scan-title">Understand what you have.</h1>
-            <p>Choose one clear photo. Classification happens locally and the explanation follows without holding up your result.</p>
+            <h1 id="scan-title">What are you working with?</h1>
+            <p>Add one clear photo to identify the device and assess its next step.</p>
           </div>
         </div>
 
         <div class="state-frame" id="state-frame">
           <section class="state-panel empty-panel" aria-labelledby="import-title">
             <label class="drop-target" id="drop-target" for="photo-input" role="button" tabindex="0">
-              <span class="drop-illustration" aria-hidden="true"><span>＋</span></span>
+              <span class="drop-illustration" aria-hidden="true">
+                <svg class="upload-glyph" viewBox="0 0 32 32">
+                  <path d="M7 11.5h4l1.8-2.5h6.4l1.8 2.5h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-10a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path>
+                  <circle cx="16" cy="18" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"></circle>
+                </svg>
+              </span>
               <span class="drop-copy">
-                <strong id="import-title">Drop a device photo here</strong>
-                <span>or choose a photo from this device</span>
+                <strong id="import-title">Drop a photo here</strong>
+                <span>or choose a file</span>
               </span>
               <span class="primary-button" aria-hidden="true">Choose photo</span>
               <span class="format-note">JPEG, PNG, HEIC, or WebP</span>
@@ -56,7 +64,6 @@
 
             <div class="import-divider" aria-hidden="true"><span>or</span></div>
             <button class="phone-card" type="button" data-phone-action>
-              <span class="phone-card-icon" aria-hidden="true">▯</span>
               <span><strong>Capture from your phone</strong><small>Send one photo over temporary same-network HTTP.</small></span>
               <span aria-hidden="true">›</span>
             </button>
@@ -341,7 +348,6 @@
         <div class="history-surface">
           <ul class="history-list" id="history-list" aria-label="Saved scans"></ul>
           <div class="history-empty" id="history-empty">
-            <span aria-hidden="true">◷</span>
             <h2>No scans yet</h2>
             <p>Completed scans will appear here on this device.</p>
             <button class="primary-button" type="button" data-view-link="scan">Start a scan</button>
@@ -359,7 +365,6 @@
       <button class="dialog-close" type="button" data-close-phone aria-label="Close phone capture">×</button>
 
       <header class="phone-dialog-header">
-        <span class="dialog-icon" aria-hidden="true">▯</span>
         <div>
           <p class="eyebrow">Temporary phone handoff</p>
           <h2 id="phone-dialog-title">Take the photo on your phone.</h2>

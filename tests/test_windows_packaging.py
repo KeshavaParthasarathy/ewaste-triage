@@ -9,11 +9,27 @@ import shutil
 import subprocess
 import sys
 
+from PIL import Image
+
 
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY = ROOT / "scripts" / "verify_windows_bundle.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "windows-release.yml"
 GIT_ATTRIBUTES = ROOT / ".gitattributes"
+
+
+def test_windows_icon_contains_the_shared_scan_loop_mark():
+    with Image.open(ROOT / "desktop" / "assets" / "app-icon.ico") as icon:
+        image = icon.ico.getimage((256, 256)).convert("RGBA")
+
+    for point in ((56, 104), (200, 152)):
+        red, green, blue, alpha = image.getpixel(point)
+        assert alpha == 255
+        assert min(red, green, blue) >= 220
+
+    red, green, blue, alpha = image.getpixel((128, 128))
+    assert alpha == 255
+    assert max(red, green, blue) <= 24
 
 
 def _sha256(path: Path) -> str:

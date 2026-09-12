@@ -3,14 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b1614">
+  <meta name="theme-color" content="#ffffff">
   <title>Phone capture · E-Waste Triage</title>
   <link rel="stylesheet" href="{{ url_for('phone_css', token=phone_token) }}">
 </head>
 <body data-token="{{ phone_token }}" data-require-code="{{ 'true' if requires_pairing_code else 'false' }}">
   <main class="phone-shell">
     <header class="brand-bar">
-      <span class="brand-mark" aria-hidden="true">E</span>
+      <svg class="product-mark brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <path data-mark-part="loop" d="M25 10.5A10.5 10.5 0 0 0 7.2 8.2M7 8v5h5M7 21.5A10.5 10.5 0 0 0 24.8 23.8M25 24v-5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+        <path data-mark-part="core" d="M12 11.5h8a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-8a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5Z" fill="none" stroke="currentColor" stroke-width="1.7"></path>
+      </svg>
       <div>
         <p class="eyebrow">E-Waste Triage</p>
         <p class="connection"><span class="connection-dot" aria-hidden="true"></span>Temporary local HTTP session</p>

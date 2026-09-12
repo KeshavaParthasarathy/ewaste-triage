@@ -288,9 +288,9 @@ def test_icon_source_is_self_contained_product_vector():
     text = icon.read_text(encoding="utf-8")
 
     assert root.attrib["viewBox"] == "0 0 1024 1024"
-    assert "#171C1B" in text
-    assert "#24C985" in text
+    assert "#0A0A0A" in text
     assert "#FFFFFF" in text
+    assert "#24C985" not in text
     assert "<image" not in text
     assert "href=" not in text
 

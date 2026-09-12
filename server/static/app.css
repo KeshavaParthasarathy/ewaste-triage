@@ -1,53 +1,29 @@
 :root {
-  color-scheme: light dark;
-  --motion-fast: 140ms;
-  --motion-standard: 220ms;
-  --motion-result: 300ms;
-  --ease-out: cubic-bezier(0.22, 0.8, 0.28, 1);
-  --ease-spring: cubic-bezier(0.2, 0.9, 0.25, 1.15);
-  --bg: #eef1ef;
-  --sidebar: rgba(246, 248, 246, 0.92);
-  --surface: rgba(255, 255, 255, 0.88);
+  color-scheme: light;
+  --motion-fast: 120ms;
+  --motion-standard: 180ms;
+  --motion-result: 220ms;
+  --ease-out: cubic-bezier(0.2, 0.75, 0.25, 1);
+  --ease-spring: var(--ease-out);
+  --bg: #ffffff;
+  --sidebar: #ffffff;
+  --surface: #ffffff;
   --surface-solid: #ffffff;
-  --surface-soft: #f5f7f5;
-  --text: #17201b;
-  --muted: #65706a;
-  --faint: #8b948f;
-  --line: rgba(38, 56, 46, 0.13);
-  --line-strong: rgba(38, 56, 46, 0.22);
-  --accent: #287551;
-  --accent-deep: #185d3d;
-  --accent-soft: #e3f1e9;
-  --review: #9b6423;
-  --review-soft: #fbefd8;
-  --danger: #a34242;
-  --danger-soft: #fae8e6;
-  --shadow: 0 18px 48px rgba(33, 49, 40, 0.1), 0 2px 8px rgba(33, 49, 40, 0.06);
-  --focus: #2e8d63;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111713;
-    --sidebar: rgba(22, 30, 25, 0.94);
-    --surface: rgba(29, 39, 33, 0.9);
-    --surface-solid: #1d2721;
-    --surface-soft: #222e27;
-    --text: #eff5f1;
-    --muted: #aab6af;
-    --faint: #839087;
-    --line: rgba(223, 241, 230, 0.11);
-    --line-strong: rgba(223, 241, 230, 0.2);
-    --accent: #6bc695;
-    --accent-deep: #4daa78;
-    --accent-soft: #203d2e;
-    --review: #e2ad64;
-    --review-soft: #44351f;
-    --danger: #f09a96;
-    --danger-soft: #462928;
-    --shadow: 0 20px 52px rgba(0, 0, 0, 0.28), 0 2px 9px rgba(0, 0, 0, 0.2);
-    --focus: #7ed8a8;
-  }
+  --surface-soft: #f7f7f7;
+  --text: #0a0a0a;
+  --muted: #616161;
+  --faint: #6f6f6f;
+  --line: rgba(10, 10, 10, 0.12);
+  --line-strong: rgba(10, 10, 10, 0.26);
+  --accent: #0a0a0a;
+  --accent-deep: #000000;
+  --accent-soft: #f2f2f2;
+  --review: #4a4a4a;
+  --review-soft: #f2f2f2;
+  --danger: #0a0a0a;
+  --danger-soft: #f2f2f2;
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.06);
+  --focus: #0a0a0a;
 }
 
 * {
@@ -65,9 +41,7 @@ body {
   min-height: 100vh;
   margin: 0;
   color: var(--text);
-  background:
-    radial-gradient(circle at 80% 0%, rgba(86, 148, 111, 0.09), transparent 34rem),
-    var(--bg);
+  background: var(--bg);
 }
 
 button,
@@ -139,7 +113,6 @@ a:focus-visible {
   padding: 24px 16px 18px;
   border-right: 1px solid var(--line);
   background: var(--sidebar);
-  backdrop-filter: blur(22px) saturate(120%);
 }
 
 .brand {
@@ -152,17 +125,11 @@ a:focus-visible {
 }
 
 .brand-mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
+  display: block;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
-  place-items: center;
-  border-radius: 10px;
-  color: white;
-  background: linear-gradient(145deg, #3f936a, #1e6745);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.28), 0 4px 12px rgba(26, 93, 61, 0.2);
-  font-size: 24px;
-  line-height: 1;
+  color: var(--text);
 }
 
 .brand strong,
@@ -280,6 +247,16 @@ a:focus-visible {
   gap: 8px;
 }
 
+.topbar-actions .quiet-button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.topbar-actions .quiet-button:hover {
+  border-color: var(--line);
+  background: var(--surface-soft);
+}
+
 .result-evidence {
   margin: 18px 0 0;
   border: 1px solid var(--line);
@@ -322,6 +299,19 @@ a:focus-visible {
   margin: 0 auto;
 }
 
+.scan-view {
+  width: min(100%, 820px);
+}
+
+.scan-view > .view-heading {
+  justify-content: center;
+  text-align: center;
+}
+
+.scan-view > .view-heading > div > p:last-child {
+  margin-inline: auto;
+}
+
 .view-heading {
   display: flex;
   align-items: flex-end;
@@ -357,6 +347,13 @@ a:focus-visible {
   box-shadow: var(--shadow);
 }
 
+.state-frame {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .state-panel {
   display: none;
 }
@@ -382,8 +379,8 @@ html[data-state="error"] .error-panel {
   align-content: center;
   gap: 13px;
   padding: 26px;
-  border: 1.5px dashed var(--line-strong);
-  border-radius: 15px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
   background: color-mix(in srgb, var(--surface-soft) 76%, transparent);
   text-align: center;
   transition: transform var(--motion-standard) var(--ease-spring), opacity var(--motion-standard) var(--ease-out);
@@ -393,7 +390,7 @@ html[data-state="error"] .error-panel {
 .drop-target[data-drag="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
-  transform: translateY(-3px);
+  transform: translateY(-1px);
 }
 
 .drop-illustration {
@@ -405,8 +402,13 @@ html[data-state="error"] .error-panel {
   border-radius: 19px;
   color: var(--accent-deep);
   background: var(--surface-solid);
-  box-shadow: 0 8px 20px rgba(31, 73, 52, 0.1);
+  box-shadow: none;
   font-size: 25px;
+}
+
+.upload-glyph {
+  width: 34px;
+  height: 34px;
 }
 
 .drop-copy strong,
@@ -442,10 +444,15 @@ html[data-state="error"] .error-panel {
   transition: transform var(--motion-fast) var(--ease-spring), opacity var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 
+.primary-button {
+  color: white;
+  background: var(--accent-deep);
+}
+
 button.primary-button {
   color: white;
   background: var(--accent-deep);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.2), 0 3px 9px rgba(24, 93, 61, 0.18);
+  box-shadow: none;
 }
 
 .quiet-button {
@@ -467,7 +474,7 @@ button.primary-button {
 button:active,
 [role="button"]:active,
 .phone-card:active {
-  transform: scale(0.985);
+  transform: translateY(1px);
 }
 
 .format-note {
@@ -494,7 +501,7 @@ button:active,
 
 .phone-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -559,7 +566,7 @@ html[data-state="classifying"] .progress-panel {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #121715;
+  background: #111111;
 }
 
 .preview-placeholder {
@@ -573,14 +580,16 @@ html[data-state="classifying"] .progress-panel {
 
 .scan-sheen {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.2) 49%, transparent 63%);
-  animation: scan-sheen 1.45s ease-in-out infinite;
-  transform: translateX(-100%);
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.48);
+  animation: scan-sheen 1.25s var(--ease-out) infinite;
 }
 
 @keyframes scan-sheen {
-  to { transform: translateX(100%); }
+  to { left: 100%; }
 }
 
 .working-mark {
@@ -601,7 +610,7 @@ html[data-state="classifying"] .progress-panel {
 .working-mark i:nth-child(3) { animation-delay: 200ms; }
 
 @keyframes pulse-dot {
-  to { opacity: 0.3; transform: translateY(-3px); }
+  to { opacity: 0.3; }
 }
 
 .progress-copy h2,
@@ -671,7 +680,7 @@ html[data-state="classifying"] .decoding-copy {
 }
 
 .influence-cell {
-  background: rgba(255, 173, 66, var(--influence, 0));
+  background: rgba(10, 10, 10, var(--influence, 0));
   box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06);
 }
 
@@ -1188,7 +1197,7 @@ html[data-state="review"] .confidence-track span {
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--surface);
-  box-shadow: 0 9px 30px rgba(33, 49, 40, 0.06);
+  box-shadow: none;
 }
 
 .assessment-card-heading,
@@ -1436,9 +1445,7 @@ html[data-state="review"] .confidence-track span {
 }
 
 .assessment-overall {
-  background:
-    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent-soft) 72%, transparent), transparent 45%),
-    var(--surface);
+  background: var(--surface);
 }
 
 .assessment-overall-line {
@@ -1465,7 +1472,7 @@ html[data-state="review"] .confidence-track span {
   width: 100%;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), var(--review));
+  background: var(--accent);
   transform: scaleX(var(--assessment-range, 0));
   transform-origin: left;
   transition: transform var(--motion-result) var(--ease-out);
@@ -1717,19 +1724,16 @@ html[data-state="review"] .confidence-track span {
   border: 1px solid var(--line-strong);
   border-radius: 24px;
   color: var(--text);
-  background:
-    radial-gradient(circle at 84% 0%, color-mix(in srgb, var(--accent-soft) 72%, transparent), transparent 19rem),
-    var(--surface-solid);
-  box-shadow: 0 34px 100px rgba(0, 0, 0, 0.32), 0 4px 20px rgba(0, 0, 0, 0.12);
+  background: var(--surface-solid);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
 }
 
 .phone-dialog[open] {
-  animation: phone-sheet-enter 420ms var(--ease-spring) both;
+  animation: phone-sheet-enter var(--motion-result) var(--ease-out) both;
 }
 
 .phone-dialog::backdrop {
-  background: rgba(8, 14, 10, 0.48);
-  backdrop-filter: blur(7px) saturate(90%);
+  background: rgba(0, 0, 0, 0.42);
   animation: phone-backdrop-enter var(--motion-standard) var(--ease-out) both;
 }
 
@@ -1845,7 +1849,7 @@ html[data-state="review"] .confidence-track span {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: #fff;
-  box-shadow: 0 14px 32px rgba(22, 65, 43, 0.12);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.08);
   text-align: center;
 }
 
@@ -1860,7 +1864,7 @@ html[data-state="review"] .confidence-track span {
 .phone-qr-card span {
   display: block;
   margin-top: 8px;
-  color: #405148;
+  color: #4a4a4a;
   font-size: 9px;
   font-weight: 700;
 }
@@ -1943,7 +1947,8 @@ html[data-state="review"] .confidence-track span {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: conic-gradient(var(--accent) calc(var(--phone-progress) * 1turn), var(--line) 0);
+  border: 2px solid var(--accent);
+  background: var(--surface-solid);
   transition: --phone-progress 1s linear;
 }
 
@@ -2091,8 +2096,8 @@ html[data-state="review"] .confidence-track span {
 .phone-session-strip.phone-pairing-reveal { animation-delay: 160ms; }
 
 @keyframes phone-sheet-enter {
-  from { opacity: 0; transform: translateY(20px) scale(0.975); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes phone-backdrop-enter {
@@ -2101,18 +2106,18 @@ html[data-state="review"] .confidence-track span {
 }
 
 @keyframes phone-content-enter {
-  from { opacity: 0; transform: translateY(7px) scale(0.99); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes phone-pairing-enter {
-  from { opacity: 0; transform: translateY(7px) scale(0.99); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes phone-result-enter {
-  from { opacity: 0; transform: translateY(8px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes phone-orbit-turn {
@@ -2160,17 +2165,16 @@ html[data-state="review"] .confidence-track span {
   border: 1px solid var(--line-strong);
   border-radius: 22px;
   color: var(--text);
-  background: radial-gradient(circle at 88% 2%, color-mix(in srgb, var(--accent-soft) 68%, transparent), transparent 18rem), var(--surface-solid);
-  box-shadow: 0 34px 100px rgba(0, 0, 0, 0.32), 0 4px 20px rgba(0, 0, 0, 0.12);
+  background: var(--surface-solid);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
 }
 
 .release-about-dialog::backdrop {
-  background: rgba(8, 14, 10, 0.48);
-  backdrop-filter: blur(7px) saturate(90%);
+  background: rgba(0, 0, 0, 0.42);
 }
 
 .release-about-dialog[open] {
-  animation: release-about-enter 300ms var(--ease-spring) both;
+  animation: release-about-enter var(--motion-result) var(--ease-out) both;
 }
 
 .release-about-shell {
@@ -2270,8 +2274,8 @@ html[data-state="review"] .confidence-track span {
 }
 
 @keyframes release-about-enter {
-  from { opacity: 0; transform: translateY(14px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes release-detail-enter {
@@ -2358,7 +2362,6 @@ html[data-state="review"] .confidence-track span {
 }
 
 @media (max-width: 620px) {
-  .phone-button .phone-button-label,
   .topbar-note,
   .nav-icon {
     display: none;

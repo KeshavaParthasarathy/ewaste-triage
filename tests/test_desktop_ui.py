@@ -3,6 +3,7 @@ import pathlib
 import re
 import subprocess
 from html.parser import HTMLParser
+import xml.etree.ElementTree as ElementTree
 
 
 ROOT = pathlib.Path(__file__).parents[1]
@@ -30,6 +31,30 @@ def _page():
     parser = PageParser()
     parser.feed(STATIC.joinpath("index.html").read_text())
     return parser
+
+
+def _parsed_html(path):
+    parser = PageParser()
+    parser.feed(path.read_text(encoding="utf-8"))
+    return parser
+
+
+def _mark_paths(page):
+    return [
+        (attrs["data-mark-part"], attrs["d"])
+        for tag, attrs in page.elements
+        if tag == "path" and attrs.get("data-mark-part")
+    ]
+
+
+def _contrast_ratio(foreground, background="#ffffff"):
+    def luminance(value):
+        channels = [int(value[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+        linear = [channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4 for channel in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    light, dark = sorted((luminance(foreground), luminance(background)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
 
 
 def _run_ui_contract(script):
@@ -94,14 +119,93 @@ def test_photo_import_and_history_controls_have_keyboard_semantics():
 
 def test_styles_define_responsive_reduced_motion_and_functional_states():
     css = STATIC.joinpath("app.css").read_text()
-    assert "--motion-fast: 140ms" in css
-    assert "--motion-standard: 220ms" in css
-    assert "--motion-result: 300ms" in css
+    assert "--motion-fast: 120ms" in css
+    assert "--motion-standard: 180ms" in css
+    assert "--motion-result: 220ms" in css
     assert 'data-state="classifying"' in css
-    assert "transform: scale(0.985)" in css
     assert "prefers-reduced-motion: reduce" in css
     assert "@media (max-width:" in css
     assert "transition: all" not in css
+    assert "scale(" not in css
+
+
+def test_desktop_and_phone_use_the_same_clean_product_mark():
+    desktop = _page()
+    phone = _parsed_html(STATIC / "phone.html")
+    icon = ElementTree.parse(ROOT / "desktop" / "assets" / "app-icon.svg").getroot()
+
+    for page in (desktop, phone):
+        marks = [
+            attrs
+            for tag, attrs in page.elements
+            if tag == "svg" and "product-mark" in attrs.get("class", "")
+        ]
+        assert len(marks) == 1
+        assert marks[0]["viewbox"] == "0 0 32 32"
+        assert marks[0]["aria-hidden"] == "true"
+
+    icon_paths = [
+        (node.attrib["data-mark-part"], node.attrib["d"])
+        for node in icon.iter()
+        if node.tag.endswith("path") and node.attrib.get("data-mark-part")
+    ]
+    assert _mark_paths(desktop) == _mark_paths(phone) == icon_paths
+    assert {part for part, _ in icon_paths} == {"loop", "core"}
+
+
+def test_shared_theme_is_strictly_monochrome_without_dark_or_gradient_variants():
+    desktop_css = (STATIC / "app.css").read_text(encoding="utf-8")
+    phone_css = (STATIC / "phone.css").read_text(encoding="utf-8")
+    root_tokens = desktop_css.split("}", 1)[0]
+
+    assert "color-scheme: light" in root_tokens
+    assert "--bg: #ffffff" in root_tokens
+    assert "--text: #0a0a0a" in root_tokens
+    assert "--accent: #0a0a0a" in root_tokens
+    assert "prefers-color-scheme: dark" not in desktop_css
+    assert "gradient(" not in desktop_css
+    assert "gradient(" not in phone_css
+
+
+def test_small_secondary_copy_meets_wcag_aa_contrast_on_white():
+    desktop_css = (STATIC / "app.css").read_text(encoding="utf-8")
+    phone_css = (STATIC / "phone.css").read_text(encoding="utf-8")
+    desktop_faint = re.search(r"--faint:\s*(#[0-9a-fA-F]{6})", desktop_css).group(1)
+    phone_quiet = re.search(r"--quiet:\s*(#[0-9a-fA-F]{6})", phone_css).group(1)
+
+    assert _contrast_ratio(desktop_faint) >= 4.5
+    assert _contrast_ratio(phone_quiet) >= 4.5
+
+
+def test_minimal_motion_has_no_bounce_or_glass_and_scan_line_crosses_preview():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    pulse = re.search(r"@keyframes pulse-dot\s*\{([^}]*(?:\}[^}]*)?)\}", css, re.DOTALL)
+    sheen = re.search(r"@keyframes scan-sheen\s*\{([^}]*)\}", css, re.DOTALL)
+
+    assert "backdrop-filter" not in css
+    assert pulse is not None
+    assert "translateY" not in pulse.group(1)
+    assert sheen is not None
+    assert "left: 100%" in sheen.group(1)
+
+
+def test_phone_capture_label_remains_visible_in_narrow_windows():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    narrow = css.split("@media (max-width: 620px)", 1)[1]
+
+    assert ".phone-button .phone-button-label" not in narrow
+
+
+def test_scan_primary_action_is_solid_black_and_topbar_is_text_only():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    primary_rule = re.search(r"(?m)^\.primary-button\s*\{([^}]*)\}", css)
+
+    assert primary_rule is not None
+    assert "color: white" in primary_rule.group(1)
+    assert "background: var(--accent-deep)" in primary_rule.group(1)
+    assert "▯" not in html
+    assert "◷" not in html
 
 
 def test_scan_page_exposes_an_initially_closed_accessible_phone_pairing_sheet():
