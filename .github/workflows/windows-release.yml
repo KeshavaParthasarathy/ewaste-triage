@@ -54,6 +54,15 @@ jobs:
         shell: pwsh
         run: ./scripts/build_windows_app.ps1 -Version $env:EWASTE_VERSION
 
+      - name: Simulate an Internet-zone managed assembly
+        shell: pwsh
+        run: |
+          $runtimeDll = Join-Path $PWD "build/windows/$env:EWASTE_VERSION/pyinstaller-dist/E-Waste Triage/_internal/pythonnet/runtime/Python.Runtime.dll"
+          if (-not (Test-Path -LiteralPath $runtimeDll)) { throw "Python.Runtime.dll is missing" }
+          Set-Content -LiteralPath "${runtimeDll}:Zone.Identifier" -Value "[ZoneTransfer]`r`nZoneId=3" -NoNewline
+          $zone = Get-Content -Raw -LiteralPath "${runtimeDll}:Zone.Identifier"
+          if ($zone -notmatch "ZoneId=3") { throw "Internet-zone mark was not applied" }
+
       - name: Smoke-test packaged application
         shell: pwsh
         run: |

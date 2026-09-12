@@ -32,6 +32,7 @@ if ($LASTEXITCODE -ne 0 -or $SourceStatus) {
 }
 
 $ReleaseManifest = Join-Path $ReleaseDir "release-manifest.json"
+$ClrConfig = (Resolve-Path (Join-Path $ProjectRoot "desktop/windows/E-Waste Triage.exe.config")).Path
 $ReleaseRecord = Get-Content -Raw $ReleaseManifest | ConvertFrom-Json
 if ($ReleaseRecord.app_version -ne $Version) { throw "Release version does not match" }
 if (
@@ -75,6 +76,7 @@ $env:EWASTE_APP_VERSION = $Version
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 $BuiltApp = Join-Path $PyInstallerDist "E-Waste Triage"
+Copy-Item -LiteralPath $ClrConfig -Destination (Join-Path $BuiltApp "E-Waste Triage.exe.config")
 & $PythonBin (Join-Path $ProjectRoot "scripts/verify_windows_bundle.py") --release-dir $ReleaseDir --app-dir $BuiltApp --expected-version $Version
 if ($LASTEXITCODE -ne 0) { throw "Windows bundle verification failed" }
 

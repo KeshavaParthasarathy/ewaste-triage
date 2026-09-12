@@ -298,6 +298,18 @@ def test_multipart_helper_produces_a_real_image_form() -> None:
 def test_frozen_app_exercises_desktop_and_phone_paths(tmp_path: Path) -> None:
     executable = _app_executable()
     assert FIXTURE.is_file(), f"missing checked-in smoke fixture: {FIXTURE}"
+    if os.name == "nt":
+        gui_probe = subprocess.run(
+            [str(executable), "--gui-runtime-check"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        assert gui_probe.returncode == 0, (
+            "packaged Windows GUI runtime failed to load\n"
+            f"stdout:\n{gui_probe.stdout}\nstderr:\n{gui_probe.stderr}"
+        )
     support_dir = tmp_path / "support"
     ready_file = tmp_path / "ready.json"
     environment = os.environ | {

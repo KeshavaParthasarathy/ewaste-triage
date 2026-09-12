@@ -790,7 +790,13 @@ def test_app_and_build_dependencies_are_pinned_without_onnx_runtime_downgrade():
         "pyinstaller==6.22.2",
         "onnxruntime==1.29.0",
     } <= requirements
-    assert {"psutil==7.0.0", "qrcode==8.2", "pywebview==6.2.1"} <= app_requirements
+    assert {
+        "psutil==7.0.0",
+        "qrcode==8.2",
+        "pywebview==6.2.1",
+        'pythonnet==3.1.0; sys_platform == "win32"',
+        'clr_loader==0.3.1; sys_platform == "win32"',
+    } <= app_requirements
     assert not {"torch==2.13.0", "torchvision==0.28.0"} & app_requirements
 
 

@@ -88,6 +88,24 @@ def test_shutdown_signals_include_windows_ctrl_break_when_available():
     assert desktop_main.shutdown_signals(fake_signals) == (15, 2, 21)
 
 
+def test_main_routes_gui_runtime_check_without_starting_the_app(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        desktop_main,
+        "check_windows_gui_runtime",
+        lambda: calls.append("checked") or 0,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        desktop_main,
+        "run",
+        lambda: pytest.fail("runtime check must not start the application"),
+    )
+
+    assert desktop_main.main(["--gui-runtime-check"]) == 0
+    assert calls == ["checked"]
+
+
 def test_desktop_run_opens_one_native_window(monkeypatch, tmp_path):
     fake_webview = FakeWebview()
     paths = AppPaths(

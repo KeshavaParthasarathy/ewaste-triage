@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 from typing import Sequence
+from xml.etree import ElementTree
 
 
 STATIC_FILES = ("app.css", "app.js", "index.html", "phone.css", "phone.html", "phone.js")
@@ -46,6 +47,16 @@ def _expect_hash(actual_path: Path, expected: object, label: str) -> None:
         raise WindowsBundleError(f"{label} does not match the release manifest")
 
 
+def _verify_clr_trust_config(path: Path) -> None:
+    try:
+        root = ElementTree.parse(path).getroot()
+    except (OSError, ElementTree.ParseError) as error:
+        raise WindowsBundleError("trusted CLR configuration is missing or unreadable") from error
+    setting = root.find("./runtime/loadFromRemoteSources")
+    if setting is None or setting.attrib != {"enabled": "true"}:
+        raise WindowsBundleError("trusted CLR configuration is missing or disabled")
+
+
 def verify_windows_bundle(
     release_dir: Path, app_dir: Path, expected_version: str
 ) -> None:
@@ -56,6 +67,7 @@ def verify_windows_bundle(
         raise WindowsBundleError("expected version must use X.Y.Z")
     if not (app_dir / "E-Waste Triage.exe").is_file():
         raise WindowsBundleError("Windows executable is missing")
+    _verify_clr_trust_config(app_dir / "E-Waste Triage.exe.config")
     resources_dir = app_dir / "_internal"
     if not resources_dir.is_dir():
         raise WindowsBundleError("PyInstaller resource directory is missing")

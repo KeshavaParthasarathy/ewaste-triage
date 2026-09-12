@@ -16,6 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 VERIFY = ROOT / "scripts" / "verify_windows_bundle.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "windows-release.yml"
 GIT_ATTRIBUTES = ROOT / ".gitattributes"
+WINDOWS_CONFIG = """<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <runtime>
+    <loadFromRemoteSources enabled="true"/>
+  </runtime>
+</configuration>
+"""
 
 
 def test_windows_icon_contains_the_shared_scan_loop_mark():
@@ -75,6 +82,9 @@ def _windows_fixture(tmp_path: Path) -> tuple[Path, Path]:
     app = tmp_path / "E-Waste Triage"
     (app / "E-Waste Triage.exe").parent.mkdir(parents=True)
     (app / "E-Waste Triage.exe").write_bytes(b"MZ synthetic executable")
+    (app / "E-Waste Triage.exe.config").write_text(
+        WINDOWS_CONFIG, encoding="utf-8"
+    )
     resources = app / "_internal"
     mappings = {
         model: resources / "models/production/model.onnx",
@@ -128,6 +138,29 @@ def test_windows_verifier_accepts_complete_matching_onedir(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "Windows application bundle verified"
+
+
+def test_windows_verifier_rejects_missing_clr_trust_config(tmp_path):
+    release, app = _windows_fixture(tmp_path)
+    (app / "E-Waste Triage.exe.config").unlink()
+
+    result = _verify(release, app)
+
+    assert result.returncode == 1
+    assert "trusted CLR configuration" in result.stderr
+
+
+def test_windows_verifier_rejects_disabled_remote_assembly_loading(tmp_path):
+    release, app = _windows_fixture(tmp_path)
+    (app / "E-Waste Triage.exe.config").write_text(
+        WINDOWS_CONFIG.replace('enabled="true"', 'enabled="false"'),
+        encoding="utf-8",
+    )
+
+    result = _verify(release, app)
+
+    assert result.returncode == 1
+    assert "trusted CLR configuration" in result.stderr
 
 
 def test_windows_verifier_rejects_tampered_packaged_model(tmp_path):

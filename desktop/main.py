@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
+from typing import Sequence
 
 try:
     import webview
@@ -59,6 +60,21 @@ def shutdown_signals(signal_module=signal) -> tuple[int, ...]:
     if sigbreak is not None and sigbreak not in values:
         values.append(sigbreak)
     return tuple(values)
+
+
+def check_windows_gui_runtime() -> int:
+    """Load the managed Windows GUI bridge without opening a window."""
+    if sys.platform == "win32":
+        import clr  # noqa: F401
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Dispatch the app or the packaged Windows GUI-runtime probe."""
+    arguments = tuple(sys.argv[1:] if argv is None else argv)
+    if arguments == ("--gui-runtime-check",):
+        return check_windows_gui_runtime()
+    return run()
 
 
 def _safe_diagnostic(value: object, fallback: str) -> str:
@@ -323,4 +339,4 @@ def run(
 
 
 if __name__ == "__main__":
-    raise SystemExit(run())
+    raise SystemExit(main())
